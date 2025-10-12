@@ -1,8 +1,8 @@
 # yarn lock file
 /yarn.lock
 
-# npm lock file (v5.0.0+)
-/package-lock.json
+# npm lock file - REMOVED to support GitHub Actions caching
+# /package-lock.json
 
 # Ignore basic folders
 # /dist  # Un-commented for GitHub integration - Screeps needs this folder
