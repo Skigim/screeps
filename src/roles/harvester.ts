@@ -1,7 +1,13 @@
 import { Traveler } from "../Traveler";
+import { AssignmentManager } from "../managers/AssignmentManager";
 
 export class RoleHarvester {
   public static run(creep: Creep): void {
+    // Assign to source if not already assigned
+    if (AssignmentManager.needsReassignment(creep)) {
+      AssignmentManager.assignCreepToSource(creep, creep.room);
+    }
+
     // Toggle working state
     if (creep.store.getFreeCapacity() === 0) {
       creep.memory.working = true;
@@ -11,12 +17,21 @@ export class RoleHarvester {
     }
 
     if (!creep.memory.working) {
-      // Harvest energy
-      const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-      if (source) {
-        if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-          // Use Traveler for pathfinding
-          Traveler.travelTo(creep, source);
+      // Harvest energy from assigned source
+      if (creep.memory.assignedSource) {
+        const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
+        if (source) {
+          if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, source);
+          }
+        }
+      } else {
+        // Fallback: find any source if no assignment
+        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+        if (source) {
+          if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, source);
+          }
         }
       }
     } else {

@@ -5,6 +5,8 @@ import { ErrorMapper } from "utils/ErrorMapper";
 import { RoleHarvester } from "roles/harvester";
 import { RoleUpgrader } from "roles/upgrader";
 import { RoleBuilder } from "roles/builder";
+import { SpawnManager } from "managers/SpawnManager";
+import { AssignmentManager } from "managers/AssignmentManager";
 import "utils/ConsoleCommands"; // Import to register global console commands
 import * as _ from "lodash";
 
@@ -28,6 +30,7 @@ declare global {
     role: string;
     room: string;
     working: boolean;
+    assignedSource?: string;
     _trav?: any;
     _travel?: any;
   }
@@ -47,41 +50,42 @@ declare global {
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 export const loop = ErrorMapper.wrapLoop(() => {
-  console.log(`Current game tick is ${Game.time}`);
-
-  // Automatically delete memory of missing creeps
+  // Clean up memory of dead creeps
   for (const name in Memory.creeps) {
     if (!(name in Game.creeps)) {
+      const creep = Memory.creeps[name];
+      console.log(`💀 Cleaning up memory for ${name} (${creep.role})`);
       delete Memory.creeps[name];
     }
   }
 
-  // Spawn new creeps as needed
-  const harvesters = _.filter(Game.creeps, creep => creep.memory.role === "harvester");
-  const upgraders = _.filter(Game.creeps, creep => creep.memory.role === "upgrader");
-  const builders = _.filter(Game.creeps, creep => creep.memory.role === "builder");
+  // Run RCL-specific logic for each owned room
+  for (const roomName in Game.rooms) {
+    const room = Game.rooms[roomName];
 
-  // Maintain minimum creep counts
-  if (harvesters.length < 2) {
-    const newName = "Harvester" + Game.time;
-    Game.spawns["Spawn1"]?.spawnCreep([WORK, CARRY, MOVE], newName, {
-      memory: { role: "harvester", room: "", working: false }
-    });
-  } else if (upgraders.length < 2) {
-    const newName = "Upgrader" + Game.time;
-    Game.spawns["Spawn1"]?.spawnCreep([WORK, CARRY, MOVE], newName, {
-      memory: { role: "upgrader", room: "", working: false }
-    });
-  } else if (builders.length < 2) {
-    const newName = "Builder" + Game.time;
-    Game.spawns["Spawn1"]?.spawnCreep([WORK, CARRY, MOVE], newName, {
-      memory: { role: "builder", room: "", working: false }
-    });
+    // Only manage rooms we own
+    if (!room.controller || !room.controller.my) continue;
+
+    const rcl = room.controller.level;
+
+    // Get primary spawn
+    const spawns = room.find(FIND_MY_SPAWNS);
+    if (spawns.length === 0) continue;
+    const spawn = spawns[0];
+
+    // Run spawn manager (handles all RCL levels)
+    SpawnManager.run(spawn);
+
+    // Display assignment info periodically
+    if (Game.time % 50 === 0) {
+      AssignmentManager.displayAssignments(room);
+    }
   }
 
-  // Run creep roles using Traveler pathfinding
+  // Run creep roles
   for (const name in Game.creeps) {
     const creep = Game.creeps[name];
+
     if (creep.memory.role === "harvester") {
       RoleHarvester.run(creep);
     } else if (creep.memory.role === "upgrader") {
@@ -89,16 +93,5 @@ export const loop = ErrorMapper.wrapLoop(() => {
     } else if (creep.memory.role === "builder") {
       RoleBuilder.run(creep);
     }
-  }
-
-  // Display spawning status
-  if (Game.spawns["Spawn1"]?.spawning) {
-    const spawningCreep = Game.creeps[Game.spawns["Spawn1"].spawning.name];
-    Game.spawns["Spawn1"].room.visual.text(
-      "🛠️" + spawningCreep.memory.role,
-      Game.spawns["Spawn1"].pos.x + 1,
-      Game.spawns["Spawn1"].pos.y,
-      { align: "left", opacity: 0.8 }
-    );
   }
 });
