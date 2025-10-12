@@ -1,7 +1,15 @@
 import { Traveler } from "../Traveler";
+import type { RCLConfig } from "configs/RCL1Config";
 
 export class RoleHarvester {
-  public static run(creep: Creep): void {
+  public static run(creep: Creep, config: RCLConfig): void {
+    // Get role config for this role
+    const roleConfig = config.roles.harvester;
+    if (!roleConfig) {
+      console.log(`⚠️ No harvester config found for ${creep.name}`);
+      return;
+    }
+
     // Toggle working state
     if (creep.store.getFreeCapacity() === 0) {
       creep.memory.working = true;

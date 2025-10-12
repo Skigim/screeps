@@ -14,6 +14,9 @@ export class RoomStateManager {
     // TODO: Add RCL 2-8 configs as we progress
   };
 
+  // Cache configs by room name for creep access
+  private static roomConfigs: Map<string, RCLConfig> = new Map();
+
   /**
    * Main state machine - runs all managers for a room
    */
@@ -25,6 +28,9 @@ export class RoomStateManager {
       console.log(`⚠️ No config available for room ${room.name}`);
       return;
     }
+
+    // Cache config for creeps to access
+    this.roomConfigs.set(room.name, config);
 
     // Get primary spawn
     const spawns = room.find(FIND_MY_SPAWNS);
@@ -49,6 +55,13 @@ export class RoomStateManager {
   public static getConfigForRoom(room: Room): RCLConfig | null {
     if (!room.controller) return null;
     return this.getConfigForRCL(room.controller.level);
+  }
+
+  /**
+   * Get cached config for a creep's room
+   */
+  public static getConfigForCreep(creep: Creep): RCLConfig | null {
+    return this.roomConfigs.get(creep.room.name) || null;
   }
 
   /**

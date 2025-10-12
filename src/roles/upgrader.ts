@@ -1,7 +1,15 @@
 import { Traveler } from "../Traveler";
+import type { RCLConfig } from "configs/RCL1Config";
 
 export class RoleUpgrader {
-  public static run(creep: Creep): void {
+  public static run(creep: Creep, config: RCLConfig): void {
+    // Get role config for this role
+    const roleConfig = config.roles.upgrader;
+    if (!roleConfig) {
+      console.log(`⚠️ No upgrader config found for ${creep.name}`);
+      return;
+    }
+
     // Toggle working state
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = false;

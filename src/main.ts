@@ -73,12 +73,20 @@ export const loop = ErrorMapper.wrapLoop(() => {
   for (const name in Game.creeps) {
     const creep = Game.creeps[name];
 
+    // Get config for this creep's room
+    const config = RoomStateManager.getConfigForCreep(creep);
+    if (!config) {
+      console.log(`⚠️ No config available for ${creep.name} in room ${creep.room.name}`);
+      continue;
+    }
+
+    // Execute role behavior with config
     if (creep.memory.role === "harvester") {
-      RoleHarvester.run(creep);
+      RoleHarvester.run(creep, config);
     } else if (creep.memory.role === "upgrader") {
-      RoleUpgrader.run(creep);
+      RoleUpgrader.run(creep, config);
     } else if (creep.memory.role === "builder") {
-      RoleBuilder.run(creep);
+      RoleBuilder.run(creep, config);
     }
   }
 });

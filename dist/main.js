@@ -3816,7 +3816,13 @@ Creep.prototype.travelTo = function (destination, options) {
 };
 
 class RoleHarvester {
-    static run(creep) {
+    static run(creep, config) {
+        // Get role config for this role
+        const roleConfig = config.roles.harvester;
+        if (!roleConfig) {
+            console.log(`⚠️ No harvester config found for ${creep.name}`);
+            return;
+        }
         // Toggle working state
         if (creep.store.getFreeCapacity() === 0) {
             creep.memory.working = true;
@@ -3864,7 +3870,13 @@ class RoleHarvester {
 }
 
 class RoleUpgrader {
-    static run(creep) {
+    static run(creep, config) {
+        // Get role config for this role
+        const roleConfig = config.roles.upgrader;
+        if (!roleConfig) {
+            console.log(`⚠️ No upgrader config found for ${creep.name}`);
+            return;
+        }
         // Toggle working state
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
             creep.memory.working = false;
@@ -3894,7 +3906,13 @@ class RoleUpgrader {
 }
 
 class RoleBuilder {
-    static run(creep) {
+    static run(creep, config) {
+        // Get role config for this role
+        const roleConfig = config.roles.builder;
+        if (!roleConfig) {
+            console.log(`⚠️ No builder config found for ${creep.name}`);
+            return;
+        }
         // Toggle working state
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
             creep.memory.working = false;
@@ -4217,6 +4235,8 @@ class RoomStateManager {
             console.log(`⚠️ No config available for room ${room.name}`);
             return;
         }
+        // Cache config for creeps to access
+        this.roomConfigs.set(room.name, config);
         // Get primary spawn
         const spawns = room.find(FIND_MY_SPAWNS);
         if (spawns.length === 0)
@@ -4238,6 +4258,12 @@ class RoomStateManager {
         if (!room.controller)
             return null;
         return this.getConfigForRCL(room.controller.level);
+    }
+    /**
+     * Get cached config for a creep's room
+     */
+    static getConfigForCreep(creep) {
+        return this.roomConfigs.get(creep.room.name) || null;
     }
     /**
      * Get config for a specific RCL, with fallback to highest available RCL config
@@ -4280,6 +4306,8 @@ RoomStateManager.RCL_CONFIGS = {
     1: RCL1Config
     // TODO: Add RCL 2-8 configs as we progress
 };
+// Cache configs by room name for creep access
+RoomStateManager.roomConfigs = new Map();
 
 /**
  * Console commands for manual spawn control
@@ -4488,14 +4516,21 @@ const loop = ErrorMapper.wrapLoop(() => {
     // Run creep roles
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
+        // Get config for this creep's room
+        const config = RoomStateManager.getConfigForCreep(creep);
+        if (!config) {
+            console.log(`⚠️ No config available for ${creep.name} in room ${creep.room.name}`);
+            continue;
+        }
+        // Execute role behavior with config
         if (creep.memory.role === "harvester") {
-            RoleHarvester.run(creep);
+            RoleHarvester.run(creep, config);
         }
         else if (creep.memory.role === "upgrader") {
-            RoleUpgrader.run(creep);
+            RoleUpgrader.run(creep, config);
         }
         else if (creep.memory.role === "builder") {
-            RoleBuilder.run(creep);
+            RoleBuilder.run(creep, config);
         }
     }
 });
