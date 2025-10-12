@@ -51,11 +51,20 @@ src/
    - Handles all assignment logic internally
    - Pure execution logic, no state decisions
 
-5. **Main Loop** (`src/main.ts`)
+5. **Roles** (`src/roles/*.ts`)
+   - **Behavior Executors** (not state holders)
+   - Receive config as parameter from main loop
+   - Execute role-specific behaviors based on config
+   - Can access their role's specific configuration
+   - Example: Harvester checks `config.roles.harvester` for its settings
+   - Pure execution logic, config-driven behavior
+
+6. **Main Loop** (`src/main.ts`)
    - **Minimal Orchestrator**
    - Cleans up dead creep memory
    - Calls RoomStateManager for each owned room
-   - Executes creep roles
+   - Gets config from RoomStateManager for each creep
+   - Executes creep roles with config parameter
    - No business logic, just coordination
 
 ### Adding New RCL Levels
@@ -122,14 +131,43 @@ main.ts: For each owned room → RoomStateManager.run(room)
       ↓
 RoomStateManager: Get RCL config for room
       ↓
+RoomStateManager: Cache config for creep access
+      ↓
 RoomStateManager: SpawnManager.run(spawn, config)
       ↓
 RoomStateManager: AssignmentManager.run(room, config)
       ↓
-main.ts: For each creep → Execute role behavior
+main.ts: For each creep:
+      ├→ Get config from RoomStateManager.getConfigForCreep(creep)
+      └→ Execute role behavior with config parameter
       ↓
 Game Tick End
 ```
+
+### Config-Driven Role Behavior
+
+Roles now receive config to enable data-driven behavior:
+
+```typescript
+// Role receives config and can access its specific settings
+export class RoleHarvester {
+  public static run(creep: Creep, config: RCLConfig): void {
+    const roleConfig = config.roles.harvester;
+
+    // Can use roleConfig to determine behavior
+    // Example: roleConfig.body tells what parts this role should have
+    // Example: roleConfig.assignToSource tells if it needs source assignment
+
+    // Execute harvester behavior...
+  }
+}
+```
+
+**Benefits:**
+- Roles can adapt behavior based on RCL
+- Future configs can add role-specific parameters
+- Example: `config.roles.harvester.dropoffPriority` or `config.roles.harvester.harvestThreshold`
+- Testable: Can test roles with different configs
 
 ### Example: RCL1Config
 
