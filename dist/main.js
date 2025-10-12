@@ -3888,17 +3888,34 @@ class RoleUpgrader {
             // Upgrade controller
             if (creep.room.controller) {
                 if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                    // Use Traveler for pathfinding
                     Traveler.travelTo(creep, creep.room.controller);
                 }
             }
         }
         else {
-            // Harvest energy
-            const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-            if (source) {
-                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, source);
+            // Withdraw energy from spawn/extensions (never harvest)
+            const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                filter: (structure) => {
+                    return ((structure.structureType === STRUCTURE_EXTENSION ||
+                        structure.structureType === STRUCTURE_SPAWN) &&
+                        structure.store &&
+                        structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+                }
+            });
+            if (target) {
+                if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, target);
+                }
+            }
+            else {
+                // No energy available - help haul from sources to spawn/extensions
+                const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                    filter: resource => resource.resourceType === RESOURCE_ENERGY
+                });
+                if (droppedEnergy) {
+                    if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, droppedEnergy);
+                    }
                 }
             }
         }
@@ -3921,11 +3938,10 @@ class RoleBuilder {
             creep.memory.working = true;
         }
         if (creep.memory.working) {
-            // Build construction sites
+            // Build nearest construction site
             const target = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
             if (target) {
                 if (creep.build(target) === ERR_NOT_IN_RANGE) {
-                    // Use Traveler for pathfinding
                     Traveler.travelTo(creep, target);
                 }
             }
@@ -3939,11 +3955,18 @@ class RoleBuilder {
             }
         }
         else {
-            // Harvest energy
-            const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-            if (source) {
-                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, source);
+            // Withdraw energy from spawn/extensions (never harvest)
+            const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                filter: (structure) => {
+                    return ((structure.structureType === STRUCTURE_EXTENSION ||
+                        structure.structureType === STRUCTURE_SPAWN) &&
+                        structure.store &&
+                        structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+                }
+            });
+            if (target) {
+                if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, target);
                 }
             }
         }
@@ -3965,21 +3988,69 @@ const RCL1Config = {
             target: 3,
             body: [WORK, CARRY, MOVE],
             priority: 1,
-            assignToSource: true // Harvesters get assigned to sources
+            assignToSource: true,
+            behavior: {
+                energySource: "harvest",
+                workTarget: "spawn/extensions"
+            }
         },
         upgrader: {
             target: 2,
             body: [WORK, CARRY, MOVE],
-            priority: 2 // Second priority - controller progress
-        },
-        builder: {
-            target: 0,
-            body: [WORK, CARRY, MOVE],
-            priority: 3 // Lowest priority - only if manually spawned
+            priority: 2,
+            behavior: {
+                energySource: "withdraw",
+                workTarget: "controller"
+            }
         }
     },
     sourceAssignment: {
         maxWorkPartsPerSource: 5 // RCL1: Limit to 5 work parts per source
+    }
+};
+
+/**
+ * RCL 2 Configuration
+ * Defines spawn targets and body configurations for RCL 2
+ *
+ * Strategy:
+ * - Increased harvester capacity with larger bodies
+ * - More upgraders to push to RCL 3
+ * - Builders now active for construction sites
+ */
+const RCL2Config = {
+    roles: {
+        harvester: {
+            target: 4,
+            body: [WORK, WORK, CARRY, MOVE, MOVE],
+            priority: 1,
+            assignToSource: true,
+            behavior: {
+                energySource: "harvest",
+                workTarget: "spawn/extensions"
+            }
+        },
+        upgrader: {
+            target: 3,
+            body: [WORK, CARRY, MOVE],
+            priority: 2,
+            behavior: {
+                energySource: "withdraw",
+                workTarget: "controller"
+            }
+        },
+        builder: {
+            target: 2,
+            body: [WORK, CARRY, MOVE],
+            priority: 3,
+            behavior: {
+                energySource: "withdraw",
+                workTarget: "construction"
+            }
+        }
+    },
+    sourceAssignment: {
+        maxWorkPartsPerSource: 10 // RCL2: Increased to 10 work parts per source
     }
 };
 
@@ -4308,8 +4379,9 @@ class RoomStateManager {
 }
 // Map of RCL configs (centralized here instead of SpawnManager)
 RoomStateManager.RCL_CONFIGS = {
-    1: RCL1Config
-    // TODO: Add RCL 2-8 configs as we progress
+    1: RCL1Config,
+    2: RCL2Config
+    // TODO: Add RCL 3-8 configs as we progress
 };
 // Cache configs by room name for creep access
 RoomStateManager.roomConfigs = new Map();

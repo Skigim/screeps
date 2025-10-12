@@ -1,4 +1,5 @@
 import { RCL1Config } from "configs/RCL1Config";
+import { RCL2Config } from "configs/RCL2Config";
 import type { RCLConfig } from "configs/RCL1Config";
 import { SpawnManager } from "./SpawnManager";
 import { AssignmentManager } from "./AssignmentManager";
@@ -10,8 +11,9 @@ import { AssignmentManager } from "./AssignmentManager";
 export class RoomStateManager {
   // Map of RCL configs (centralized here instead of SpawnManager)
   private static readonly RCL_CONFIGS: { [rcl: number]: RCLConfig } = {
-    1: RCL1Config
-    // TODO: Add RCL 2-8 configs as we progress
+    1: RCL1Config,
+    2: RCL2Config
+    // TODO: Add RCL 3-8 configs as we progress
   };
 
   // Cache configs by room name for creep access

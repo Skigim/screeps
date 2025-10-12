@@ -1,11 +1,11 @@
 /**
- * RCL 1 Configuration
- * Defines spawn targets and body configurations for RCL 1
+ * RCL 2 Configuration
+ * Defines spawn targets and body configurations for RCL 2
  *
  * Strategy:
- * Phase 1 (Bootstrap): Spawn first generalist
- * Phase 2 (Stabilization): Spawn 2-3 harvesters, then 1-2 upgraders
- * Phase 3 (The Push): Maintain economy and upgrade to RCL 2
+ * - Increased harvester capacity with larger bodies
+ * - More upgraders to push to RCL 3
+ * - Builders now active for construction sites
  */
 
 export interface RoleConfig {
@@ -28,11 +28,11 @@ export interface RCLConfig {
   };
 }
 
-export const RCL1Config: RCLConfig = {
+export const RCL2Config: RCLConfig = {
   roles: {
     harvester: {
-      target: 3,
-      body: [WORK, CARRY, MOVE], // Cost: 200 energy
+      target: 4,
+      body: [WORK, WORK, CARRY, MOVE, MOVE], // Cost: 400 energy
       priority: 1, // Highest priority - energy income
       assignToSource: true, // Harvesters get assigned to sources
       behavior: {
@@ -41,16 +41,25 @@ export const RCL1Config: RCLConfig = {
       }
     },
     upgrader: {
-      target: 2,
+      target: 3,
       body: [WORK, CARRY, MOVE], // Cost: 200 energy
       priority: 2, // Second priority - controller progress
       behavior: {
-        energySource: "withdraw", // Upgraders withdraw, never harvest
+        energySource: "withdraw", // Upgraders withdraw from spawn/extensions
         workTarget: "controller"
+      }
+    },
+    builder: {
+      target: 2,
+      body: [WORK, CARRY, MOVE], // Cost: 200 energy
+      priority: 3, // Third priority - construction
+      behavior: {
+        energySource: "withdraw", // Builders withdraw from spawn/extensions
+        workTarget: "construction"
       }
     }
   },
   sourceAssignment: {
-    maxWorkPartsPerSource: 5 // RCL1: Limit to 5 work parts per source
+    maxWorkPartsPerSource: 10 // RCL2: Increased to 10 work parts per source
   }
 };

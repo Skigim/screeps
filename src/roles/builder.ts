@@ -19,11 +19,10 @@ export class RoleBuilder {
     }
 
     if (creep.memory.working) {
-      // Build construction sites
+      // Build nearest construction site
       const target = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
       if (target) {
         if (creep.build(target) === ERR_NOT_IN_RANGE) {
-          // Use Traveler for pathfinding
           Traveler.travelTo(creep, target);
         }
       } else {
@@ -35,11 +34,21 @@ export class RoleBuilder {
         }
       }
     } else {
-      // Harvest energy
-      const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-      if (source) {
-        if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, source);
+      // Withdraw energy from spawn/extensions (never harvest)
+      const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+        filter: (structure: any) => {
+          return (
+            (structure.structureType === STRUCTURE_EXTENSION ||
+              structure.structureType === STRUCTURE_SPAWN) &&
+            structure.store &&
+            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+          );
+        }
+      });
+
+      if (target) {
+        if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, target);
         }
       }
     }

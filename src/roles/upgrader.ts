@@ -22,16 +22,36 @@ export class RoleUpgrader {
       // Upgrade controller
       if (creep.room.controller) {
         if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-          // Use Traveler for pathfinding
           Traveler.travelTo(creep, creep.room.controller);
         }
       }
     } else {
-      // Harvest energy
-      const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-      if (source) {
-        if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, source);
+      // Withdraw energy from spawn/extensions (never harvest)
+      const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+        filter: (structure: any) => {
+          return (
+            (structure.structureType === STRUCTURE_EXTENSION ||
+              structure.structureType === STRUCTURE_SPAWN) &&
+            structure.store &&
+            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+          );
+        }
+      });
+
+      if (target) {
+        if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, target);
+        }
+      } else {
+        // No energy available - help haul from sources to spawn/extensions
+        const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+          filter: resource => resource.resourceType === RESOURCE_ENERGY
+        });
+
+        if (droppedEnergy) {
+          if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, droppedEnergy);
+          }
         }
       }
     }
