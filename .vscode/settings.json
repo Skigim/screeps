@@ -9,7 +9,7 @@
         "editor.formatOnSave": false
     },
     "editor.codeActionsOnSave": {
-        "source.fixAll.eslint": true
+        "source.fixAll.eslint": "explicit"
     },
     "editor.formatOnSave": true,
     "editor.renderWhitespace": "boundary",
@@ -24,5 +24,13 @@
         "typings/**": true
     },
     "typescript.tsdk": "./node_modules/typescript/lib",
-    "eslint.enable": true
+    "eslint.enable": true,
+
+    // GitHub Copilot optimization settings to reduce tool usage
+    "github.copilot.advanced": {
+        "debug.useElectronPromptForVisualStudioCode": false,
+        "debug.useNodeAtPathForVisualStudioCode": false
+    },
+    "github.copilot.editor.enableAutoCompletions": true,
+    "chat.editor.wordWrap": "on"
 }
