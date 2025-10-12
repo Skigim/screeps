@@ -4022,7 +4022,7 @@ const RCL2Config = {
     roles: {
         harvester: {
             target: 4,
-            body: [WORK, WORK, CARRY, MOVE, MOVE],
+            body: [WORK, CARRY, MOVE],
             priority: 1,
             assignToSource: true,
             behavior: {
@@ -4050,7 +4050,7 @@ const RCL2Config = {
         }
     },
     sourceAssignment: {
-        maxWorkPartsPerSource: 10 // RCL2: Increased to 10 work parts per source
+        maxWorkPartsPerSource: 5 // Maximum efficiency: 5 work parts = 10 energy/tick (source regen rate)
     }
 };
 
