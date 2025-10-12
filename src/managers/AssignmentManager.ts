@@ -7,6 +7,29 @@ import type { RCLConfig } from "configs/RCL1Config";
  */
 export class AssignmentManager {
   /**
+   * Main run method - handles all assignments for a room
+   */
+  public static run(room: Room, config: RCLConfig): void {
+    // Find all roles that need source assignments
+    const rolesNeedingAssignment = Object.entries(config.roles)
+      .filter(([_, roleConfig]) => roleConfig.assignToSource)
+      .map(([roleName, _]) => roleName);
+
+    // Assign creeps that need it
+    for (const roleName of rolesNeedingAssignment) {
+      const creeps = room.find(FIND_MY_CREEPS, {
+        filter: (creep) => creep.memory.role === roleName
+      });
+
+      for (const creep of creeps) {
+        if (this.needsReassignment(creep)) {
+          this.assignCreepToSource(creep, room, config);
+        }
+      }
+    }
+  }
+
+  /**
    * Get all sources in a room
    */
   public static getRoomSources(room: Room): Source[] {

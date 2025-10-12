@@ -1,21 +1,14 @@
-import { RCL1Config } from "configs/RCL1Config";
 import type { RCLConfig, RoleConfig } from "configs/RCL1Config";
 
 /**
- * Central Spawn Manager
- * Handles spawning logic for all RCL levels by importing RCL-specific configs
+ * Spawn Manager
+ * Handles spawning logic based on provided RCL config
  */
 export class SpawnManager {
-  // Map of RCL configs
-  private static readonly RCL_CONFIGS: { [rcl: number]: RCLConfig } = {
-    1: RCL1Config
-    // TODO: Add RCL 2-8 configs as we progress
-  };
-
   /**
-   * Main spawn logic - delegates to RCL-specific config
+   * Main spawn logic - uses provided config
    */
-  public static run(spawn: StructureSpawn): void {
+  public static run(spawn: StructureSpawn, config: RCLConfig): void {
     // Don't spawn if already spawning
     if (spawn.spawning) {
       this.displaySpawningStatus(spawn);
@@ -23,15 +16,6 @@ export class SpawnManager {
     }
 
     const room = spawn.room;
-    if (!room.controller) return;
-
-    const rcl = room.controller.level;
-    const config = this.getConfigForRCL(rcl);
-
-    if (!config) {
-      console.log(`⚠️ No spawn config available (tried RCL ${rcl} and all fallbacks)`);
-      return;
-    }
 
     // Count creeps by role in this room
     const creepCounts = this.getCreepCounts(room);
@@ -43,41 +27,6 @@ export class SpawnManager {
 
     // Spawn based on priority
     this.spawnByPriority(spawn, config, creepCounts);
-  }
-
-  /**
-   * Get config for a specific RCL, with fallback to highest available RCL config
-   * Example: If RCL 5 is requested but only RCL 1-3 configs exist, use RCL 3
-   */
-  public static getConfigForRoom(room: Room): RCLConfig | null {
-    if (!room.controller) return null;
-    return this.getConfigForRCL(room.controller.level);
-  }
-
-  /**
-   * Get config for a specific RCL (internal method)
-   */
-  private static getConfigForRCL(rcl: number): RCLConfig | null {
-    // Try exact RCL match first
-    if (this.RCL_CONFIGS[rcl]) {
-      return this.RCL_CONFIGS[rcl];
-    }
-
-    // Fallback: Find highest available config that's less than or equal to current RCL
-    const availableRCLs = Object.keys(this.RCL_CONFIGS)
-      .map(Number)
-      .filter(configRcl => configRcl <= rcl)
-      .sort((a, b) => b - a); // Sort descending
-
-    if (availableRCLs.length > 0) {
-      const fallbackRCL = availableRCLs[0];
-      if (Game.time % 100 === 0) {
-        console.log(`ℹ️ Using RCL ${fallbackRCL} config for RCL ${rcl} (fallback)`);
-      }
-      return this.RCL_CONFIGS[fallbackRCL];
-    }
-
-    return null;
   }
 
   /**

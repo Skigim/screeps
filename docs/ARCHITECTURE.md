@@ -1,45 +1,62 @@
 # Screeps Architecture
 
-## Spawn Management System
+## State Machine-Based RCL Management
 
 ### Overview
-The spawn management system uses a modular, config-driven architecture that separates RCL-specific logic from the core spawning engine.
+The system uses a state machine architecture where RCL configs define the state, and managers execute behaviors based on that state.
 
 ### Structure
 
 ```
 src/
 ├── configs/
-│   ├── RCL1Config.ts      # RCL 1 spawn targets and body configs
-│   ├── RCL2Config.ts      # (TODO) RCL 2 configuration
-│   └── ...                # (TODO) RCL 3-8 configurations
+│   ├── RCL1Config.ts      # RCL 1 state definition
+│   ├── RCL2Config.ts      # (TODO) RCL 2 state definition
+│   └── ...                # (TODO) RCL 3-8 state definitions
 │
 ├── managers/
-│   ├── SpawnManager.ts         # Central spawn manager (imports configs)
-│   ├── AssignmentManager.ts    # Source assignment logic
+│   ├── RoomStateManager.ts     # State machine orchestrator
+│   ├── SpawnManager.ts         # Spawning behavior executor
+│   ├── AssignmentManager.ts    # Source assignment behavior executor
 │   └── RCL1SpawnManager.ts     # (DEPRECATED - to be removed)
 │
-└── main.ts                # Calls SpawnManager.run(spawn)
+└── main.ts                # Minimal orchestrator (creep cleanup + role execution)
 ```
 
 ### How It Works
 
-1. **Config Files** (`src/configs/RCL*Config.ts`)
-   - Define role targets (e.g., 3 harvesters, 2 upgraders)
-   - Define body parts for each role
-   - Set spawning priority for each role
+1. **RCL Configs** (`src/configs/RCL*Config.ts`)
+   - Define the STATE for each RCL level
+   - Specify role targets, body parts, priorities
+   - Configure source assignment rules
    - Export an `RCLConfig` object
 
-2. **SpawnManager** (`src/managers/SpawnManager.ts`)
-   - Imports all RCL configs
-   - Automatically selects the correct config based on room's RCL
-   - **Fallback Logic**: If a config doesn't exist for the current RCL, it uses the highest available config (e.g., if RCL 5 but only RCL 1-3 configs exist, uses RCL 3)
-   - Handles spawn logic for all RCL levels
-   - Spawns creeps based on priority and target counts
+2. **RoomStateManager** (`src/managers/RoomStateManager.ts`)
+   - **State Machine Orchestrator**
+   - Loads appropriate RCL config based on room level
+   - Fallback logic: uses highest available config if exact match not found
+   - Delegates to specialized managers (SpawnManager, AssignmentManager)
+   - Displays consolidated room status
 
-3. **Main Loop** (`src/main.ts`)
-   - Calls `SpawnManager.run(spawn)` for each room
-   - SpawnManager handles everything else automatically
+3. **SpawnManager** (`src/managers/SpawnManager.ts`)
+   - **Behavior Executor** (not state holder)
+   - Receives config from RoomStateManager
+   - Executes spawning based on config priorities
+   - Pure execution logic, no state decisions
+
+4. **AssignmentManager** (`src/managers/AssignmentManager.ts`)
+   - **Behavior Executor** (not state holder)
+   - Receives config from RoomStateManager
+   - Executes source assignments based on config rules
+   - Handles all assignment logic internally
+   - Pure execution logic, no state decisions
+
+5. **Main Loop** (`src/main.ts`)
+   - **Minimal Orchestrator**
+   - Cleans up dead creep memory
+   - Calls RoomStateManager for each owned room
+   - Executes creep roles
+   - No business logic, just coordination
 
 ### Adding New RCL Levels
 
@@ -52,7 +69,8 @@ export const RCL2Config: RCLConfig = {
     harvester: {
       target: 4,
       body: [WORK, WORK, CARRY, MOVE, MOVE],
-      priority: 1
+      priority: 1,
+      assignToSource: true
     },
     upgrader: {
       target: 3,
@@ -64,11 +82,14 @@ export const RCL2Config: RCLConfig = {
       body: [WORK, CARRY, MOVE],
       priority: 3
     }
+  },
+  sourceAssignment: {
+    maxWorkPartsPerSource: 10  // RCL2: Increase to 10 work parts
   }
 };
 ```
 
-2. **Import in SpawnManager**: `src/managers/SpawnManager.ts`
+2. **Register in RoomStateManager**: `src/managers/RoomStateManager.ts`
 ```typescript
 import { RCL2Config } from "configs/RCL2Config";
 
@@ -78,16 +99,37 @@ private static readonly RCL_CONFIGS: { [rcl: number]: RCLConfig } = {
 };
 ```
 
-3. **Done!** SpawnManager will automatically use it when the room reaches RCL 2.
+3. **Done!** The state machine automatically uses it when the room reaches RCL 2.
 
 ### Benefits
 
-- **Modularity**: Each RCL config is separate and independent
-- **Scalability**: Easy to add new RCL levels without touching core logic
-- **Graceful Degradation**: Fallback logic ensures rooms keep working even without exact RCL configs
-- **Maintainability**: Clear separation of concerns
-- **Flexibility**: Simple to adjust targets and body compositions per RCL
-- **Type Safety**: Full TypeScript type checking for configs
+- **State-Driven**: Configs define WHAT to do, managers define HOW
+- **Separation of Concerns**: State (configs) vs. Behavior (managers)
+- **Centralized Control**: RoomStateManager is single source of truth
+- **Testable**: Managers can be tested with different configs
+- **Scalable**: Easy to add new RCL levels and new managers
+- **Clean Main Loop**: main.ts has zero business logic
+- **Graceful Degradation**: Fallback logic ensures rooms keep working
+
+### Data Flow
+
+```
+Game Tick Start
+      ↓
+main.ts: Clean up dead creeps
+      ↓
+main.ts: For each owned room → RoomStateManager.run(room)
+      ↓
+RoomStateManager: Get RCL config for room
+      ↓
+RoomStateManager: SpawnManager.run(spawn, config)
+      ↓
+RoomStateManager: AssignmentManager.run(room, config)
+      ↓
+main.ts: For each creep → Execute role behavior
+      ↓
+Game Tick End
+```
 
 ### Example: RCL1Config
 

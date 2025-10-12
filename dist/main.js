@@ -3961,28 +3961,20 @@ const RCL1Config = {
 };
 
 /**
- * Central Spawn Manager
- * Handles spawning logic for all RCL levels by importing RCL-specific configs
+ * Spawn Manager
+ * Handles spawning logic based on provided RCL config
  */
 class SpawnManager {
     /**
-     * Main spawn logic - delegates to RCL-specific config
+     * Main spawn logic - uses provided config
      */
-    static run(spawn) {
+    static run(spawn, config) {
         // Don't spawn if already spawning
         if (spawn.spawning) {
             this.displaySpawningStatus(spawn);
             return;
         }
         const room = spawn.room;
-        if (!room.controller)
-            return;
-        const rcl = room.controller.level;
-        const config = this.getConfigForRCL(rcl);
-        if (!config) {
-            console.log(`⚠️ No spawn config available (tried RCL ${rcl} and all fallbacks)`);
-            return;
-        }
         // Count creeps by role in this room
         const creepCounts = this.getCreepCounts(room);
         // Display status periodically
@@ -3991,37 +3983,6 @@ class SpawnManager {
         }
         // Spawn based on priority
         this.spawnByPriority(spawn, config, creepCounts);
-    }
-    /**
-     * Get config for a specific RCL, with fallback to highest available RCL config
-     * Example: If RCL 5 is requested but only RCL 1-3 configs exist, use RCL 3
-     */
-    static getConfigForRoom(room) {
-        if (!room.controller)
-            return null;
-        return this.getConfigForRCL(room.controller.level);
-    }
-    /**
-     * Get config for a specific RCL (internal method)
-     */
-    static getConfigForRCL(rcl) {
-        // Try exact RCL match first
-        if (this.RCL_CONFIGS[rcl]) {
-            return this.RCL_CONFIGS[rcl];
-        }
-        // Fallback: Find highest available config that's less than or equal to current RCL
-        const availableRCLs = Object.keys(this.RCL_CONFIGS)
-            .map(Number)
-            .filter(configRcl => configRcl <= rcl)
-            .sort((a, b) => b - a); // Sort descending
-        if (availableRCLs.length > 0) {
-            const fallbackRCL = availableRCLs[0];
-            if (Game.time % 100 === 0) {
-                console.log(`ℹ️ Using RCL ${fallbackRCL} config for RCL ${rcl} (fallback)`);
-            }
-            return this.RCL_CONFIGS[fallbackRCL];
-        }
-        return null;
     }
     /**
      * Count creeps by role in a room
@@ -4115,17 +4076,32 @@ class SpawnManager {
         return errors[code] || `Error code: ${code}`;
     }
 }
-// Map of RCL configs
-SpawnManager.RCL_CONFIGS = {
-    1: RCL1Config
-    // TODO: Add RCL 2-8 configs as we progress
-};
 
 /**
  * Assignment Manager - Manages creep assignments to prevent overcrowding
  * Uses RCL-specific configs to determine max work parts per source
  */
 class AssignmentManager {
+    /**
+     * Main run method - handles all assignments for a room
+     */
+    static run(room, config) {
+        // Find all roles that need source assignments
+        const rolesNeedingAssignment = Object.entries(config.roles)
+            .filter(([_, roleConfig]) => roleConfig.assignToSource)
+            .map(([roleName, _]) => roleName);
+        // Assign creeps that need it
+        for (const roleName of rolesNeedingAssignment) {
+            const creeps = room.find(FIND_MY_CREEPS, {
+                filter: (creep) => creep.memory.role === roleName
+            });
+            for (const creep of creeps) {
+                if (this.needsReassignment(creep)) {
+                    this.assignCreepToSource(creep, room, config);
+                }
+            }
+        }
+    }
     /**
      * Get all sources in a room
      */
@@ -4224,6 +4200,86 @@ class AssignmentManager {
         }
     }
 }
+
+/**
+ * Room State Manager - RCL-based state machine
+ * Orchestrates all room-level managers based on RCL configuration
+ */
+class RoomStateManager {
+    /**
+     * Main state machine - runs all managers for a room
+     */
+    static run(room) {
+        if (!room.controller || !room.controller.my)
+            return;
+        const config = this.getConfigForRoom(room);
+        if (!config) {
+            console.log(`⚠️ No config available for room ${room.name}`);
+            return;
+        }
+        // Get primary spawn
+        const spawns = room.find(FIND_MY_SPAWNS);
+        if (spawns.length === 0)
+            return;
+        const spawn = spawns[0];
+        // Run spawn manager
+        SpawnManager.run(spawn, config);
+        // Run assignment manager
+        AssignmentManager.run(room, config);
+        // Display status periodically
+        if (Game.time % 50 === 0) {
+            this.displayRoomStatus(room, config);
+        }
+    }
+    /**
+     * Get config for a room based on its RCL
+     */
+    static getConfigForRoom(room) {
+        if (!room.controller)
+            return null;
+        return this.getConfigForRCL(room.controller.level);
+    }
+    /**
+     * Get config for a specific RCL, with fallback to highest available RCL config
+     */
+    static getConfigForRCL(rcl) {
+        // Try exact RCL match first
+        if (this.RCL_CONFIGS[rcl]) {
+            return this.RCL_CONFIGS[rcl];
+        }
+        // Fallback: Find highest available config that's less than or equal to current RCL
+        const availableRCLs = Object.keys(this.RCL_CONFIGS)
+            .map(Number)
+            .filter(configRcl => configRcl <= rcl)
+            .sort((a, b) => b - a); // Sort descending
+        if (availableRCLs.length > 0) {
+            const fallbackRCL = availableRCLs[0];
+            if (Game.time % 100 === 0) {
+                console.log(`ℹ️ Room ${Game.rooms[Object.keys(Game.rooms)[0]].name}: Using RCL ${fallbackRCL} config for RCL ${rcl} (fallback)`);
+            }
+            return this.RCL_CONFIGS[fallbackRCL];
+        }
+        return null;
+    }
+    /**
+     * Display consolidated room status
+     */
+    static displayRoomStatus(room, config) {
+        var _a, _b, _c;
+        console.log(`\n╔═══════════════════════════════════════════╗`);
+        console.log(`║ Room Status: ${room.name.padEnd(28)} ║`);
+        console.log(`╠═══════════════════════════════════════════╣`);
+        console.log(`║ RCL: ${((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) || 0} | Progress: ${(_b = room.controller) === null || _b === void 0 ? void 0 : _b.progress}/${(_c = room.controller) === null || _c === void 0 ? void 0 : _c.progressTotal}`.padEnd(44) + '║');
+        console.log(`║ Energy: ${room.energyAvailable}/${room.energyCapacityAvailable}`.padEnd(44) + '║');
+        console.log(`╚═══════════════════════════════════════════╝`);
+        AssignmentManager.displayAssignments(room, config);
+    }
+}
+// Map of RCL configs (centralized here instead of SpawnManager)
+RoomStateManager.RCL_CONFIGS = {
+    1: RCL1Config
+    // TODO: Add RCL 2-8 configs as we progress
+};
 
 /**
  * Console commands for manual spawn control
@@ -4426,30 +4482,8 @@ const loop = ErrorMapper.wrapLoop(() => {
         // Only manage rooms we own
         if (!room.controller || !room.controller.my)
             continue;
-        // Get primary spawn
-        const spawns = room.find(FIND_MY_SPAWNS);
-        if (spawns.length === 0)
-            continue;
-        const spawn = spawns[0];
-        // Run spawn manager (handles all RCL levels)
-        SpawnManager.run(spawn);
-        // Get RCL config for this room
-        const config = SpawnManager.getConfigForRoom(room);
-        if (config) {
-            // Handle source assignments for harvesters
-            const harvesters = room.find(FIND_MY_CREEPS, {
-                filter: (creep) => creep.memory.role === "harvester"
-            });
-            for (const harvester of harvesters) {
-                if (AssignmentManager.needsReassignment(harvester)) {
-                    AssignmentManager.assignCreepToSource(harvester, room, config);
-                }
-            }
-            // Display assignment info periodically
-            if (Game.time % 50 === 0) {
-                AssignmentManager.displayAssignments(room, config);
-            }
-        }
+        // Run room state manager (handles all room-level logic)
+        RoomStateManager.run(room);
     }
     // Run creep roles
     for (const name in Game.creeps) {

@@ -5,8 +5,7 @@ import { ErrorMapper } from "utils/ErrorMapper";
 import { RoleHarvester } from "roles/harvester";
 import { RoleUpgrader } from "roles/upgrader";
 import { RoleBuilder } from "roles/builder";
-import { SpawnManager } from "managers/SpawnManager";
-import { AssignmentManager } from "managers/AssignmentManager";
+import { RoomStateManager } from "managers/RoomStateManager";
 import "utils/ConsoleCommands"; // Import to register global console commands
 import * as _ from "lodash";
 
@@ -66,34 +65,8 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // Only manage rooms we own
     if (!room.controller || !room.controller.my) continue;
 
-    // Get primary spawn
-    const spawns = room.find(FIND_MY_SPAWNS);
-    if (spawns.length === 0) continue;
-    const spawn = spawns[0];
-
-    // Run spawn manager (handles all RCL levels)
-    SpawnManager.run(spawn);
-
-    // Get RCL config for this room
-    const config = SpawnManager.getConfigForRoom(room);
-
-    if (config) {
-      // Handle source assignments for harvesters
-      const harvesters = room.find(FIND_MY_CREEPS, {
-        filter: (creep) => creep.memory.role === "harvester"
-      });
-
-      for (const harvester of harvesters) {
-        if (AssignmentManager.needsReassignment(harvester)) {
-          AssignmentManager.assignCreepToSource(harvester, room, config);
-        }
-      }
-
-      // Display assignment info periodically
-      if (Game.time % 50 === 0) {
-        AssignmentManager.displayAssignments(room, config);
-      }
-    }
+    // Run room state manager (handles all room-level logic)
+    RoomStateManager.run(room);
   }
 
   // Run creep roles
