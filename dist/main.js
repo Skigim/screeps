@@ -3971,6 +3971,11 @@ const RCL1Config = {
             target: 2,
             body: [WORK, CARRY, MOVE],
             priority: 2 // Second priority - controller progress
+        },
+        builder: {
+            target: 0,
+            body: [WORK, CARRY, MOVE],
+            priority: 3 // Lowest priority - only if manually spawned
         }
     },
     sourceAssignment: {

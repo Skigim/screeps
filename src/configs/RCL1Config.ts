@@ -36,6 +36,11 @@ export const RCL1Config: RCLConfig = {
       target: 2,
       body: [WORK, CARRY, MOVE], // Cost: 200 energy
       priority: 2 // Second priority - controller progress
+    },
+    builder: {
+      target: 0, // Don't auto-spawn builders at RCL1
+      body: [WORK, CARRY, MOVE], // Cost: 200 energy
+      priority: 3 // Lowest priority - only if manually spawned
     }
   },
   sourceAssignment: {
