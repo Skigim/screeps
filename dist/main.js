@@ -4050,9 +4050,9 @@ class SpawnManager {
         if (!room.controller)
             return;
         const rcl = room.controller.level;
-        const config = this.RCL_CONFIGS[rcl];
+        const config = this.getConfigForRCL(rcl);
         if (!config) {
-            console.log(`⚠️ No spawn config for RCL ${rcl}`);
+            console.log(`⚠️ No spawn config available (tried RCL ${rcl} and all fallbacks)`);
             return;
         }
         // Count creeps by role in this room
@@ -4063,6 +4063,29 @@ class SpawnManager {
         }
         // Spawn based on priority
         this.spawnByPriority(spawn, config, creepCounts);
+    }
+    /**
+     * Get config for a specific RCL, with fallback to highest available RCL config
+     * Example: If RCL 5 is requested but only RCL 1-3 configs exist, use RCL 3
+     */
+    static getConfigForRCL(rcl) {
+        // Try exact RCL match first
+        if (this.RCL_CONFIGS[rcl]) {
+            return this.RCL_CONFIGS[rcl];
+        }
+        // Fallback: Find highest available config that's less than or equal to current RCL
+        const availableRCLs = Object.keys(this.RCL_CONFIGS)
+            .map(Number)
+            .filter(configRcl => configRcl <= rcl)
+            .sort((a, b) => b - a); // Sort descending
+        if (availableRCLs.length > 0) {
+            const fallbackRCL = availableRCLs[0];
+            if (Game.time % 100 === 0) {
+                console.log(`ℹ️ Using RCL ${fallbackRCL} config for RCL ${rcl} (fallback)`);
+            }
+            return this.RCL_CONFIGS[fallbackRCL];
+        }
+        return null;
     }
     /**
      * Count creeps by role in a room

@@ -33,6 +33,7 @@ src/
 2. **SpawnManager** (`src/managers/SpawnManager.ts`)
    - Imports all RCL configs
    - Automatically selects the correct config based on room's RCL
+   - **Fallback Logic**: If a config doesn't exist for the current RCL, it uses the highest available config (e.g., if RCL 5 but only RCL 1-3 configs exist, uses RCL 3)
    - Handles spawn logic for all RCL levels
    - Spawns creeps based on priority and target counts
 
@@ -83,6 +84,7 @@ private static readonly RCL_CONFIGS: { [rcl: number]: RCLConfig } = {
 
 - **Modularity**: Each RCL config is separate and independent
 - **Scalability**: Easy to add new RCL levels without touching core logic
+- **Graceful Degradation**: Fallback logic ensures rooms keep working even without exact RCL configs
 - **Maintainability**: Clear separation of concerns
 - **Flexibility**: Simple to adjust targets and body compositions per RCL
 - **Type Safety**: Full TypeScript type checking for configs
@@ -111,3 +113,6 @@ export const RCL1Config: RCLConfig = {
 - Old `RCL1SpawnManager.ts` is now **deprecated**
 - All RCL-specific logic should be in config files
 - SpawnManager handles all the spawning logic centrally
+- **Fallback Behavior**: Rooms at higher RCLs will automatically use the highest available config until you add their specific config
+  - Example: RCL 4 room with only RCL 1-2 configs will use RCL 2 config
+  - Console message appears every 100 ticks to remind you: `ℹ️ Using RCL X config for RCL Y (fallback)`
