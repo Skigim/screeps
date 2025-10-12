@@ -49,6 +49,14 @@ export class SpawnManager {
    * Get config for a specific RCL, with fallback to highest available RCL config
    * Example: If RCL 5 is requested but only RCL 1-3 configs exist, use RCL 3
    */
+  public static getConfigForRoom(room: Room): RCLConfig | null {
+    if (!room.controller) return null;
+    return this.getConfigForRCL(room.controller.level);
+  }
+
+  /**
+   * Get config for a specific RCL (internal method)
+   */
   private static getConfigForRCL(rcl: number): RCLConfig | null {
     // Try exact RCL match first
     if (this.RCL_CONFIGS[rcl]) {

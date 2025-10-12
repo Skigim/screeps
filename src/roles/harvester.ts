@@ -1,13 +1,7 @@
 import { Traveler } from "../Traveler";
-import { AssignmentManager } from "../managers/AssignmentManager";
 
 export class RoleHarvester {
   public static run(creep: Creep): void {
-    // Assign to source if not already assigned
-    if (AssignmentManager.needsReassignment(creep)) {
-      AssignmentManager.assignCreepToSource(creep, creep.room);
-    }
-
     // Toggle working state
     if (creep.store.getFreeCapacity() === 0) {
       creep.memory.working = true;

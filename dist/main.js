@@ -3815,84 +3815,8 @@ Creep.prototype.travelTo = function (destination, options) {
     return Traveler.travelTo(this, destination, options);
 };
 
-/**
- * Assignment Manager - Manages creep assignments to prevent overcrowding
- * Limits: 5 work parts per source
- */
-class AssignmentManager {
-    /**
-     * Get assigned creeps for a source
-     */
-    static getSourceAssignments(sourceId) {
-        return Object.values(Game.creeps).filter(creep => creep.memory.assignedSource === sourceId);
-    }
-    /**
-     * Calculate total work parts assigned to a source
-     */
-    static getSourceWorkParts(sourceId) {
-        const assignedCreeps = this.getSourceAssignments(sourceId);
-        return assignedCreeps.reduce((total, creep) => {
-            return total + creep.body.filter(part => part.type === WORK).length;
-        }, 0);
-    }
-    /**
-     * Assign a creep to the best available source
-     * Returns true if assignment successful
-     */
-    static assignCreepToSource(creep, room) {
-        const sources = room.find(FIND_SOURCES);
-        // Find source with fewest work parts
-        let bestSource = null;
-        let minWorkParts = Infinity;
-        for (const source of sources) {
-            const workParts = this.getSourceWorkParts(source.id);
-            if (workParts < 5 && workParts < minWorkParts) {
-                minWorkParts = workParts;
-                bestSource = source;
-            }
-        }
-        if (bestSource) {
-            creep.memory.assignedSource = bestSource.id;
-            console.log(`✓ Assigned ${creep.name} to source ${bestSource.id} (${minWorkParts + 1}/5 work parts)`);
-            return true;
-        }
-        return false;
-    }
-    /**
-     * Unassign a creep from its source
-     */
-    static unassignCreep(creep) {
-        delete creep.memory.assignedSource;
-    }
-    /**
-     * Check if a creep needs reassignment (e.g., if it lost work parts)
-     */
-    static needsReassignment(creep) {
-        if (!creep.memory.assignedSource)
-            return true;
-        const source = Game.getObjectById(creep.memory.assignedSource);
-        return !source; // Reassign if source no longer exists
-    } /**
-     * Display assignment info for debugging
-     */
-    static displayAssignments(room) {
-        const sources = room.find(FIND_SOURCES);
-        console.log(`\n=== Source Assignments for ${room.name} ===`);
-        for (const source of sources) {
-            const workParts = this.getSourceWorkParts(source.id);
-            const creeps = this.getSourceAssignments(source.id);
-            console.log(`Source ${source.id}: ${workParts}/5 work parts (${creeps.length} creeps)`);
-            creeps.forEach(c => console.log(`  - ${c.name} (${c.memory.role})`));
-        }
-    }
-}
-
 class RoleHarvester {
     static run(creep) {
-        // Assign to source if not already assigned
-        if (AssignmentManager.needsReassignment(creep)) {
-            AssignmentManager.assignCreepToSource(creep, creep.room);
-        }
         // Toggle working state
         if (creep.store.getFreeCapacity() === 0) {
             creep.memory.working = true;
@@ -4022,13 +3946,17 @@ const RCL1Config = {
         harvester: {
             target: 3,
             body: [WORK, CARRY, MOVE],
-            priority: 1 // Highest priority - energy income
+            priority: 1,
+            assignToSource: true // Harvesters get assigned to sources
         },
         upgrader: {
             target: 2,
             body: [WORK, CARRY, MOVE],
             priority: 2 // Second priority - controller progress
         }
+    },
+    sourceAssignment: {
+        maxWorkPartsPerSource: 5 // RCL1: Limit to 5 work parts per source
     }
 };
 
@@ -4067,6 +3995,14 @@ class SpawnManager {
     /**
      * Get config for a specific RCL, with fallback to highest available RCL config
      * Example: If RCL 5 is requested but only RCL 1-3 configs exist, use RCL 3
+     */
+    static getConfigForRoom(room) {
+        if (!room.controller)
+            return null;
+        return this.getConfigForRCL(room.controller.level);
+    }
+    /**
+     * Get config for a specific RCL (internal method)
      */
     static getConfigForRCL(rcl) {
         // Try exact RCL match first
@@ -4184,6 +4120,110 @@ SpawnManager.RCL_CONFIGS = {
     1: RCL1Config
     // TODO: Add RCL 2-8 configs as we progress
 };
+
+/**
+ * Assignment Manager - Manages creep assignments to prevent overcrowding
+ * Uses RCL-specific configs to determine max work parts per source
+ */
+class AssignmentManager {
+    /**
+     * Get all sources in a room
+     */
+    static getRoomSources(room) {
+        return room.find(FIND_SOURCES);
+    }
+    /**
+     * Get assigned creeps for a source
+     */
+    static getSourceAssignments(sourceId) {
+        return Object.values(Game.creeps).filter(creep => creep.memory.assignedSource === sourceId);
+    }
+    /**
+     * Calculate total work parts assigned to a source
+     */
+    static getSourceWorkParts(sourceId) {
+        const assignedCreeps = this.getSourceAssignments(sourceId);
+        return assignedCreeps.reduce((total, creep) => {
+            return total + creep.body.filter(part => part.type === WORK).length;
+        }, 0);
+    }
+    /**
+     * Assign a creep to the best available source using RCL config
+     * Evenly distributes creeps across sources up to max work parts
+     * Returns true if assignment successful
+     */
+    static assignCreepToSource(creep, room, config) {
+        const sources = this.getRoomSources(room);
+        const maxWorkParts = config.sourceAssignment.maxWorkPartsPerSource;
+        const creepWorkParts = creep.body.filter(part => part.type === WORK).length;
+        if (sources.length === 0) {
+            console.log(`⚠️ No sources found in room ${room.name}`);
+            return false;
+        }
+        // Build assignment map: source -> current work parts
+        const sourceWorkParts = new Map();
+        for (const source of sources) {
+            sourceWorkParts.set(source.id, this.getSourceWorkParts(source.id));
+        }
+        // Find source with fewest work parts that can still accept this creep
+        let bestSource = null;
+        let minWorkParts = Infinity;
+        for (const source of sources) {
+            const currentWorkParts = sourceWorkParts.get(source.id) || 0;
+            const wouldHaveWorkParts = currentWorkParts + creepWorkParts;
+            // Can this source accept this creep without exceeding the limit?
+            if (wouldHaveWorkParts <= maxWorkParts && currentWorkParts < minWorkParts) {
+                minWorkParts = currentWorkParts;
+                bestSource = source;
+            }
+        }
+        if (bestSource) {
+            creep.memory.assignedSource = bestSource.id;
+            const newTotal = minWorkParts + creepWorkParts;
+            console.log(`✓ Assigned ${creep.name} to source (${newTotal}/${maxWorkParts} work parts)`);
+            return true;
+        }
+        else {
+            console.log(`⚠️ Cannot assign ${creep.name}: All sources at capacity (${maxWorkParts} work parts each)`);
+            return false;
+        }
+    }
+    /**
+     * Unassign a creep from its source
+     */
+    static unassignCreep(creep) {
+        delete creep.memory.assignedSource;
+    }
+    /**
+     * Check if a creep needs reassignment (e.g., if source no longer exists)
+     */
+    static needsReassignment(creep) {
+        if (!creep.memory.assignedSource)
+            return true;
+        const source = Game.getObjectById(creep.memory.assignedSource);
+        return !source; // Reassign if source no longer exists
+    }
+    /**
+     * Display assignment info for debugging
+     */
+    static displayAssignments(room, config) {
+        const sources = this.getRoomSources(room);
+        const maxWorkParts = config.sourceAssignment.maxWorkPartsPerSource;
+        console.log(`\n=== Source Assignments for ${room.name} ===`);
+        console.log(`Max work parts per source: ${maxWorkParts}`);
+        console.log(`Total sources: ${sources.length}`);
+        for (const source of sources) {
+            const workParts = this.getSourceWorkParts(source.id);
+            const creeps = this.getSourceAssignments(source.id);
+            const percentage = Math.round((workParts / maxWorkParts) * 100);
+            console.log(`Source @ ${source.pos.x},${source.pos.y}: ${workParts}/${maxWorkParts} work parts (${percentage}%) - ${creeps.length} creeps`);
+            creeps.forEach(c => {
+                const cWorkParts = c.body.filter(part => part.type === WORK).length;
+                console.log(`  - ${c.name} (${c.memory.role}, ${cWorkParts} work)`);
+            });
+        }
+    }
+}
 
 /**
  * Console commands for manual spawn control
@@ -4386,7 +4426,6 @@ const loop = ErrorMapper.wrapLoop(() => {
         // Only manage rooms we own
         if (!room.controller || !room.controller.my)
             continue;
-        room.controller.level;
         // Get primary spawn
         const spawns = room.find(FIND_MY_SPAWNS);
         if (spawns.length === 0)
@@ -4394,9 +4433,22 @@ const loop = ErrorMapper.wrapLoop(() => {
         const spawn = spawns[0];
         // Run spawn manager (handles all RCL levels)
         SpawnManager.run(spawn);
-        // Display assignment info periodically
-        if (Game.time % 50 === 0) {
-            AssignmentManager.displayAssignments(room);
+        // Get RCL config for this room
+        const config = SpawnManager.getConfigForRoom(room);
+        if (config) {
+            // Handle source assignments for harvesters
+            const harvesters = room.find(FIND_MY_CREEPS, {
+                filter: (creep) => creep.memory.role === "harvester"
+            });
+            for (const harvester of harvesters) {
+                if (AssignmentManager.needsReassignment(harvester)) {
+                    AssignmentManager.assignCreepToSource(harvester, room, config);
+                }
+            }
+            // Display assignment info periodically
+            if (Game.time % 50 === 0) {
+                AssignmentManager.displayAssignments(room, config);
+            }
         }
     }
     // Run creep roles
