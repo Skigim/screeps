@@ -1,0 +1,71 @@
+name: Deploy to Screeps
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Deploy to Screeps
+        env:
+          SCREEPS_TOKEN: ${{ secrets.SCREEPS_TOKEN }}
+        run: |
+          node -e "
+          const { ScreepsAPI } = require('screeps-api');
+          const fs = require('fs');
+          const path = require('path');
+          
+          const config = {
+            token: process.env.SCREEPS_TOKEN,
+            protocol: 'https',
+            hostname: 'screeps.com',
+            port: 443,
+            path: '/'
+          };
+          
+          console.log('📦 Reading compiled code...');
+          const code = {};
+          const distPath = path.join(__dirname, 'dist');
+          const files = fs.readdirSync(distPath).filter(f => f.endsWith('.js') && !f.endsWith('.map.js'));
+          
+          files.forEach(file => {
+            const moduleName = file.replace(/\.js$/i, '');
+            code[moduleName] = fs.readFileSync(path.join(distPath, file), 'utf8');
+            console.log(\`  ✓ Module: \${moduleName} (\${code[moduleName].length} bytes)\`);
+          });
+          
+          console.log('📤 Deploying to Screeps...');
+          const api = new ScreepsAPI(config);
+          
+          api.code.set('main', code)
+            .then((result) => {
+              console.log('✅ Deployment successful!');
+              console.log('Response:', result);
+              process.exit(0);
+            })
+            .catch((error) => {
+              console.error('❌ Deployment failed!');
+              console.error('Error:', error.message);
+              process.exit(1);
+            });
+          "
