@@ -5,6 +5,7 @@ import { ErrorMapper } from "utils/ErrorMapper";
 import { RoleHarvester } from "roles/harvester";
 import { RoleUpgrader } from "roles/upgrader";
 import { RoleBuilder } from "roles/builder";
+import { ConsoleCommands } from "utils/ConsoleCommands";
 import * as _ from "lodash";
 
 declare global {

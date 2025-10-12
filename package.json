@@ -11,6 +11,8 @@
     "push-pserver": "rollup -c --environment DEST:pserver",
     "push-season": "rollup -c --environment DEST:season",
     "push-sim": "rollup -c --environment DEST:sim",
+    "deploy": "npm run build && git add dist && git commit -m \"Deploy: Update compiled code\" && git push",
+    "deploy-quick": "npm run build && git add dist && git commit -m \"Update code\" && git push",
     "test": "npm run test-unit",
     "test-unit": "mocha test/unit/**/*.ts",
     "test-integration": "echo 'See docs/in-depth/testing.md for instructions on enabling integration tests'",

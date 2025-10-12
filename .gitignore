@@ -5,7 +5,7 @@
 /package-lock.json
 
 # Ignore basic folders
-/dist
+# /dist  # Un-commented for GitHub integration - Screeps needs this folder
 /.rpt2_cache
 /tsc-out
 /node_modules
