@@ -53,11 +53,12 @@ export class RoleHauler {
 
     if (creep.memory.working) {
       // Deliver energy with smart prioritization
-      // CRITICAL: NEVER fill spawn (it auto-regenerates 300 energy)
       // Priority:
       // 1. Extensions (need energy for spawning)
-      // 2. Destination container near spawn (for builders/upgraders)
-      // 3. Controller container (for upgraders)
+      // 2. Spawn (after extensions full, helps with emergency spawns)
+      // 3. Destination container near spawn (for builders/upgraders)
+      // 4. Controller container (for upgraders)
+      // 5. Direct transfer to workers (if containers mostly full)
 
       // 1. HIGHEST PRIORITY: Fill extensions
       const extension = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
@@ -77,7 +78,25 @@ export class RoleHauler {
         return;
       }
 
-      // 2. SECOND PRIORITY: Fill destination container (spawn-adjacent container for builders/upgraders)
+      // 2. SECOND PRIORITY: Fill spawn (after extensions full, helps with emergency spawns)
+      const spawn = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+        filter: (structure: any) => {
+          return (
+            structure.structureType === STRUCTURE_SPAWN &&
+            structure.store &&
+            structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+          );
+        }
+      });
+
+      if (spawn) {
+        if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, spawn);
+        }
+        return;
+      }
+
+      // 3. THIRD PRIORITY: Fill destination container (spawn-adjacent container for builders/upgraders)
       const progressionState = RoomStateManager.getProgressionState(creep.room.name);
 
       if (progressionState?.destContainerId) {
@@ -94,7 +113,7 @@ export class RoleHauler {
         }
       }
 
-      // 3. THIRD PRIORITY: Fill controller container
+      // 4. FOURTH PRIORITY: Fill controller container
       const controllerContainer = creep.room.controller?.pos.findInRange(FIND_STRUCTURES, 3, {
         filter: s => s.structureType === STRUCTURE_CONTAINER
       })[0] as StructureContainer | undefined;
@@ -109,7 +128,7 @@ export class RoleHauler {
         }
       }
 
-      // 4. FOURTH PRIORITY: Direct transfer to nearby workers (builders/upgraders)
+      // 5. FIFTH PRIORITY: Direct transfer to nearby workers (builders/upgraders)
       // Only do this if containers are mostly full (>= 75%)
       // This prevents thrashing - we don't need them 100% full to help workers
       if (this.areContainersMostlyFull(creep.room, progressionState)) {
