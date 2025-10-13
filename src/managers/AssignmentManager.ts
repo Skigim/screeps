@@ -116,12 +116,12 @@ export class AssignmentManager {
       creep.memory.assignedSource = bestSource.id;
       if (useCreepCount) {
         console.log(
-          `✓ Assigned ${creep.name} (${creep.memory.role}) to source @ ${bestSource.pos.x},${bestSource.pos.y} (${minMetric + 1} ${creep.memory.role}s at this source)`
+          `✓ Assigned ${creep.name} to source @ ${bestSource.pos.x},${bestSource.pos.y} (${minMetric + 1} ${creep.memory.role}s)`
         );
       } else {
         const newTotal = minMetric + creepWorkParts;
         console.log(
-          `✓ Assigned ${creep.name} to source (${newTotal}/${maxWorkParts} work parts)`
+          `✓ Assigned ${creep.name} to source @ ${bestSource.pos.x},${bestSource.pos.y} (${newTotal}/${maxWorkParts} work parts)`
         );
       }
       return true;
