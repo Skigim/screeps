@@ -5,6 +5,7 @@ import { SpawnManager } from "./SpawnManager";
 import { AssignmentManager } from "./AssignmentManager";
 import { Architect } from "./Architect";
 import { ProgressionManager, type ProgressionState } from "./ProgressionManager";
+import { StatsTracker } from "./StatsTracker";
 
 /**
  * Room State Manager - RCL-based state machine
@@ -48,6 +49,19 @@ export class RoomStateManager {
     if (rcl >= 2) {
       progressionState = ProgressionManager.detectRCL2State(room);
       this.progressionStates.set(room.name, progressionState);
+
+      // Initialize stats tracking on first run
+      StatsTracker.initializeRoom(room.name);
+
+      // Track phase transitions
+      const stats = Memory.progressionStats?.[room.name];
+      if (stats && stats.currentPhase !== progressionState.phase) {
+        StatsTracker.recordPhaseTransition(room.name, progressionState.phase);
+      }
+
+      // Record milestones and take snapshots
+      StatsTracker.recordMilestones(room, progressionState);
+      StatsTracker.takeSnapshot(room, progressionState);
     }
 
     // Get primary spawn

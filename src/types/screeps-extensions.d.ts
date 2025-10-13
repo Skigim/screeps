@@ -78,3 +78,41 @@ interface Ruin extends RoomObject {
 
 // Add FIND_RUINS constant
 declare const FIND_RUINS: 123;
+
+// Progression Stats Interface
+interface ProgressionStats {
+  startTime: number;
+  currentPhase: string;
+  phaseStartTime: number;
+  phaseHistory: Array<{
+    phase: string;
+    startTick: number;
+    endTick?: number;
+    duration?: number;
+  }>;
+  milestones: {
+    firstExtension?: number;
+    allExtensionsComplete?: number;
+    firstContainer?: number;
+    allContainersComplete?: number;
+    firstStationaryHarvester?: number;
+    firstHauler?: number;
+    rcl2Complete?: number;
+  };
+  snapshots: Array<{
+    tick: number;
+    phase: string;
+    creepCount: number;
+    energy: number;
+    energyCapacity: number;
+    controllerProgress: number;
+    extensions: number;
+    containers: number;
+  }>;
+}
+
+// Extend Memory interface
+interface Memory {
+  progressionStats?: { [roomName: string]: ProgressionStats };
+}
+

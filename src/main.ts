@@ -8,6 +8,7 @@ import { RoleBuilder } from "roles/builder";
 import { RoleHauler } from "roles/hauler";
 import { RoomStateManager } from "managers/RoomStateManager";
 import { StatsCollector } from "utils/StatsCollector";
+import { StatsTracker } from "managers/StatsTracker";
 import "utils/ConsoleCommands"; // Import to register global console commands
 import * as _ from "lodash";
 
@@ -45,6 +46,7 @@ declare global {
   namespace NodeJS {
     interface Global {
       log: any;
+      StatsTracker: typeof StatsTracker; // Export stats tracker to console
     }
   }
 }
@@ -52,6 +54,9 @@ declare global {
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 export const loop = ErrorMapper.wrapLoop(() => {
+  // Export StatsTracker to global for console access
+  global.StatsTracker = StatsTracker;
+
   // Clean up memory of dead creeps
   for (const name in Memory.creeps) {
     if (!(name in Game.creeps)) {
@@ -63,7 +68,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
 
   // Clean up invalid Memory keys (run once every 1000 ticks)
   if (Game.time % 1000 === 0) {
-    const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats'];
+    const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats', 'progressionStats'];
     let cleaned = 0;
     for (const key in Memory) {
       if (!validKeys.includes(key)) {
