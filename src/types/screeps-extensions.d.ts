@@ -80,14 +80,26 @@ interface CreepMemory {
   vacuuming?: boolean;
 
   /**
-   * Energy request flag - set by builders when they need energy delivery from transporter
+   * Energy request flag - set by builders when they need energy delivery from hauler
    * Cleared when builder receives energy or becomes full
    */
-  requestingEnergy?: boolean;
+  energyRequested?: boolean;
 
   /**
-   * Last request tick - tracks when transporter last saw an energy request
-   * Used to determine when to fallback to hauler behavior (10 tick threshold)
+   * Request time - tick when builder requested energy
+   * Used for timeout detection (20 tick threshold before self-serve)
    */
-  lastRequestTick?: number;
+  requestTime?: number;
+
+  /**
+   * Assigned builder - set by TrafficManager when hauler is assigned to help a builder
+   * Hauler will deliver energy to this builder before resuming normal duty
+   */
+  assignedBuilder?: string;
+
+  /**
+   * Delivery amount - how much energy the hauler should deliver to assigned builder
+   * Prevents over-delivery when builder has limited capacity
+   */
+  deliveryAmount?: number;
 }

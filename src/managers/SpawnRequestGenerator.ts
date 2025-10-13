@@ -111,9 +111,6 @@ export class SpawnRequestGenerator {
       if (progressionState?.useHaulers) {
         requests.push(...this.requestHaulers(room, config));
       }
-
-      // Request transporters if economy is stable and builders exist
-      requests.push(...this.requestTransporters(room, config, progressionState));
     }
 
     return requests;
@@ -500,72 +497,6 @@ export class SpawnRequestGenerator {
           role: "hauler",
           priority: roleConfig?.priority || 1, // High priority - critical for logistics
           reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${readySources.length} sources ready)`,
-          body: body,
-          minEnergy: bodyCost
-        });
-      }
-    }
-
-    return requests;
-  }
-
-  /**
-   * Request transporters for builder support
-   * Transporters reduce traffic around source containers by delivering directly to builders
-   *
-   * Spawn conditions:
-   * - At least 1 builder exists
-   * - At least 2 construction sites exist (active construction)
-   * - Haulers are operational (useHaulers state active)
-   * - Energy economy is stable (extensions built)
-   */
-  private static requestTransporters(room: Room, config: RCLConfig, progressionState: any): SpawnRequest[] {
-    const requests: SpawnRequest[] = [];
-
-    // Check if transporter role is configured
-    const roleConfig = config.roles.transporter;
-    if (!roleConfig) {
-      return requests; // No transporter config available
-    }
-
-    // Only spawn transporters if haulers are operational
-    if (!progressionState?.useHaulers) {
-      return requests;
-    }
-
-    // Check if builders exist and have work to do
-    const builderCount = this.getCreepCount(room, "builder");
-    const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
-
-    if (builderCount === 0 || constructionSites.length < 2) {
-      return requests; // No builders or not enough construction work
-    }
-
-    // Count existing transporters
-    const transporterCount = this.getCreepCount(room, "transporter");
-
-    // Ideal: 1 transporter per 2 builders, min 1, max 2
-    const idealCount = Math.min(2, Math.max(1, Math.floor(builderCount / 2)));
-
-    if (transporterCount < idealCount) {
-      let body: BodyPartConstant[];
-
-      if (typeof roleConfig.body === 'function') {
-        body = roleConfig.body(this.getEnergyForBodyGeneration(room), room);
-      } else if (Array.isArray(roleConfig.body)) {
-        body = roleConfig.body;
-      } else {
-        // Fallback to hauler body
-        body = this.buildHaulerBody(room);
-      }
-
-      const bodyCost = this.calculateBodyCost(body);
-
-      if (body.length > 0) {
-        requests.push({
-          role: "transporter",
-          priority: roleConfig.priority,
-          reason: `Builder support: ${transporterCount}/${idealCount} transporters (${builderCount} builders, ${constructionSites.length} sites)`,
           body: body,
           minEnergy: bodyCost
         });

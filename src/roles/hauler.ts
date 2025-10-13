@@ -43,6 +43,30 @@ export class RoleHauler {
   }
 
   public static run(creep: Creep, config: RCLConfig): void {
+    // Check if assigned to help a builder
+    if (creep.memory.assignedBuilder) {
+      const builder = Game.creeps[creep.memory.assignedBuilder];
+
+      if (!builder || builder.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+        // Builder gone or full - resume normal hauler duty
+        console.log(`${creep.name}: Builder assignment complete, resuming hauler duty`);
+        delete creep.memory.assignedBuilder;
+        delete creep.memory.deliveryAmount;
+      } else {
+        // Deliver to builder
+        if (creep.pos.getRangeTo(builder) > 1) {
+          creep.travelTo(builder);
+        } else {
+          const transferAmount = creep.memory.deliveryAmount || creep.store[RESOURCE_ENERGY];
+          creep.transfer(builder, RESOURCE_ENERGY, transferAmount);
+          console.log(`${creep.name}: Delivered ${transferAmount} energy to ${builder.name}`);
+          delete creep.memory.assignedBuilder;
+          delete creep.memory.deliveryAmount;
+        }
+        return; // Skip normal hauler logic this tick
+      }
+    }
+
     // Toggle working state
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = false;

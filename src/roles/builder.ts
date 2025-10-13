@@ -3,6 +3,7 @@ import type { RCLConfig } from "configs/RCL1Config";
 import { RoomStateManager } from "managers/RoomStateManager";
 import { RCL2Phase } from "managers/ProgressionManager";
 import { SpawnRequestGenerator } from "managers/SpawnRequestGenerator";
+import { TrafficManager } from "managers/TrafficManager";
 
 export class RoleBuilder {
   public static run(creep: Creep, config: RCLConfig): void {
@@ -18,12 +19,14 @@ export class RoleBuilder {
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = false;
       delete creep.memory.energySourceId; // Clear locked source when empty
-      delete creep.memory.requestingEnergy; // Clear energy request when empty
+      delete creep.memory.energyRequested; // Clear energy request when empty
+      delete creep.memory.requestTime; // Clear request time when empty
     }
     if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = true;
       delete creep.memory.energySourceId; // Clear locked source when full
-      delete creep.memory.requestingEnergy; // Clear energy request when full
+      delete creep.memory.energyRequested; // Clear energy request when full
+      delete creep.memory.requestTime; // Clear request time when full
     }
 
     if (creep.memory.working) {
@@ -58,60 +61,32 @@ export class RoleBuilder {
       // Lock onto ONE energy source and stick with it until COMPLETELY FULL
       // This prevents wandering between ruins, spawns, drops, sources mid-gathering
 
-      // FIRST: Check if transporter exists - if so, request delivery instead of self-gathering
-      const transporterExists = creep.room.find(FIND_MY_CREEPS, {
-        filter: (c) => c.memory.role === "transporter"
-      }).length > 0;
+      // FIRST: Check if haulers are available and request delivery
+      const availableHaulers = creep.room.find(FIND_MY_CREEPS, {
+        filter: (c) => c.memory.role === "hauler" && c.store[RESOURCE_ENERGY] > 0
+      });
 
-      if (transporterExists) {
-        // Transporter available - broadcast energy request and wait
-        if (!creep.memory.requestingEnergy) {
-          creep.memory.requestingEnergy = true;
-        }
-
-        // Move off road if currently on one (keep roads clear for traffic)
-        this.moveOffRoadIfNeeded(creep);
-
-        // Approach the transporter to meet it, but maintain safe distance from sources
-        const transporter = creep.pos.findClosestByPath(FIND_MY_CREEPS, {
-          filter: (c) => c.memory.role === "transporter"
-        });
-
-        if (transporter) {
-          const distanceToTransporter = creep.pos.getRangeTo(transporter);
-          
-          // Get all sources to check if we're too close to source traffic
-          const sources = creep.room.find(FIND_SOURCES);
-          const tooCloseToSource = sources.some(source => creep.pos.getRangeTo(source) <= 3);
-
-          if (distanceToTransporter > 3) {
-            // Too far from transporter - move closer (range 2-3)
-            Traveler.travelTo(creep, transporter, { range: 2 });
-          } else if (tooCloseToSource && distanceToTransporter <= 3) {
-            // Close enough to transporter but too close to source - move away from sources
-            // Find a position near transporter but away from sources
-            const nearbyConstruction = creep.pos.findInRange(FIND_CONSTRUCTION_SITES, 5)[0];
-            if (nearbyConstruction) {
-              const distanceToSite = creep.pos.getRangeTo(nearbyConstruction);
-              if (distanceToSite > 2) {
-                Traveler.travelTo(creep, nearbyConstruction, { range: 2 });
-              }
-            }
-          }
-          // else: in good position (range 1-3 from transporter, not blocking sources)
-        } else {
-          // Transporter exists but can't path to it - wait near construction sites
-          const nearbyConstruction = creep.pos.findInRange(FIND_CONSTRUCTION_SITES, 5)[0];
-          if (nearbyConstruction && creep.pos.getRangeTo(nearbyConstruction) > 2) {
-            Traveler.travelTo(creep, nearbyConstruction, { range: 2 });
-          }
-        }
-        
-        return; // Wait for delivery, don't self-gather
+      if (availableHaulers.length > 0 && !creep.memory.energyRequested) {
+        // Request energy delivery from TrafficManager
+        TrafficManager.requestEnergy(creep);
+        // Note: energyRequested flag is set by TrafficManager
       }
 
-      // No transporter - proceed with normal energy gathering behavior
-      delete creep.memory.requestingEnergy; // Clear request if transporter is gone
+      // If we requested energy and waiting for delivery
+      if (creep.memory.energyRequested) {
+        // Check timeout - if no delivery in 20 ticks, self-serve
+        if (creep.memory.requestTime && Game.time - creep.memory.requestTime > 20) {
+          console.log(`${creep.name}: Energy request timeout, self-serving`);
+          delete creep.memory.energyRequested;
+          delete creep.memory.requestTime;
+        } else {
+          // Still waiting - move off road and idle
+          this.moveOffRoadIfNeeded(creep);
+          return; // Wait for delivery
+        }
+      }
+
+      // No active request or timed out - proceed with self-gathering
 
       // If we have a locked target, try to use it first
       if (creep.memory.energySourceId) {

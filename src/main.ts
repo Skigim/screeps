@@ -6,8 +6,8 @@ import { RoleHarvester } from "roles/harvester";
 import { RoleUpgrader } from "roles/upgrader";
 import { RoleBuilder } from "roles/builder";
 import { RoleHauler } from "roles/hauler";
-import { RoleTransporter } from "roles/transporter";
 import { RoomStateManager } from "managers/RoomStateManager";
+import { TrafficManager } from "managers/TrafficManager";
 import { StatsCollector } from "utils/StatsCollector";
 import { StatsTracker } from "managers/StatsTracker";
 import { Architect } from "managers/Architect";
@@ -96,6 +96,9 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // Only manage rooms we own
     if (!room.controller || !room.controller.my) continue;
 
+    // Run traffic manager cleanup (handle stale builder assignments)
+    TrafficManager.cleanupAssignments(room);
+
     // Run room state manager (handles all room-level logic)
     RoomStateManager.run(room);
   }
@@ -120,8 +123,6 @@ export const loop = ErrorMapper.wrapLoop(() => {
       RoleBuilder.run(creep, config);
     } else if (creep.memory.role === "hauler") {
       RoleHauler.run(creep, config);
-    } else if (creep.memory.role === "transporter") {
-      RoleTransporter.run(creep, config);
     }
   }
 
