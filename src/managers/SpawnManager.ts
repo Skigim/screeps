@@ -94,7 +94,7 @@ export class SpawnManager {
 
   /**
    * Generate a clean, readable creep name with emoji and incremental numbering
-   * Format: ⛏️Harvester_1, ⚡Upgrader_2, 🔨Builder_1, etc.
+   * Format: ⛏️_1, ⚡_2, 🔨_1, etc.
    */
   private static generateCreepName(role: string): string {
     // Role emoji mapping
@@ -111,13 +111,11 @@ export class SpawnManager {
     };
 
     const emoji = roleEmojis[role.toLowerCase()] || "🤖";
-    const roleName = role.charAt(0).toUpperCase() + role.slice(1);
-    const prefix = `${emoji}${roleName}`;
 
     // Find the highest existing number for this role
     let maxNumber = 0;
     for (const name in Game.creeps) {
-      if (name.startsWith(prefix + "_")) {
+      if (name.startsWith(emoji + "_")) {
         const parts = name.split("_");
         if (parts.length === 2) {
           const num = parseInt(parts[1], 10);
@@ -129,7 +127,7 @@ export class SpawnManager {
     }
 
     // Return next available number
-    return `${prefix}_${maxNumber + 1}`;
+    return `${emoji}_${maxNumber + 1}`;
   }
 
   /**
