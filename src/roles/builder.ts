@@ -201,11 +201,11 @@ export class RoleBuilder {
 
     if (progressionState) {
       switch (progressionState.phase) {
-        case RCL2Phase.PHASE_1_EXTENSIONS:
-          phasePriorityType = STRUCTURE_EXTENSION;
-          break;
-        case RCL2Phase.PHASE_2_CONTAINERS:
+        case RCL2Phase.PHASE_1_CONTAINERS:
           phasePriorityType = STRUCTURE_CONTAINER;
+          break;
+        case RCL2Phase.PHASE_2_EXTENSIONS:
+          phasePriorityType = STRUCTURE_EXTENSION;
           break;
         case RCL2Phase.PHASE_3_ROADS:
           phasePriorityType = STRUCTURE_ROAD;

@@ -22,7 +22,7 @@ export class StatsTracker {
     if (!Memory.progressionStats[roomName]) {
       Memory.progressionStats[roomName] = {
         startTime: Game.time,
-        currentPhase: RCL2Phase.PHASE_1_EXTENSIONS,
+        currentPhase: RCL2Phase.PHASE_1_CONTAINERS,
         phaseStartTime: Game.time,
         phaseHistory: [],
         milestones: {},

@@ -61,8 +61,8 @@ export class RoomStateManager {
       StatsTracker.takeSnapshot(room, progressionState);
 
       // Convert upgraders to builders during Phase 1-3 (prevent source congestion)
-      if (progressionState.phase === RCL2Phase.PHASE_1_EXTENSIONS ||
-          progressionState.phase === RCL2Phase.PHASE_2_CONTAINERS ||
+      if (progressionState.phase === RCL2Phase.PHASE_1_CONTAINERS ||
+          progressionState.phase === RCL2Phase.PHASE_2_EXTENSIONS ||
           progressionState.phase === RCL2Phase.PHASE_3_ROADS) {
         ProgressionManager.convertUpgradersToBuilders(room);
       }
