@@ -42,7 +42,15 @@ export class SpawnRequestGenerator {
     const minHarvesters = this.getMinimumHarvesters(room);
 
     if (harvesterCount >= minHarvesters) {
-      requests.push(...this.requestUpgraders(room, config));
+      // NO UPGRADERS during Phase 1-3 (prevent source traffic congestion)
+      // Only spawn upgraders when infrastructure is complete
+      const allowUpgraders = !progressionState ||
+                            progressionState.phase === "complete" ||
+                            room.controller?.level === 1; // RCL1 always gets upgraders
+
+      if (allowUpgraders) {
+        requests.push(...this.requestUpgraders(room, config));
+      }
 
       // Only request builders if enabled in config
       if (config.spawning.enableBuilders) {

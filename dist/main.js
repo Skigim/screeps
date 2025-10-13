@@ -4055,6 +4055,7 @@ class SpawnRequestGenerator {
      * Generate all spawn requests for a room
      */
     static generateRequests(room) {
+        var _a;
         const requests = [];
         const config = RoomStateManager.getConfigForRoom(room);
         // Null check - if no config available, return empty requests
@@ -4070,7 +4071,14 @@ class SpawnRequestGenerator {
         const harvesterCount = this.getCreepCount(room, "harvester");
         const minHarvesters = this.getMinimumHarvesters(room);
         if (harvesterCount >= minHarvesters) {
-            requests.push(...this.requestUpgraders(room, config));
+            // NO UPGRADERS during Phase 1-3 (prevent source traffic congestion)
+            // Only spawn upgraders when infrastructure is complete
+            const allowUpgraders = !progressionState ||
+                progressionState.phase === "complete" ||
+                ((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1; // RCL1 always gets upgraders
+            if (allowUpgraders) {
+                requests.push(...this.requestUpgraders(room, config));
+            }
             // Only request builders if enabled in config
             if (config.spawning.enableBuilders) {
                 requests.push(...this.requestBuilders(room, config));
