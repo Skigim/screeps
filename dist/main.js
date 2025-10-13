@@ -5892,13 +5892,14 @@ class RoleBuilder {
             }
             // THIRD PRIORITY: Withdraw from spawn/extensions
             // SMART LOGIC: Check if there are pending spawn requests
-            // If no pending requests, spawn energy is "free" for builders!
+            // CRITICAL: Never withdraw if emergency harvesters are queued (priority 0)
             const pendingRequests = SpawnRequestGenerator.generateRequests(creep.room);
+            const hasEmergencySpawns = pendingRequests && pendingRequests.some(req => req.priority === 0);
+            // Allow withdrawal ONLY if:
+            // 1. No emergency spawn requests (priority 0), AND
+            // 2. Either no pending requests OR room has surplus energy (>=200)
             const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
-            // Allow withdrawal if:
-            // 1. No pending spawn requests (energy is free!), OR
-            // 2. Room has surplus energy (>200 minimum)
-            const canWithdrawFromSpawn = !hasPendingSpawns || creep.room.energyAvailable >= 200;
+            const canWithdrawFromSpawn = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
             if (canWithdrawFromSpawn) {
                 const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
                     filter: (structure) => {
