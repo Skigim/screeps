@@ -3893,28 +3893,42 @@ class RoleUpgrader {
             }
         }
         else {
-            // Withdraw energy from spawn/extensions (never harvest)
-            const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                filter: (structure) => {
-                    return ((structure.structureType === STRUCTURE_EXTENSION ||
-                        structure.structureType === STRUCTURE_SPAWN) &&
-                        structure.store &&
-                        structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+            // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
+            // Reserve energy for spawn if we're below minimum viable energy (200)
+            const shouldReserveEnergy = creep.room.energyAvailable < 200;
+            if (!shouldReserveEnergy) {
+                // Safe to withdraw - room has enough energy for spawning
+                const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                    filter: (structure) => {
+                        return ((structure.structureType === STRUCTURE_EXTENSION ||
+                            structure.structureType === STRUCTURE_SPAWN) &&
+                            structure.store &&
+                            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+                    }
+                });
+                if (target) {
+                    if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, target);
+                    }
+                    return;
                 }
+            }
+            // Energy reserved for spawning OR no energy in spawn/extensions
+            // Help bootstrap economy: harvest from sources or pickup dropped energy
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: resource => resource.resourceType === RESOURCE_ENERGY
             });
-            if (target) {
-                if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, target);
+            if (droppedEnergy) {
+                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, droppedEnergy);
                 }
             }
             else {
-                // No energy available - help haul from sources to spawn/extensions
-                const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
-                    filter: resource => resource.resourceType === RESOURCE_ENERGY
-                });
-                if (droppedEnergy) {
-                    if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, droppedEnergy);
+                // CRISIS MODE: Harvest directly from source
+                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+                if (source) {
+                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, source);
                     }
                 }
             }
@@ -3955,18 +3969,43 @@ class RoleBuilder {
             }
         }
         else {
-            // Withdraw energy from spawn/extensions (never harvest)
-            const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                filter: (structure) => {
-                    return ((structure.structureType === STRUCTURE_EXTENSION ||
-                        structure.structureType === STRUCTURE_SPAWN) &&
-                        structure.store &&
-                        structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+            // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
+            // Reserve energy for spawn if we're below minimum viable energy (200)
+            const shouldReserveEnergy = creep.room.energyAvailable < 200;
+            if (!shouldReserveEnergy) {
+                // Safe to withdraw - room has enough energy for spawning
+                const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                    filter: (structure) => {
+                        return ((structure.structureType === STRUCTURE_EXTENSION ||
+                            structure.structureType === STRUCTURE_SPAWN) &&
+                            structure.store &&
+                            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+                    }
+                });
+                if (target) {
+                    if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, target);
+                    }
+                    return;
                 }
+            }
+            // Energy reserved for spawning OR no energy in spawn/extensions
+            // Help bootstrap economy: harvest from sources or pickup dropped energy
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: resource => resource.resourceType === RESOURCE_ENERGY
             });
-            if (target) {
-                if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, target);
+            if (droppedEnergy) {
+                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, droppedEnergy);
+                }
+            }
+            else {
+                // CRISIS MODE: Harvest directly from source
+                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+                if (source) {
+                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, source);
+                    }
                 }
             }
         }
@@ -4094,6 +4133,7 @@ class SpawnManager {
      * Spawn creeps based on priority
      */
     static spawnByPriority(spawn, config, creepCounts) {
+        var _a;
         // Sort roles by priority
         const roleEntries = Object.entries(config.roles).sort(([, a], [, b]) => a.priority - b.priority);
         // Critical: Always maintain at least 1 creep
@@ -4104,10 +4144,19 @@ class SpawnManager {
             this.spawnCreep(spawn, firstRole, firstConfig);
             return;
         }
+        // GUARDRAIL: Get harvester count
+        const harvesterCount = creepCounts.harvester || 0;
+        const harvesterTarget = ((_a = config.roles.harvester) === null || _a === void 0 ? void 0 : _a.target) || 0;
+        const harvesterRatio = harvesterTarget > 0 ? harvesterCount / harvesterTarget : 1;
         // Spawn first needed role
         for (const [roleName, roleConfig] of roleEntries) {
             const currentCount = creepCounts[roleName] || 0;
             if (currentCount < roleConfig.target) {
+                // GUARDRAIL: If harvester ratio < 50%, ONLY spawn harvesters (force energy income)
+                if (harvesterRatio < 0.5 && roleName !== "harvester") {
+                    console.log(`🛡️ Harvester deficit detected (${harvesterCount}/${harvesterTarget}) - skipping ${roleName}`);
+                    continue; // Skip non-harvester roles until we have enough harvesters
+                }
                 const result = this.spawnCreep(spawn, roleName, roleConfig);
                 if (result !== OK && result !== ERR_NOT_ENOUGH_ENERGY) {
                     console.log(`❌ Spawn failed for ${roleName}: ${this.getErrorName(result)}`);

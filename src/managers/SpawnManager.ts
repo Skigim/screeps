@@ -66,11 +66,22 @@ export class SpawnManager {
       return;
     }
 
+    // GUARDRAIL: Get harvester count
+    const harvesterCount = creepCounts.harvester || 0;
+    const harvesterTarget = config.roles.harvester?.target || 0;
+    const harvesterRatio = harvesterTarget > 0 ? harvesterCount / harvesterTarget : 1;
+
     // Spawn first needed role
     for (const [roleName, roleConfig] of roleEntries) {
       const currentCount = creepCounts[roleName] || 0;
 
       if (currentCount < roleConfig.target) {
+        // GUARDRAIL: If harvester ratio < 50%, ONLY spawn harvesters (force energy income)
+        if (harvesterRatio < 0.5 && roleName !== "harvester") {
+          console.log(`🛡️ Harvester deficit detected (${harvesterCount}/${harvesterTarget}) - skipping ${roleName}`);
+          continue; // Skip non-harvester roles until we have enough harvesters
+        }
+
         const result = this.spawnCreep(spawn, roleName, roleConfig);
 
         if (result !== OK && result !== ERR_NOT_ENOUGH_ENERGY) {
