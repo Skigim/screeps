@@ -158,7 +158,11 @@ export class RoleTransporter {
       // Check for active builder requests
       const requestingBuilders = this.getBuilderRequests(creep.room);
 
-      if (requestingBuilders.length > 0) {
+      // Only respond to requests if we have energy to give (not empty)
+      // If we have some energy but not full, we should still deliver what we have
+      const hasEnergyToDeliver = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+
+      if (requestingBuilders.length > 0 && hasEnergyToDeliver) {
         // Update last request tick - we have active requests
         creep.memory.lastRequestTick = Game.time;
 
@@ -184,6 +188,12 @@ export class RoleTransporter {
           }
           return;
         }
+      }
+
+      // If we have requests but no energy, switch to collecting mode
+      if (requestingBuilders.length > 0 && !hasEnergyToDeliver) {
+        creep.memory.working = false;
+        return; // Will collect energy next tick
       }
 
       // No active requests - stay near construction sites, ready to respond
