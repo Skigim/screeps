@@ -3,6 +3,7 @@ import { RCL2Config } from "configs/RCL2Config";
 import type { RCLConfig } from "configs/RCL1Config";
 import { SpawnManager } from "./SpawnManager";
 import { AssignmentManager } from "./AssignmentManager";
+import { Architect } from "./Architect";
 
 /**
  * Room State Manager - RCL-based state machine
@@ -18,6 +19,9 @@ export class RoomStateManager {
 
   // Cache configs by room name for creep access
   private static roomConfigs: Map<string, RCLConfig> = new Map();
+
+  // Track if room plan has been executed (one-time planning per RCL)
+  private static roomPlansExecuted: Map<string, number> = new Map(); // roomName -> RCL when last planned
 
   /**
    * Main state machine - runs all managers for a room
@@ -44,6 +48,9 @@ export class RoomStateManager {
 
     // Run assignment manager
     AssignmentManager.run(room, config);
+
+    // Run architect (automatic infrastructure planning)
+    this.runArchitect(room);
 
     // Display status periodically
     if (Game.time % 50 === 0) {
@@ -90,6 +97,33 @@ export class RoomStateManager {
     }
 
     return null;
+  }
+
+  /**
+   * Run architect to plan and build infrastructure
+   */
+  private static runArchitect(room: Room): void {
+    if (!room.controller) return;
+
+    const rcl = room.controller.level;
+    const roomKey = room.name;
+    const lastPlannedRCL = this.roomPlansExecuted.get(roomKey);
+
+    // Only plan once per RCL (when RCL changes or first time)
+    if (lastPlannedRCL !== rcl && rcl >= 2) {
+      console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
+
+      const plan = Architect.planRoom(room);
+      Architect.executePlan(room, plan);
+
+      // Mark this RCL as planned
+      this.roomPlansExecuted.set(roomKey, rcl);
+
+      // Visualize plan (optional - can disable in production)
+      if (Game.time % 10 === 0) {
+        Architect.visualizePlan(room, plan);
+      }
+    }
   }
 
   /**
