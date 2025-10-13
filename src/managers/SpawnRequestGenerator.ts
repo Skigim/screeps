@@ -89,6 +89,18 @@ export class SpawnRequestGenerator {
     const sources = room.find(FIND_SOURCES);
     const harvesterCount = this.getCreepCount(room, "harvester");
 
+    // CRITICAL: If only 1 harvester left, request emergency backup immediately
+    if (harvesterCount === 1) {
+      const harvesterConfig = config.roles.harvester;
+      requests.push({
+        role: "harvester",
+        priority: 0, // HIGHEST PRIORITY - single point of failure!
+        reason: `EMERGENCY: Only 1 harvester remaining!`,
+        body: harvesterConfig.body,
+        minEnergy: this.calculateBodyCost(harvesterConfig.body)
+      });
+    }
+
     // Determine if we need stationary harvesters
     const useStationaryHarvesters = progressionState?.useStationaryHarvesters || false;
 
