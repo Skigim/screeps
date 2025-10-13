@@ -3,6 +3,45 @@ import type { RCLConfig } from "configs/RCL1Config";
 import { RoomStateManager } from "managers/RoomStateManager";
 
 export class RoleHauler {
+  /**
+   * Check if a container is mostly full (>= 75%)
+   * Used to determine if haulers should help workers directly
+   */
+  private static isContainerMostlyFull(container: StructureContainer | null | undefined): boolean {
+    if (!container?.store) return false;
+
+    const capacity = container.store.getCapacity(RESOURCE_ENERGY);
+    const current = container.store.getUsedCapacity(RESOURCE_ENERGY);
+
+    return current >= (capacity * 0.75);
+  }
+
+  /**
+   * Check if all relevant containers are mostly full (>= 75%)
+   * This prevents thrashing - we don't need them 100% full
+   */
+  private static areContainersMostlyFull(room: Room, progressionState: any): boolean {
+    // Check destination container if it exists
+    if (progressionState?.destContainerId) {
+      const destContainer = Game.getObjectById(progressionState.destContainerId) as StructureContainer | null;
+      if (destContainer && !this.isContainerMostlyFull(destContainer)) {
+        return false; // Dest container needs filling
+      }
+    }
+
+    // Check controller container if it exists
+    const controllerContainer = room.controller?.pos.findInRange(FIND_STRUCTURES, 3, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    })[0] as StructureContainer | undefined;
+
+    if (controllerContainer && !this.isContainerMostlyFull(controllerContainer)) {
+      return false; // Controller container needs filling
+    }
+
+    // All containers (that exist) are mostly full
+    return true;
+  }
+
   public static run(creep: Creep, config: RCLConfig): void {
     // Toggle working state
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
@@ -71,28 +110,31 @@ export class RoleHauler {
       }
 
       // 4. FOURTH PRIORITY: Direct transfer to nearby workers (builders/upgraders)
-      // Help workers who need energy - deliver directly to them
-      const nearbyWorker = creep.pos.findClosestByRange(FIND_MY_CREEPS, {
-        filter: (c: Creep) => {
-          // Only help builders and upgraders
-          if (c.memory.role !== "builder" && c.memory.role !== "upgrader") return false;
-          
-          // Only help if they need energy (not full, not currently working)
-          const needsEnergy = c.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
-          const notWorking = !c.memory.working;
-          
-          return needsEnergy && notWorking;
-        }
-      });
+      // Only do this if containers are mostly full (>= 75%)
+      // This prevents thrashing - we don't need them 100% full to help workers
+      if (this.areContainersMostlyFull(creep.room, progressionState)) {
+        const nearbyWorker = creep.pos.findClosestByRange(FIND_MY_CREEPS, {
+          filter: (c: Creep) => {
+            // Only help builders and upgraders
+            if (c.memory.role !== "builder" && c.memory.role !== "upgrader") return false;
 
-      if (nearbyWorker && creep.pos.getRangeTo(nearbyWorker) <= 3) {
-        if (creep.transfer(nearbyWorker, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, nearbyWorker);
+            // Only help if they need energy (not full, not currently working)
+            const needsEnergy = c.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+            const notWorking = !c.memory.working;
+
+            return needsEnergy && notWorking;
+          }
+        });
+
+        if (nearbyWorker && creep.pos.getRangeTo(nearbyWorker) <= 3) {
+          if (creep.transfer(nearbyWorker, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, nearbyWorker);
+          }
+          return;
         }
-        return;
       }
 
-      // All containers full and no workers need help - idle near controller
+      // All containers mostly full and no workers need help - idle near controller
       const controller = creep.room.controller;
       if (controller && creep.pos.getRangeTo(controller) > 3) {
         Traveler.travelTo(creep, controller, { range: 3 });
