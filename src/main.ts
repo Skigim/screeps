@@ -71,7 +71,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
 
   // Clean up invalid Memory keys (run once every 1000 ticks)
   if (Game.time % 1000 === 0) {
-    const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats', 'progressionStats'];
+    const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats', 'progressionStats', 'architectPlans'];
     let cleaned = 0;
     for (const key in Memory) {
       if (!validKeys.includes(key)) {

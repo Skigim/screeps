@@ -49,6 +49,7 @@ interface ProgressionStats {
 // Extend Memory interface
 interface Memory {
   progressionStats?: { [roomName: string]: ProgressionStats };
+  architectPlans?: { [roomName: string]: number }; // Track last RCL Architect ran for each room
 }
 
 // Extend CreepMemory interface

@@ -27,9 +27,6 @@ export interface ArchitectPlan {
 }
 
 export class Architect {
-  // Track which RCLs have been planned for each room
-  private static roomPlansExecuted: Map<string, number> = new Map();
-
   /**
    * Main entry point - automatically plans and executes for a room
    * Call this once per tick for each room
@@ -39,17 +36,24 @@ export class Architect {
 
     const rcl = room.controller.level;
     const roomKey = room.name;
-    const lastPlannedRCL = this.roomPlansExecuted.get(roomKey);
+    
+    // Initialize Memory tracking if needed
+    if (!Memory.architectPlans) {
+      Memory.architectPlans = {};
+    }
+    
+    const lastPlannedRCL = Memory.architectPlans[roomKey];
 
-    // Only plan once per RCL (when RCL changes or first time)
+    // Only plan when RCL changes (not on every code push!)
     if (lastPlannedRCL !== rcl && rcl >= 2) {
+      console.log(`📐 Architect: RCL changed ${lastPlannedRCL || 'unknown'} → ${rcl} in ${room.name}`);
       console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
 
       const plan = this.planRoom(room);
       this.executePlan(room, plan);
 
-      // Mark this RCL as planned
-      this.roomPlansExecuted.set(roomKey, rcl);
+      // Mark this RCL as planned in Memory (persists across code pushes)
+      Memory.architectPlans[roomKey] = rcl;
     }
   }
 
@@ -64,7 +68,12 @@ export class Architect {
     }
 
     console.log(`🔄 Architect: Force replanning ${roomName}...`);
-    this.roomPlansExecuted.delete(roomName);
+    
+    // Clear the RCL tracking in Memory to force replan
+    if (Memory.architectPlans) {
+      delete Memory.architectPlans[roomName];
+    }
+    
     this.run(room);
     console.log(`✅ Architect: Replan complete for ${roomName}`);
   }

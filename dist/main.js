@@ -4660,14 +4660,19 @@ class Architect {
             return;
         const rcl = room.controller.level;
         const roomKey = room.name;
-        const lastPlannedRCL = this.roomPlansExecuted.get(roomKey);
-        // Only plan once per RCL (when RCL changes or first time)
+        // Initialize Memory tracking if needed
+        if (!Memory.architectPlans) {
+            Memory.architectPlans = {};
+        }
+        const lastPlannedRCL = Memory.architectPlans[roomKey];
+        // Only plan when RCL changes (not on every code push!)
         if (lastPlannedRCL !== rcl && rcl >= 2) {
+            console.log(`📐 Architect: RCL changed ${lastPlannedRCL || 'unknown'} → ${rcl} in ${room.name}`);
             console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
             const plan = this.planRoom(room);
             this.executePlan(room, plan);
-            // Mark this RCL as planned
-            this.roomPlansExecuted.set(roomKey, rcl);
+            // Mark this RCL as planned in Memory (persists across code pushes)
+            Memory.architectPlans[roomKey] = rcl;
         }
     }
     /**
@@ -4680,7 +4685,10 @@ class Architect {
             return;
         }
         console.log(`🔄 Architect: Force replanning ${roomName}...`);
-        this.roomPlansExecuted.delete(roomName);
+        // Clear the RCL tracking in Memory to force replan
+        if (Memory.architectPlans) {
+            delete Memory.architectPlans[roomName];
+        }
         this.run(room);
         console.log(`✅ Architect: Replan complete for ${roomName}`);
     }
@@ -5072,8 +5080,6 @@ class Architect {
         }
     }
 }
-// Track which RCLs have been planned for each room
-Architect.roomPlansExecuted = new Map();
 
 /**
  * Progression Manager - Intelligent Phase Detection
@@ -6353,7 +6359,7 @@ const loop = ErrorMapper.wrapLoop(() => {
     }
     // Clean up invalid Memory keys (run once every 1000 ticks)
     if (Game.time % 1000 === 0) {
-        const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats', 'progressionStats'];
+        const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats', 'progressionStats', 'architectPlans'];
         let cleaned = 0;
         for (const key in Memory) {
             if (!validKeys.includes(key)) {
