@@ -4903,6 +4903,34 @@ var RCL2Phase;
 })(RCL2Phase || (RCL2Phase = {}));
 class ProgressionManager {
     /**
+     * Convert upgraders to builders when construction is needed
+     * Returns number of creeps converted
+     */
+    static convertUpgradersToBuilders(room) {
+        // Check if there are construction sites
+        const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+        if (constructionSites.length === 0) {
+            return 0; // No construction needed
+        }
+        // Find all upgraders in the room
+        const upgraders = room.find(FIND_MY_CREEPS, {
+            filter: c => c.memory.role === "upgrader"
+        });
+        if (upgraders.length === 0) {
+            return 0; // No upgraders to convert
+        }
+        // Convert all upgraders to builders
+        let converted = 0;
+        for (const creep of upgraders) {
+            creep.memory.role = "builder";
+            converted++;
+        }
+        if (converted > 0) {
+            console.log(`🔄 Converted ${converted} upgrader(s) to builders for RCL 2 construction`);
+        }
+        return converted;
+    }
+    /**
      * Detect current progression state for RCL 2
      */
     static detectRCL2State(room) {
@@ -5267,6 +5295,11 @@ class RoomStateManager {
             // Record milestones and take snapshots
             StatsTracker.recordMilestones(room, progressionState);
             StatsTracker.takeSnapshot(room, progressionState);
+            // Convert upgraders to builders during active construction (Phase 1 & 2)
+            if (progressionState.phase === RCL2Phase.PHASE_1_EXTENSIONS ||
+                progressionState.phase === RCL2Phase.PHASE_2_CONTAINERS) {
+                ProgressionManager.convertUpgradersToBuilders(room);
+            }
         }
         // Get primary spawn
         const spawns = room.find(FIND_MY_SPAWNS);

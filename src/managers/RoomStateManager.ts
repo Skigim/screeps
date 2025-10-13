@@ -4,7 +4,7 @@ import type { RCLConfig } from "configs/RCL1Config";
 import { SpawnManager } from "./SpawnManager";
 import { AssignmentManager } from "./AssignmentManager";
 import { Architect } from "./Architect";
-import { ProgressionManager, type ProgressionState } from "./ProgressionManager";
+import { ProgressionManager, RCL2Phase, type ProgressionState } from "./ProgressionManager";
 import { StatsTracker } from "./StatsTracker";
 
 /**
@@ -62,6 +62,12 @@ export class RoomStateManager {
       // Record milestones and take snapshots
       StatsTracker.recordMilestones(room, progressionState);
       StatsTracker.takeSnapshot(room, progressionState);
+
+      // Convert upgraders to builders during active construction (Phase 1 & 2)
+      if (progressionState.phase === RCL2Phase.PHASE_1_EXTENSIONS ||
+          progressionState.phase === RCL2Phase.PHASE_2_CONTAINERS) {
+        ProgressionManager.convertUpgradersToBuilders(room);
+      }
     }
 
     // Get primary spawn

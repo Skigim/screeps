@@ -29,6 +29,40 @@ export interface ProgressionState {
 
 export class ProgressionManager {
   /**
+   * Convert upgraders to builders when construction is needed
+   * Returns number of creeps converted
+   */
+  public static convertUpgradersToBuilders(room: Room): number {
+    // Check if there are construction sites
+    const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+    if (constructionSites.length === 0) {
+      return 0; // No construction needed
+    }
+
+    // Find all upgraders in the room
+    const upgraders = room.find(FIND_MY_CREEPS, {
+      filter: c => c.memory.role === "upgrader"
+    });
+
+    if (upgraders.length === 0) {
+      return 0; // No upgraders to convert
+    }
+
+    // Convert all upgraders to builders
+    let converted = 0;
+    for (const creep of upgraders) {
+      creep.memory.role = "builder";
+      converted++;
+    }
+
+    if (converted > 0) {
+      console.log(`🔄 Converted ${converted} upgrader(s) to builders for RCL 2 construction`);
+    }
+
+    return converted;
+  }
+
+  /**
    * Detect current progression state for RCL 2
    */
   public static detectRCL2State(room: Room): ProgressionState {
