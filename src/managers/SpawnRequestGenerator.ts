@@ -234,40 +234,36 @@ export class SpawnRequestGenerator {
 
   /**
    * Build a dynamically scaled body based on available energy
-   * Scales up as extensions are completed during Phase 1
+   * Scales up as extensions are completed during Phase 1-2
    */
   private static buildScaledBody(room: Room, role: string): BodyPartConstant[] {
     const energy = room.energyCapacityAvailable;
     const body: BodyPartConstant[] = [];
 
     if (role === "harvester") {
-      // Harvester: Prioritize WORK parts, then balance CARRY and MOVE
-      // Pattern: [WORK×N, CARRY, MOVE×N]
-      // 300 energy: [WORK, CARRY, MOVE] = 200
-      // 350 energy: [WORK, WORK, CARRY, MOVE] = 300
-      // 400 energy: [WORK, WORK, CARRY, MOVE, MOVE] = 350
-      // 550 energy: [WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE] = 500
+      // Harvester: [WORK, WORK, MOVE] pattern for drop mining efficiency
+      // 300 energy: [WORK, WORK, MOVE] = 250
+      // 350 energy: [WORK, WORK, MOVE, WORK] = 350
+      // 400 energy: [WORK, WORK, MOVE, WORK, MOVE] = 400
+      // 550 energy: [WORK, WORK, MOVE, WORK, WORK, MOVE] = 500
 
-      const pattern = [WORK, CARRY, MOVE]; // 200 energy base
-      const sets = Math.floor(energy / 200);
-
-      for (let i = 0; i < sets && body.length < 50; i++) {
-        body.push(...pattern);
+      // Start with base pattern
+      const basePattern = [WORK, WORK, MOVE]; // 250 energy
+      if (energy >= 250) {
+        body.push(...basePattern);
       }
 
-      // Use remaining energy for extra WORK parts (most important)
+      // Add more WORK+MOVE pairs with remaining energy
       let remaining = energy - this.calculateBodyCost(body);
+      while (remaining >= 150 && body.length < 50) {
+        body.push(WORK, MOVE);
+        remaining -= 150;
+      }
+
+      // Use any remaining energy for extra WORK parts
       while (remaining >= 100 && body.length < 50) {
         body.push(WORK);
         remaining -= 100;
-      }
-
-      // Add MOVE parts to match WORK parts for mobility
-      const workParts = body.filter(p => p === WORK).length;
-      const moveParts = body.filter(p => p === MOVE).length;
-      while (moveParts < workParts && remaining >= 50 && body.length < 50) {
-        body.push(MOVE);
-        remaining -= 50;
       }
 
     } else if (role === "upgrader" || role === "builder") {
@@ -283,9 +279,7 @@ export class SpawnRequestGenerator {
 
     // Fallback: Minimum viable body
     return body.length > 0 ? body : [WORK, CARRY, MOVE];
-  }
-
-  /**
+  }  /**
    * Build stationary harvester body: [WORK×5, MOVE]
    * Designed to sit on container and mine continuously
    */
@@ -346,7 +340,7 @@ export class SpawnRequestGenerator {
       requests.push({
         role: "hauler",
         priority: 1, // High priority - critical for logistics
-        reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers`,
+        reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${room.energyCapacityAvailable} energy)`,
         body: body,
         minEnergy: this.calculateBodyCost(body)
       });

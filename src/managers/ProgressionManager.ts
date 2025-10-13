@@ -9,17 +9,17 @@
  * - Container operational status
  * - Creep composition readiness
  *
- * RCL 2 Progression Plan:
- * Phase 1: Build 5 extensions (RCL1 mobile harvesters, no upgraders)
- * Phase 2: Build source containers (transition to stationary harvesters, RCL1 bodies die off)
- * Phase 3: Build road network (haulers active, finish roads)
- * Phase 4: Build controller container (convert builders back to upgraders)
+ * RCL 2 Progression Plan (OPTIMIZED):
+ * Phase 1: Build source containers (mobile harvesters with drop mining, fast build)
+ * Phase 2: Build extensions (haulers bring energy from containers, no walk time)
+ * Phase 3: Build road network (stationary harvesters + full logistics)
+ * Phase 4: Build controller container (convert builders to upgraders)
  */
 
 export enum RCL2Phase {
-  PHASE_1_EXTENSIONS = "phase1_extensions",      // Building extensions, no upgraders
-  PHASE_2_CONTAINERS = "phase2_containers",      // Building source containers, stationary harvesters
-  PHASE_3_ROADS = "phase3_roads",                // Building road network, full logistics
+  PHASE_1_CONTAINERS = "phase1_containers",      // Building source containers, drop mining
+  PHASE_2_EXTENSIONS = "phase2_extensions",      // Building extensions, haulers active
+  PHASE_3_ROADS = "phase3_roads",                // Building road network, stationary harvesters
   PHASE_4_CONTROLLER = "phase4_controller",      // Building controller container
   COMPLETE = "complete"                          // RCL 2 progression complete
 }
@@ -111,7 +111,7 @@ export class ProgressionManager {
    */
   public static detectRCL2State(room: Room): ProgressionState {
     const state: ProgressionState = {
-      phase: RCL2Phase.PHASE_1_EXTENSIONS,
+      phase: RCL2Phase.PHASE_1_CONTAINERS,
       containersOperational: false,
       extensionsComplete: false,
       sourceContainersBuilt: 0,
@@ -165,32 +165,35 @@ export class ProgressionManager {
     // Determine if containers are operational (at least 1 source container built)
     state.containersOperational = state.sourceContainersBuilt > 0;
 
-    // Phase detection logic
-    if (!state.extensionsComplete) {
-      // Phase 1: Building extensions
-      // - Mobile harvesters (RCL1 bodies)
+    // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
+    if (state.sourceContainersBuilt < sources.length) {
+      // Phase 1: Building source containers
+      // - Mobile harvesters: [WORK, WORK, MOVE] = 250 energy (drop mining)
+      // - Drop energy near container sites for builders
       // - NO upgraders (prevent source congestion)
-      state.phase = RCL2Phase.PHASE_1_EXTENSIONS;
+      // - NO haulers yet (nothing to haul from)
+      state.phase = RCL2Phase.PHASE_1_CONTAINERS;
       state.useStationaryHarvesters = false;
       state.useHaulers = false;
-      state.allowRCL1Bodies = true;
-    } else if (state.sourceContainersBuilt < sources.length) {
-      // Phase 2: Building source containers
-      // - Extensions complete (550 energy available for stationary harvesters)
-      // - Stationary harvesters: [WORK×5, MOVE] = 550 energy
-      // - RCL1 bodies die off naturally, replaced with stationary harvesters
-      // - Haulers spawn when first container is done
-      state.phase = RCL2Phase.PHASE_2_CONTAINERS;
-      state.useStationaryHarvesters = true; // All 5 extensions complete = 550 energy available
-      state.useHaulers = state.sourceContainersBuilt > 0;
-      state.allowRCL1Bodies = false; // Stop spawning RCL1 bodies
+      state.allowRCL1Bodies = false; // Use [WORK, WORK, MOVE] not [WORK, CARRY, MOVE]
+    } else if (!state.extensionsComplete) {
+      // Phase 2: Building extensions
+      // - Source containers complete → spawn haulers
+      // - Haulers bring energy from containers → spawn
+      // - Builders withdraw from spawn (no walking to sources)
+      // - Keep mobile harvesters until extensions complete
+      state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
+      state.useStationaryHarvesters = false; // Can't afford [WORK×5, MOVE] yet (need 550 energy)
+      state.useHaulers = true; // Containers operational
+      state.allowRCL1Bodies = false;
     } else if (!state.roadsComplete) {
       // Phase 3: Building road network
-      // - All source containers operational
-      // - Full hauler logistics
-      // - Finish road network
+      // - All 5 extensions complete → 550 energy available
+      // - NOW spawn stationary harvesters [WORK×5, MOVE]
+      // - Full hauler logistics operational
+      // - Build road network
       state.phase = RCL2Phase.PHASE_3_ROADS;
-      state.useStationaryHarvesters = true;
+      state.useStationaryHarvesters = true; // Extensions complete = 550 energy available
       state.useHaulers = true;
       state.allowRCL1Bodies = false;
     } else if (!state.controllerContainerBuilt) {

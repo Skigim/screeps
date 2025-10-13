@@ -3910,6 +3910,39 @@ class RoleHarvester {
             }
         }
         else {
+            // Check if source containers exist (for drop mining strategy)
+            const sourceContainers = creep.room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER
+            });
+            const hasSourceContainers = sourceContainers.some(container => {
+                const sources = creep.room.find(FIND_SOURCES);
+                return sources.some(source => container.pos.inRangeTo(source, 1));
+            });
+            // Phase 1 (no source containers): DROP MINING STRATEGY
+            // Drop energy near container sites for builders to pick up
+            if (!hasSourceContainers) {
+                // Find container construction sites near sources
+                const containerSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
+                    filter: site => {
+                        if (site.structureType !== STRUCTURE_CONTAINER)
+                            return false;
+                        const sources = creep.room.find(FIND_SOURCES);
+                        return sources.some(source => site.pos.inRangeTo(source, 1));
+                    }
+                });
+                if (containerSite) {
+                    // Move to container site and drop energy
+                    if (creep.pos.inRangeTo(containerSite, 0)) {
+                        // At container site - drop energy for builders
+                        creep.drop(RESOURCE_ENERGY);
+                    }
+                    else {
+                        Traveler.travelTo(creep, containerSite, { range: 0 });
+                    }
+                    return;
+                }
+            }
+            // Phase 2+: Normal delivery to spawn/extensions
             // Transfer energy to spawn or extensions
             const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
                 filter: (structure) => {
@@ -4059,14 +4092,16 @@ const RCL1Config = {
 const RCL2Config = {
     roles: {
         harvester: {
-            body: [WORK, CARRY, MOVE],
-            // TODO: Upgrade to [WORK×5, MOVE] once containers are built
+            body: [WORK, WORK, MOVE],
+            // Double mining speed vs [WORK, CARRY, MOVE]
+            // Phase 1: Drop energy near container sites for builders
+            // Phase 2: Keep until extensions complete (can't afford stationary yet)
+            // Phase 3: Replaced by [WORK×5, MOVE] stationary harvesters
             priority: 1,
             assignToSource: true,
             behavior: {
                 energySource: "harvest",
-                workTarget: "spawn/extensions" // Deliver to spawn/extensions
-                // TODO: Change to "container" once containers built
+                workTarget: "spawn/extensions" // Deliver to spawn/extensions (or drop if Phase 1)
             }
         },
         upgrader: {
@@ -4296,35 +4331,32 @@ class SpawnRequestGenerator {
     }
     /**
      * Build a dynamically scaled body based on available energy
-     * Scales up as extensions are completed during Phase 1
+     * Scales up as extensions are completed during Phase 1-2
      */
     static buildScaledBody(room, role) {
         const energy = room.energyCapacityAvailable;
         const body = [];
         if (role === "harvester") {
-            // Harvester: Prioritize WORK parts, then balance CARRY and MOVE
-            // Pattern: [WORK×N, CARRY, MOVE×N]
-            // 300 energy: [WORK, CARRY, MOVE] = 200
-            // 350 energy: [WORK, WORK, CARRY, MOVE] = 300
-            // 400 energy: [WORK, WORK, CARRY, MOVE, MOVE] = 350
-            // 550 energy: [WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE] = 500
-            const pattern = [WORK, CARRY, MOVE]; // 200 energy base
-            const sets = Math.floor(energy / 200);
-            for (let i = 0; i < sets && body.length < 50; i++) {
-                body.push(...pattern);
+            // Harvester: [WORK, WORK, MOVE] pattern for drop mining efficiency
+            // 300 energy: [WORK, WORK, MOVE] = 250
+            // 350 energy: [WORK, WORK, MOVE, WORK] = 350
+            // 400 energy: [WORK, WORK, MOVE, WORK, MOVE] = 400
+            // 550 energy: [WORK, WORK, MOVE, WORK, WORK, MOVE] = 500
+            // Start with base pattern
+            const basePattern = [WORK, WORK, MOVE]; // 250 energy
+            if (energy >= 250) {
+                body.push(...basePattern);
             }
-            // Use remaining energy for extra WORK parts (most important)
+            // Add more WORK+MOVE pairs with remaining energy
             let remaining = energy - this.calculateBodyCost(body);
+            while (remaining >= 150 && body.length < 50) {
+                body.push(WORK, MOVE);
+                remaining -= 150;
+            }
+            // Use any remaining energy for extra WORK parts
             while (remaining >= 100 && body.length < 50) {
                 body.push(WORK);
                 remaining -= 100;
-            }
-            // Add MOVE parts to match WORK parts for mobility
-            const workParts = body.filter(p => p === WORK).length;
-            const moveParts = body.filter(p => p === MOVE).length;
-            while (moveParts < workParts && remaining >= 50 && body.length < 50) {
-                body.push(MOVE);
-                remaining -= 50;
             }
         }
         else if (role === "upgrader" || role === "builder") {
@@ -4338,8 +4370,7 @@ class SpawnRequestGenerator {
         }
         // Fallback: Minimum viable body
         return body.length > 0 ? body : [WORK, CARRY, MOVE];
-    }
-    /**
+    } /**
      * Build stationary harvester body: [WORK×5, MOVE]
      * Designed to sit on container and mine continuously
      */
@@ -4388,7 +4419,7 @@ class SpawnRequestGenerator {
             requests.push({
                 role: "hauler",
                 priority: 1,
-                reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers`,
+                reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${room.energyCapacityAvailable} energy)`,
                 body: body,
                 minEnergy: this.calculateBodyCost(body)
             });
@@ -4793,21 +4824,24 @@ class Architect {
         // Plan infrastructure based on RCL
         const rcl = (controller === null || controller === void 0 ? void 0 : controller.level) || 1;
         if (rcl >= 2) {
-            // RCL 2: Extensions, source containers, controller container, roads
-            plan.extensions = this.planExtensions(room, spawn, 5); // RCL 2 unlocks 5 extensions
+            // RCL 2: Containers first (drop mining), then extensions, then roads
+            // Phase 1: Source containers (fast with drop mining)
             for (const source of sources) {
                 const containerPos = this.planSourceContainer(room, source);
                 if (containerPos) {
                     plan.sourceContainers.set(source.id, containerPos);
                 }
             }
+            // Phase 2: Extensions (haulers bring energy from containers)
+            plan.extensions = this.planExtensions(room, spawn, 5); // RCL 2 unlocks 5 extensions
+            // Phase 4: Controller container (last)
             if (controller) {
                 const controllerContainer = this.planControllerContainer(room, controller, spawn);
                 if (controllerContainer) {
                     plan.destContainers.controller = controllerContainer;
                 }
             }
-            // Plan road network connecting everything
+            // Phase 3: Road network connecting everything
             plan.roads = this.planRoadNetwork(room, spawn, sources, controller, plan);
             // Clean up faulty construction sites that don't match the plan
             this.cleanupFaultySites(room, plan);
@@ -4822,31 +4856,31 @@ class Architect {
     static executePlan(room, plan) {
         const existingSites = room.find(FIND_CONSTRUCTION_SITES);
         const maxSites = 100; // Game limit
-        // Prioritize construction: Extensions > Containers > Roads
+        // Prioritize construction: Containers > Extensions > Roads
         const placementQueue = [];
-        // 1. Extensions (highest priority - increase energy capacity)
-        for (const pos of plan.extensions) {
-            if (!this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
-                placementQueue.push({ pos, type: STRUCTURE_EXTENSION });
-            }
-        }
-        // 2. Source containers (enable efficient harvesting)
+        // 1. Source containers (highest priority - enable drop mining and hauler logistics)
         for (const pos of plan.sourceContainers.values()) {
             if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
                 placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
             }
         }
-        // 3. Controller container (enable efficient upgrading)
+        // 2. Extensions (second priority - increase energy capacity for stationary harvesters)
+        for (const pos of plan.extensions) {
+            if (!this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
+                placementQueue.push({ pos, type: STRUCTURE_EXTENSION });
+            }
+        }
+        // 3. Roads (third priority - improve logistics)
+        for (const pos of plan.roads) {
+            if (!this.hasStructureAt(room, pos, STRUCTURE_ROAD) && !this.hasStructureAt(room, pos, STRUCTURE_SPAWN)) {
+                placementQueue.push({ pos, type: STRUCTURE_ROAD });
+            }
+        }
+        // 4. Controller container (lowest priority - final polish)
         if (plan.destContainers.controller) {
             const pos = plan.destContainers.controller;
             if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
                 placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
-            }
-        }
-        // 4. Roads (lowest priority - nice to have)
-        for (const pos of plan.roads) {
-            if (!this.hasStructureAt(room, pos, STRUCTURE_ROAD) && !this.hasStructureAt(room, pos, STRUCTURE_SPAWN)) {
-                placementQueue.push({ pos, type: STRUCTURE_ROAD });
             }
         }
         // Place construction sites (respecting game limit)
@@ -5171,16 +5205,16 @@ class Architect {
  * - Container operational status
  * - Creep composition readiness
  *
- * RCL 2 Progression Plan:
- * Phase 1: Build 5 extensions (RCL1 mobile harvesters, no upgraders)
- * Phase 2: Build source containers (transition to stationary harvesters, RCL1 bodies die off)
- * Phase 3: Build road network (haulers active, finish roads)
- * Phase 4: Build controller container (convert builders back to upgraders)
+ * RCL 2 Progression Plan (OPTIMIZED):
+ * Phase 1: Build source containers (mobile harvesters with drop mining, fast build)
+ * Phase 2: Build extensions (haulers bring energy from containers, no walk time)
+ * Phase 3: Build road network (stationary harvesters + full logistics)
+ * Phase 4: Build controller container (convert builders to upgraders)
  */
 var RCL2Phase;
 (function (RCL2Phase) {
-    RCL2Phase["PHASE_1_EXTENSIONS"] = "phase1_extensions";
-    RCL2Phase["PHASE_2_CONTAINERS"] = "phase2_containers";
+    RCL2Phase["PHASE_1_CONTAINERS"] = "phase1_containers";
+    RCL2Phase["PHASE_2_EXTENSIONS"] = "phase2_extensions";
     RCL2Phase["PHASE_3_ROADS"] = "phase3_roads";
     RCL2Phase["PHASE_4_CONTROLLER"] = "phase4_controller";
     RCL2Phase["COMPLETE"] = "complete"; // RCL 2 progression complete
@@ -5248,7 +5282,7 @@ class ProgressionManager {
      */
     static detectRCL2State(room) {
         const state = {
-            phase: RCL2Phase.PHASE_1_EXTENSIONS,
+            phase: RCL2Phase.PHASE_1_CONTAINERS,
             containersOperational: false,
             extensionsComplete: false,
             sourceContainersBuilt: 0,
@@ -5291,34 +5325,37 @@ class ProgressionManager {
         state.roadsComplete = roadSites.length === 0 && roads.length > 0;
         // Determine if containers are operational (at least 1 source container built)
         state.containersOperational = state.sourceContainersBuilt > 0;
-        // Phase detection logic
-        if (!state.extensionsComplete) {
-            // Phase 1: Building extensions
-            // - Mobile harvesters (RCL1 bodies)
+        // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
+        if (state.sourceContainersBuilt < sources.length) {
+            // Phase 1: Building source containers
+            // - Mobile harvesters: [WORK, WORK, MOVE] = 250 energy (drop mining)
+            // - Drop energy near container sites for builders
             // - NO upgraders (prevent source congestion)
-            state.phase = RCL2Phase.PHASE_1_EXTENSIONS;
+            // - NO haulers yet (nothing to haul from)
+            state.phase = RCL2Phase.PHASE_1_CONTAINERS;
             state.useStationaryHarvesters = false;
             state.useHaulers = false;
-            state.allowRCL1Bodies = true;
+            state.allowRCL1Bodies = false; // Use [WORK, WORK, MOVE] not [WORK, CARRY, MOVE]
         }
-        else if (state.sourceContainersBuilt < sources.length) {
-            // Phase 2: Building source containers
-            // - Extensions complete (550 energy available for stationary harvesters)
-            // - Stationary harvesters: [WORK×5, MOVE] = 550 energy
-            // - RCL1 bodies die off naturally, replaced with stationary harvesters
-            // - Haulers spawn when first container is done
-            state.phase = RCL2Phase.PHASE_2_CONTAINERS;
-            state.useStationaryHarvesters = true; // All 5 extensions complete = 550 energy available
-            state.useHaulers = state.sourceContainersBuilt > 0;
-            state.allowRCL1Bodies = false; // Stop spawning RCL1 bodies
+        else if (!state.extensionsComplete) {
+            // Phase 2: Building extensions
+            // - Source containers complete → spawn haulers
+            // - Haulers bring energy from containers → spawn
+            // - Builders withdraw from spawn (no walking to sources)
+            // - Keep mobile harvesters until extensions complete
+            state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
+            state.useStationaryHarvesters = false; // Can't afford [WORK×5, MOVE] yet (need 550 energy)
+            state.useHaulers = true; // Containers operational
+            state.allowRCL1Bodies = false;
         }
         else if (!state.roadsComplete) {
             // Phase 3: Building road network
-            // - All source containers operational
-            // - Full hauler logistics
-            // - Finish road network
+            // - All 5 extensions complete → 550 energy available
+            // - NOW spawn stationary harvesters [WORK×5, MOVE]
+            // - Full hauler logistics operational
+            // - Build road network
             state.phase = RCL2Phase.PHASE_3_ROADS;
-            state.useStationaryHarvesters = true;
+            state.useStationaryHarvesters = true; // Extensions complete = 550 energy available
             state.useHaulers = true;
             state.allowRCL1Bodies = false;
         }

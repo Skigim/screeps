@@ -43,14 +43,16 @@ export interface RCLConfig {
 export const RCL2Config: RCLConfig = {
   roles: {
     harvester: {
-      body: [WORK, CARRY, MOVE], // Cost: 200 energy - basic for transition
-      // TODO: Upgrade to [WORK×5, MOVE] once containers are built
+      body: [WORK, WORK, MOVE], // Cost: 250 energy - optimized for drop mining
+      // Double mining speed vs [WORK, CARRY, MOVE]
+      // Phase 1: Drop energy near container sites for builders
+      // Phase 2: Keep until extensions complete (can't afford stationary yet)
+      // Phase 3: Replaced by [WORK×5, MOVE] stationary harvesters
       priority: 1, // Highest priority - energy income
       assignToSource: true, // Harvesters get assigned to sources
       behavior: {
         energySource: "harvest", // Mine from sources
-        workTarget: "spawn/extensions" // Deliver to spawn/extensions
-        // TODO: Change to "container" once containers built
+        workTarget: "spawn/extensions" // Deliver to spawn/extensions (or drop if Phase 1)
       }
     },
     upgrader: {

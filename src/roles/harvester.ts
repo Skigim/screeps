@@ -37,6 +37,40 @@ export class RoleHarvester {
         }
       }
     } else {
+      // Check if source containers exist (for drop mining strategy)
+      const sourceContainers = creep.room.find(FIND_STRUCTURES, {
+        filter: s => s.structureType === STRUCTURE_CONTAINER
+      });
+      const hasSourceContainers = sourceContainers.some(container => {
+        const sources = creep.room.find(FIND_SOURCES);
+        return sources.some(source => container.pos.inRangeTo(source, 1));
+      });
+
+      // Phase 1 (no source containers): DROP MINING STRATEGY
+      // Drop energy near container sites for builders to pick up
+      if (!hasSourceContainers) {
+        // Find container construction sites near sources
+        const containerSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
+          filter: site => {
+            if (site.structureType !== STRUCTURE_CONTAINER) return false;
+            const sources = creep.room.find(FIND_SOURCES);
+            return sources.some(source => site.pos.inRangeTo(source, 1));
+          }
+        });
+
+        if (containerSite) {
+          // Move to container site and drop energy
+          if (creep.pos.inRangeTo(containerSite, 0)) {
+            // At container site - drop energy for builders
+            creep.drop(RESOURCE_ENERGY);
+          } else {
+            Traveler.travelTo(creep, containerSite, { range: 0 });
+          }
+          return;
+        }
+      }
+
+      // Phase 2+: Normal delivery to spawn/extensions
       // Transfer energy to spawn or extensions
       const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
         filter: (structure: any) => {

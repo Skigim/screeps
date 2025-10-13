@@ -113,9 +113,8 @@ export class Architect {
     const rcl = controller?.level || 1;
 
     if (rcl >= 2) {
-      // RCL 2: Extensions, source containers, controller container, roads
-      plan.extensions = this.planExtensions(room, spawn, 5); // RCL 2 unlocks 5 extensions
-
+      // RCL 2: Containers first (drop mining), then extensions, then roads
+      // Phase 1: Source containers (fast with drop mining)
       for (const source of sources) {
         const containerPos = this.planSourceContainer(room, source);
         if (containerPos) {
@@ -123,6 +122,10 @@ export class Architect {
         }
       }
 
+      // Phase 2: Extensions (haulers bring energy from containers)
+      plan.extensions = this.planExtensions(room, spawn, 5); // RCL 2 unlocks 5 extensions
+
+      // Phase 4: Controller container (last)
       if (controller) {
         const controllerContainer = this.planControllerContainer(room, controller, spawn);
         if (controllerContainer) {
@@ -130,7 +133,7 @@ export class Architect {
         }
       }
 
-      // Plan road network connecting everything
+      // Phase 3: Road network connecting everything
       plan.roads = this.planRoadNetwork(room, spawn, sources, controller, plan);
 
       // Clean up faulty construction sites that don't match the plan
@@ -150,35 +153,35 @@ export class Architect {
     const existingSites = room.find(FIND_CONSTRUCTION_SITES);
     const maxSites = 100; // Game limit
 
-    // Prioritize construction: Extensions > Containers > Roads
+    // Prioritize construction: Containers > Extensions > Roads
     const placementQueue: Array<{ pos: RoomPosition; type: BuildableStructureConstant }> = [];
 
-    // 1. Extensions (highest priority - increase energy capacity)
-    for (const pos of plan.extensions) {
-      if (!this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
-        placementQueue.push({ pos, type: STRUCTURE_EXTENSION });
-      }
-    }
-
-    // 2. Source containers (enable efficient harvesting)
+    // 1. Source containers (highest priority - enable drop mining and hauler logistics)
     for (const pos of plan.sourceContainers.values()) {
       if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
         placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
       }
     }
 
-    // 3. Controller container (enable efficient upgrading)
+    // 2. Extensions (second priority - increase energy capacity for stationary harvesters)
+    for (const pos of plan.extensions) {
+      if (!this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
+        placementQueue.push({ pos, type: STRUCTURE_EXTENSION });
+      }
+    }
+
+    // 3. Roads (third priority - improve logistics)
+    for (const pos of plan.roads) {
+      if (!this.hasStructureAt(room, pos, STRUCTURE_ROAD) && !this.hasStructureAt(room, pos, STRUCTURE_SPAWN)) {
+        placementQueue.push({ pos, type: STRUCTURE_ROAD });
+      }
+    }
+
+    // 4. Controller container (lowest priority - final polish)
     if (plan.destContainers.controller) {
       const pos = plan.destContainers.controller;
       if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
         placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
-      }
-    }
-
-    // 4. Roads (lowest priority - nice to have)
-    for (const pos of plan.roads) {
-      if (!this.hasStructureAt(room, pos, STRUCTURE_ROAD) && !this.hasStructureAt(room, pos, STRUCTURE_SPAWN)) {
-        placementQueue.push({ pos, type: STRUCTURE_ROAD });
       }
     }
 
