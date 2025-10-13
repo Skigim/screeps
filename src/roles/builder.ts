@@ -67,10 +67,12 @@ export class RoleBuilder {
         // Transporter available - broadcast energy request and wait
         if (!creep.memory.requestingEnergy) {
           creep.memory.requestingEnergy = true;
-          // Stay near current position or construction site to receive delivery
         }
 
-        // Wait for transporter delivery (stay put or move to nearest construction site)
+        // Move off road if currently on one (keep roads clear for traffic)
+        this.moveOffRoadIfNeeded(creep);
+
+        // Wait for transporter delivery - stay near construction sites
         const nearbyConstruction = creep.pos.findInRange(FIND_CONSTRUCTION_SITES, 5)[0];
         if (nearbyConstruction && creep.pos.getRangeTo(nearbyConstruction) > 2) {
           Traveler.travelTo(creep, nearbyConstruction, { range: 2 });
