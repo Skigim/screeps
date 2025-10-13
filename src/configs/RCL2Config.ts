@@ -47,14 +47,39 @@ function generateHarvesterBody(energyCapacity: number): BodyPartConstant[] {
  * Generate a hauler body dynamically based on available energy
  * Haulers transport energy from containers to spawn/extensions
  * Pattern: Balanced CARRY/MOVE pairs
+ *
+ * PRIORITY-AWARE: Hauler CARRY capacity should not exceed harvester production
+ * Each WORK part produces 2 energy/tick, each CARRY part holds 50 energy
+ * Ratio: 1 WORK = 25 ticks to fill 1 CARRY (50 energy / 2 energy per tick)
+ * Safe ratio: 1 CARRY per 1 WORK part (conservative, accounts for travel time)
  */
-function generateHaulerBody(energyCapacity: number): BodyPartConstant[] {
-  // Build balanced CARRY/MOVE pairs (50 + 50 = 100 per pair)
-  const pairs = Math.floor(energyCapacity / 100);
-  const maxPairs = Math.min(pairs, 6); // Cap at 6 pairs (600 energy)
+function generateHaulerBody(energyCapacity: number, room?: Room): BodyPartConstant[] {
+  // Calculate max safe CARRY parts based on harvester work parts
+  let maxCarryParts = Math.floor(energyCapacity / 100); // Default: based on energy
 
+  if (room) {
+    // Priority check: Don't create haulers that outwork their harvesters
+    const harvesters = room.find(FIND_MY_CREEPS, {
+      filter: c => c.memory.role === "harvester"
+    });
+
+    if (harvesters.length > 0) {
+      // Calculate total WORK parts across all harvesters
+      const totalWorkParts = harvesters.reduce((sum, creep) => {
+        return sum + creep.body.filter(part => part.type === WORK).length;
+      }, 0);
+
+      // Limit CARRY parts to match WORK parts (1:1 ratio)
+      // This ensures haulers can transport what harvesters produce
+      maxCarryParts = Math.min(maxCarryParts, totalWorkParts);
+    }
+  }
+
+  // Build balanced CARRY/MOVE pairs
+  const pairs = Math.min(maxCarryParts, 6); // Cap at 6 pairs (600 energy)
   const body: BodyPartConstant[] = [];
-  for (let i = 0; i < maxPairs; i++) {
+
+  for (let i = 0; i < pairs; i++) {
     body.push(CARRY, MOVE);
   }
 
@@ -65,14 +90,39 @@ function generateHaulerBody(energyCapacity: number): BodyPartConstant[] {
 /**
  * Generate a general-purpose body for upgraders and builders
  * Pattern: Balanced WORK/CARRY/MOVE sets
+ *
+ * PRIORITY-AWARE: Workers should not exceed hauler capacity
+ * Each CARRY part holds 50 energy, each WORK part uses 1 energy/tick
+ * A worker with N WORK parts will drain N×50 energy every 50 ticks
+ * Safe ratio: WORK parts <= total hauler CARRY capacity / 2
  */
-function generateGeneralPurposeBody(energyCapacity: number): BodyPartConstant[] {
-  // Pattern: [WORK, CARRY, MOVE] = 200 energy per set
-  const sets = Math.floor(energyCapacity / 200);
-  const maxSets = Math.min(sets, 10); // Cap at reasonable size
+function generateGeneralPurposeBody(energyCapacity: number, room?: Room): BodyPartConstant[] {
+  // Calculate max safe WORK parts based on hauler capacity
+  let maxWorkParts = Math.floor(energyCapacity / 200); // Default: based on energy
 
+  if (room) {
+    // Priority check: Don't create workers that exceed hauler supply capacity
+    const haulers = room.find(FIND_MY_CREEPS, {
+      filter: c => c.memory.role === "hauler"
+    });
+
+    if (haulers.length > 0) {
+      // Calculate total CARRY parts across all haulers
+      const totalCarryParts = haulers.reduce((sum, creep) => {
+        return sum + creep.body.filter(part => part.type === CARRY).length;
+      }, 0);
+
+      // Limit WORK parts to half of hauler CARRY capacity
+      // This ensures workers don't drain faster than haulers can supply
+      maxWorkParts = Math.min(maxWorkParts, Math.floor(totalCarryParts / 2));
+    }
+  }
+
+  // Build balanced WORK/CARRY/MOVE sets
+  const sets = Math.min(maxWorkParts, 10); // Cap at reasonable size
   const body: BodyPartConstant[] = [];
-  for (let i = 0; i < maxSets; i++) {
+
+  for (let i = 0; i < sets; i++) {
     body.push(WORK, CARRY, MOVE);
   }
 

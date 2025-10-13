@@ -20,6 +20,42 @@ export interface SpawnRequest {
 
 export class SpawnRequestGenerator {
   /**
+   * Determine if room should use aggressive scaling (spawn max-size creeps)
+   * Conditions:
+   * 1. Both sources have full harvester + hauler assignment load
+   * 2. All extensions are built (no construction sites for extensions)
+   *
+   * When these conditions are met, economy is stable enough to spawn largest creeps
+   */
+  private static shouldUseAggressiveScaling(room: Room): boolean {
+    const sources = room.find(FIND_SOURCES);
+    const coverage = AssignmentManager.getSourceCoverage(room);
+
+    // Condition 1: Both sources fully assigned
+    // Each source needs at least 1 harvester + 1 hauler
+    const sourcesFullyAssigned = coverage.uncoveredByHarvesters.length === 0 &&
+                                 coverage.uncoveredByHaulers.length === 0;
+
+    // Condition 2: All extensions built (no extension construction sites)
+    const extensionSites = room.find(FIND_CONSTRUCTION_SITES, {
+      filter: site => site.structureType === STRUCTURE_EXTENSION
+    });
+    const allExtensionsBuilt = extensionSites.length === 0;
+
+    return sourcesFullyAssigned && allExtensionsBuilt;
+  }
+
+  /**
+   * Get energy capacity to use for body generation
+   * Uses energyCapacityAvailable when in aggressive mode, energyAvailable otherwise
+   */
+  private static getEnergyForBodyGeneration(room: Room): number {
+    return this.shouldUseAggressiveScaling(room)
+      ? room.energyCapacityAvailable
+      : room.energyAvailable;
+  }
+
+  /**
    * Generate all spawn requests for a room
    */
   public static generateRequests(room: Room): SpawnRequest[] {
@@ -112,7 +148,7 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (typeof roleConfig.body === 'function') {
-        body = roleConfig.body(room.energyAvailable);
+        body = roleConfig.body(this.getEnergyForBodyGeneration(room), room);
       } else {
         body = roleConfig.body;
       }
@@ -143,9 +179,8 @@ export class SpawnRequestGenerator {
         let body: BodyPartConstant[];
 
         if (typeof roleConfig.body === 'function') {
-          // Dynamic body generation based on AVAILABLE energy (not capacity)
-          // Scale to what we can spawn NOW, not what we might have later
-          body = roleConfig.body(room.energyAvailable);
+          // Dynamic body generation - uses aggressive scaling when economy stable
+          body = roleConfig.body(this.getEnergyForBodyGeneration(room));
         } else {
           // Static body array
           body = roleConfig.body;
@@ -175,8 +210,8 @@ export class SpawnRequestGenerator {
         let body: BodyPartConstant[];
 
         if (typeof roleConfig.body === 'function') {
-          // Dynamic body generation based on AVAILABLE energy (not capacity)
-          body = roleConfig.body(room.energyAvailable);
+          // Dynamic body generation - uses aggressive scaling when economy stable
+          body = roleConfig.body(this.getEnergyForBodyGeneration(room));
         } else {
           // Static body array
           body = roleConfig.body;
@@ -237,8 +272,8 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (typeof roleConfig.body === 'function') {
-        // Dynamic body generation based on AVAILABLE energy (not capacity)
-        body = roleConfig.body(room.energyAvailable);
+        // Dynamic body generation - uses aggressive scaling when economy stable
+        body = roleConfig.body(this.getEnergyForBodyGeneration(room));
       } else {
         // Static body array
         body = roleConfig.body;
@@ -290,8 +325,8 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (typeof roleConfig.body === 'function') {
-        // Dynamic body generation based on AVAILABLE energy (not capacity)
-        body = roleConfig.body(room.energyAvailable);
+        // Dynamic body generation - uses aggressive scaling when economy stable
+        body = roleConfig.body(this.getEnergyForBodyGeneration(room));
       } else {
         // Static body array
         body = roleConfig.body;
@@ -460,7 +495,7 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (roleConfig && typeof roleConfig.body === 'function') {
-        body = roleConfig.body(room.energyAvailable);
+        body = roleConfig.body(this.getEnergyForBodyGeneration(room));
       } else if (roleConfig && Array.isArray(roleConfig.body)) {
         body = roleConfig.body;
       } else {
@@ -489,8 +524,8 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (roleConfig && typeof roleConfig.body === 'function') {
-        // Dynamic body generation based on AVAILABLE energy (not capacity)
-        body = roleConfig.body(room.energyAvailable);
+        // Dynamic body generation - uses aggressive scaling when economy stable
+        body = roleConfig.body(this.getEnergyForBodyGeneration(room));
       } else if (roleConfig && Array.isArray(roleConfig.body)) {
         // Static body array
         body = roleConfig.body;

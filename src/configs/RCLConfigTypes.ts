@@ -7,7 +7,7 @@
  * Role configuration for a specific creep role
  */
 export interface RoleConfig {
-  body: BodyPartConstant[] | ((energyCapacity: number) => BodyPartConstant[]);
+  body: BodyPartConstant[] | ((energyCapacity: number, room?: Room) => BodyPartConstant[]);
   priority: number;
   assignToSource?: boolean; // Whether this role should be assigned to sources
   behavior?: {
