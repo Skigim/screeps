@@ -190,13 +190,7 @@ export class RoleTransporter {
         }
       }
 
-      // If we have requests but no energy, switch to collecting mode
-      if (requestingBuilders.length > 0 && !hasEnergyToDeliver) {
-        creep.memory.working = false;
-        return; // Will collect energy next tick
-      }
-
-      // No active requests - stay near construction sites, ready to respond
+      // No active requests (or no energy) - stay near construction sites, ready to respond
       const constructionSites = creep.room.find(FIND_CONSTRUCTION_SITES);
       if (constructionSites.length > 0) {
         const closest = creep.pos.findClosestByRange(constructionSites);
