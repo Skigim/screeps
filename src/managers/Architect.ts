@@ -254,6 +254,7 @@ export class Architect {
 
   /**
    * Plan road network connecting spawn, sources, and controller
+   * Uses terrain-agnostic pathfinding (swamps = plains since roads will be built)
    */
   private static planRoadNetwork(
     room: Room,
@@ -265,9 +266,46 @@ export class Architect {
     const roadPositions: Set<string> = new Set();
     const spawnPos = spawn.pos;
 
-    // Helper to add path to road set
+    // Helper to add path to road set with terrain-agnostic pathfinding
     const addPathToRoads = (fromPos: RoomPosition, toPos: RoomPosition) => {
-      const path = Traveler.findTravelPath(fromPos, toPos);
+      // Custom roomCallback to treat swamps and plains equally (we're building roads!)
+      const roomCallback = (roomName: string): CostMatrix | boolean => {
+        if (roomName !== room.name) return false;
+
+        const costs = new PathFinder.CostMatrix();
+        const terrain = room.getTerrain();
+
+        // Set costs: plains = 1, swamps = 1 (same!), walls = 255
+        for (let x = 0; x < 50; x++) {
+          for (let y = 0; y < 50; y++) {
+            const tile = terrain.get(x, y);
+            if (tile === TERRAIN_MASK_WALL) {
+              costs.set(x, y, 255); // Impassable
+            } else {
+              costs.set(x, y, 1); // Both plains and swamps cost 1
+            }
+          }
+        }
+
+        // Avoid existing structures (except roads/containers)
+        const structures = room.find(FIND_STRUCTURES);
+        for (const structure of structures) {
+          if (structure.structureType !== STRUCTURE_ROAD &&
+              structure.structureType !== STRUCTURE_CONTAINER &&
+              structure.structureType !== STRUCTURE_RAMPART) {
+            costs.set(structure.pos.x, structure.pos.y, 255);
+          }
+        }
+
+        return costs;
+      };
+
+      const path = Traveler.findTravelPath(fromPos, toPos, {
+        roomCallback: roomCallback,
+        ignoreCreeps: true,
+        maxOps: 4000
+      });
+
       if (path && path.path.length > 0) {
         for (const step of path.path) {
           const posKey = `${step.x},${step.y}`;
