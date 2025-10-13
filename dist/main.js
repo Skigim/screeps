@@ -4166,8 +4166,7 @@ class SpawnRequestGenerator {
                 priority: harvesterConfig.priority,
                 reason: `Source coverage: ${currentCount}/${idealCount} harvesters`,
                 body: harvesterConfig.body,
-                minEnergy: this.calculateBodyCost(harvesterConfig.body),
-                maxCount: idealCount
+                minEnergy: this.calculateBodyCost(harvesterConfig.body)
             });
         }
         return requests;
@@ -4208,8 +4207,7 @@ class SpawnRequestGenerator {
                 priority: upgraderConfig.priority,
                 reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
                 body: upgraderConfig.body,
-                minEnergy: this.calculateBodyCost(upgraderConfig.body),
-                maxCount: idealCount
+                minEnergy: this.calculateBodyCost(upgraderConfig.body)
             });
         }
         return requests;
@@ -4239,8 +4237,7 @@ class SpawnRequestGenerator {
                 priority: builderConfig.priority,
                 reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
                 body: builderConfig.body,
-                minEnergy: this.calculateBodyCost(builderConfig.body),
-                maxCount: idealCount
+                minEnergy: this.calculateBodyCost(builderConfig.body)
             });
         }
         return requests;

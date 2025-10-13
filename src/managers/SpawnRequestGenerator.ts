@@ -11,10 +11,9 @@ import { RoomStateManager } from "./RoomStateManager";
 export interface SpawnRequest {
   role: string;
   priority: number; // Lower = higher priority
-  reason: string; // Why this spawn is needed
+  reason: string; // Why this spawn is needed (includes current/target counts)
   body: BodyPartConstant[];
   minEnergy?: number; // Minimum energy needed to spawn
-  maxCount?: number; // Maximum number of this role
 }
 
 export class SpawnRequestGenerator {
@@ -71,8 +70,7 @@ export class SpawnRequestGenerator {
         priority: harvesterConfig.priority,
         reason: `Source coverage: ${currentCount}/${idealCount} harvesters`,
         body: harvesterConfig.body, // Use body from config
-        minEnergy: this.calculateBodyCost(harvesterConfig.body),
-        maxCount: idealCount
+        minEnergy: this.calculateBodyCost(harvesterConfig.body)
       });
     }
 
@@ -117,8 +115,7 @@ export class SpawnRequestGenerator {
         priority: upgraderConfig.priority,
         reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
         body: upgraderConfig.body, // Use body from config
-        minEnergy: this.calculateBodyCost(upgraderConfig.body),
-        maxCount: idealCount
+        minEnergy: this.calculateBodyCost(upgraderConfig.body)
       });
     }
 
@@ -155,8 +152,7 @@ export class SpawnRequestGenerator {
         priority: builderConfig.priority,
         reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
         body: builderConfig.body, // Use body from config
-        minEnergy: this.calculateBodyCost(builderConfig.body),
-        maxCount: idealCount
+        minEnergy: this.calculateBodyCost(builderConfig.body)
       });
     }
 
