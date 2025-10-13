@@ -29,14 +29,25 @@ export class RoleBuilder {
       const target = this.findBestConstructionTarget(creep);
 
       if (target) {
-        if (creep.build(target) === ERR_NOT_IN_RANGE) {
+        const buildResult = creep.build(target);
+
+        if (buildResult === ERR_NOT_IN_RANGE) {
           Traveler.travelTo(creep, target);
+        } else if (buildResult === OK) {
+          // Successfully building - check if we're on a road and move off if so
+          // This keeps roads clear for hauler traffic
+          this.moveOffRoadIfNeeded(creep);
         }
       } else {
         // If no construction sites, upgrade controller
         if (creep.room.controller) {
-          if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+          const upgradeResult = creep.upgradeController(creep.room.controller);
+
+          if (upgradeResult === ERR_NOT_IN_RANGE) {
             Traveler.travelTo(creep, creep.room.controller);
+          } else if (upgradeResult === OK) {
+            // Successfully upgrading - move off road if needed
+            this.moveOffRoadIfNeeded(creep);
           }
         }
       }
@@ -227,6 +238,51 @@ export class RoleBuilder {
         }
       }
     }
+  }
+
+  /**
+   * Move creep off road if currently standing on one
+   * Keeps roads clear for hauler traffic while building/upgrading
+   */
+  private static moveOffRoadIfNeeded(creep: Creep): void {
+    // Check if creep is standing on a road
+    const structures = creep.pos.lookFor(LOOK_STRUCTURES);
+    const isOnRoad = structures.some(s => s.structureType === STRUCTURE_ROAD);
+
+    if (!isOnRoad) return; // Not on road, all good
+
+    // Find adjacent non-road positions
+    const adjacentPositions = [
+      { x: creep.pos.x - 1, y: creep.pos.y - 1 },
+      { x: creep.pos.x, y: creep.pos.y - 1 },
+      { x: creep.pos.x + 1, y: creep.pos.y - 1 },
+      { x: creep.pos.x - 1, y: creep.pos.y },
+      { x: creep.pos.x + 1, y: creep.pos.y },
+      { x: creep.pos.x - 1, y: creep.pos.y + 1 },
+      { x: creep.pos.x, y: creep.pos.y + 1 },
+      { x: creep.pos.x + 1, y: creep.pos.y + 1 }
+    ];
+
+    // Find first valid non-road position
+    for (const pos of adjacentPositions) {
+      const roomPos = new RoomPosition(pos.x, pos.y, creep.room.name);
+
+      // Check if position is valid (not wall, not blocked)
+      const terrain = creep.room.getTerrain().get(pos.x, pos.y);
+      if (terrain === TERRAIN_MASK_WALL) continue;
+
+      // Check if there's a road here
+      const structuresAtPos = roomPos.lookFor(LOOK_STRUCTURES);
+      const hasRoad = structuresAtPos.some(s => s.structureType === STRUCTURE_ROAD);
+
+      if (!hasRoad) {
+        // Found a non-road spot! Move there
+        creep.move(creep.pos.getDirectionTo(roomPos));
+        return;
+      }
+    }
+
+    // All adjacent positions are roads or walls - stay put
   }
 
   /**
