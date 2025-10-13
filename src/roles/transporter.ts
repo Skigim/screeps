@@ -139,7 +139,7 @@ export class RoleTransporter {
 
     // Check for active builder requests (regardless of transporter state)
     const requestingBuilders = this.getBuilderRequests(creep.room);
-    
+
     // Update lastRequestTick if there are any requests (prevents premature fallback)
     if (requestingBuilders.length > 0) {
       creep.memory.lastRequestTick = Game.time;

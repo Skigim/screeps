@@ -72,11 +72,41 @@ export class RoleBuilder {
         // Move off road if currently on one (keep roads clear for traffic)
         this.moveOffRoadIfNeeded(creep);
 
-        // Wait for transporter delivery - stay near construction sites
-        const nearbyConstruction = creep.pos.findInRange(FIND_CONSTRUCTION_SITES, 5)[0];
-        if (nearbyConstruction && creep.pos.getRangeTo(nearbyConstruction) > 2) {
-          Traveler.travelTo(creep, nearbyConstruction, { range: 2 });
+        // Approach the transporter to meet it, but maintain safe distance from sources
+        const transporter = creep.pos.findClosestByPath(FIND_MY_CREEPS, {
+          filter: (c) => c.memory.role === "transporter"
+        });
+
+        if (transporter) {
+          const distanceToTransporter = creep.pos.getRangeTo(transporter);
+          
+          // Get all sources to check if we're too close to source traffic
+          const sources = creep.room.find(FIND_SOURCES);
+          const tooCloseToSource = sources.some(source => creep.pos.getRangeTo(source) <= 3);
+
+          if (distanceToTransporter > 3) {
+            // Too far from transporter - move closer (range 2-3)
+            Traveler.travelTo(creep, transporter, { range: 2 });
+          } else if (tooCloseToSource && distanceToTransporter <= 3) {
+            // Close enough to transporter but too close to source - move away from sources
+            // Find a position near transporter but away from sources
+            const nearbyConstruction = creep.pos.findInRange(FIND_CONSTRUCTION_SITES, 5)[0];
+            if (nearbyConstruction) {
+              const distanceToSite = creep.pos.getRangeTo(nearbyConstruction);
+              if (distanceToSite > 2) {
+                Traveler.travelTo(creep, nearbyConstruction, { range: 2 });
+              }
+            }
+          }
+          // else: in good position (range 1-3 from transporter, not blocking sources)
+        } else {
+          // Transporter exists but can't path to it - wait near construction sites
+          const nearbyConstruction = creep.pos.findInRange(FIND_CONSTRUCTION_SITES, 5)[0];
+          if (nearbyConstruction && creep.pos.getRangeTo(nearbyConstruction) > 2) {
+            Traveler.travelTo(creep, nearbyConstruction, { range: 2 });
+          }
         }
+        
         return; // Wait for delivery, don't self-gather
       }
 
