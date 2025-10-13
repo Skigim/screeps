@@ -201,15 +201,15 @@
         <div class="section">
             <h2>⚡ Quick Spawn Commands</h2>
             <div class="button-grid">
-                <button class="cmd-button" onclick="copyCommand('spawnHarvester()')">
+                <button class="cmd-button" onclick="copyCommand('spawnHarvester()', event)">
                     <span class="cmd-label">Spawn Harvester</span>
                     <span class="cmd-text">spawnHarvester()</span>
                 </button>
-                <button class="cmd-button" onclick="copyCommand('spawnBuilder()')">
+                <button class="cmd-button" onclick="copyCommand('spawnBuilder()', event)">
                     <span class="cmd-label">Spawn Builder</span>
                     <span class="cmd-text">spawnBuilder()</span>
                 </button>
-                <button class="cmd-button" onclick="copyCommand('spawnUpgrader()')">
+                <button class="cmd-button" onclick="copyCommand('spawnUpgrader()', event)">
                     <span class="cmd-label">Spawn Upgrader</span>
                     <span class="cmd-text">spawnUpgrader()</span>
                 </button>
@@ -220,19 +220,19 @@
         <div class="section">
             <h2>🔧 Custom Spawn Commands</h2>
             <div class="button-grid">
-                <button class="cmd-button" onclick="copyCommand(`spawn('harvester', [WORK, WORK, CARRY, MOVE])`)">
+                <button class="cmd-button" onclick="copyCommand(`spawn('harvester', [WORK, WORK, CARRY, MOVE])`, event)">
                     <span class="cmd-label">Big Harvester</span>
                     <span class="cmd-text">spawn('harvester', [WORK, WORK, CARRY, MOVE])</span>
                 </button>
-                <button class="cmd-button" onclick="copyCommand(`spawn('builder', [WORK, WORK, CARRY, MOVE])`)">
+                <button class="cmd-button" onclick="copyCommand(`spawn('builder', [WORK, WORK, CARRY, MOVE])`, event)">
                     <span class="cmd-label">Big Builder</span>
                     <span class="cmd-text">spawn('builder', [WORK, WORK, CARRY, MOVE])</span>
                 </button>
-                <button class="cmd-button" onclick="copyCommand(`spawn('upgrader', [WORK, WORK, CARRY, MOVE])`)">
+                <button class="cmd-button" onclick="copyCommand(`spawn('upgrader', [WORK, WORK, CARRY, MOVE])`, event)">
                     <span class="cmd-label">Big Upgrader</span>
                     <span class="cmd-text">spawn('upgrader', [WORK, WORK, CARRY, MOVE])</span>
                 </button>
-                <button class="cmd-button" onclick="copyCommand(`spawn('harvester', [WORK, WORK, WORK, CARRY, CARRY, MOVE, MOVE])`)">
+                <button class="cmd-button" onclick="copyCommand(`spawn('harvester', [WORK, WORK, WORK, CARRY, CARRY, MOVE, MOVE])`, event)">
                     <span class="cmd-label">Heavy Harvester</span>
                     <span class="cmd-text">spawn('harvester', [WORK, WORK, WORK, CARRY, CARRY, MOVE, MOVE])</span>
                 </button>
@@ -265,6 +265,10 @@
                     <span class="cmd-label">Upgrader Count</span>
                     <span class="cmd-text">creeps('upgrader')</span>
                 </button>
+                <button class="cmd-button" onclick="copyCommand(`creeps('hauler')`)">
+                    <span class="cmd-label">Hauler Count</span>
+                    <span class="cmd-text">creeps('hauler')</span>
+                </button>
                 <button class="cmd-button" onclick="copyCommand('spawns()')">
                     <span class="cmd-label">Spawn Status</span>
                     <span class="cmd-text">spawns()</span>
@@ -273,6 +277,31 @@
                     <span class="cmd-label">Stats Summary</span>
                     <span class="cmd-text">stats()</span>
                 </button>
+                <button class="cmd-button" onclick="copyCommand('checkHaulers()')">
+                    <span class="cmd-label">Hauler Assignments</span>
+                    <span class="cmd-text">checkHaulers()</span>
+                </button>
+                <button class="cmd-button" onclick="copyCommand('version()')">
+                    <span class="cmd-label">Code Version</span>
+                    <span class="cmd-text">version()</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Architect & Planning -->
+        <div class="section">
+            <h2>🏗️ Architect & Planning</h2>
+            <div class="button-grid">
+                <button class="cmd-button" onclick="copyCommand('showPlan()')">
+                    <span class="cmd-label">Visualize Plan</span>
+                    <span class="cmd-text">showPlan()</span>
+                </button>
+            </div>
+            <div class="info-box" style="margin-top: 15px; border-left-color: #ff8800;">
+                <h3>📐 Architect Visualization</h3>
+                <p><strong>showPlan()</strong> - Displays the infrastructure plan using room visuals:</p>
+                <p>🔴 Red = Source containers | 🟠 Orange = Spawn hub containers</p>
+                <p>🟣 Purple = Controller container | 🟢 Green = Extensions | ⚪ Gray = Roads</p>
             </div>
         </div>
 
@@ -288,7 +317,7 @@
                     <span class="cmd-label">Clear All Stats</span>
                     <span class="cmd-text">clearStats()</span>
                 </button>
-                <button class="cmd-button" onclick="copyCommand('Memory.stats')">
+                <button class="cmd-button" onclick="copyCommand('Memory.stats', event)">
                     <span class="cmd-label">View Raw Stats Data</span>
                     <span class="cmd-text">Memory.stats</span>
                 </button>
@@ -385,14 +414,17 @@
     <div id="notification" class="notification">Copied to clipboard! ✓</div>
 
     <script>
-        function copyCommand(command) {
+        function copyCommand(command, event) {
             navigator.clipboard.writeText(command).then(() => {
                 showNotification();
-                const buttons = document.querySelectorAll('.cmd-button');
-                event.target.closest('.cmd-button').classList.add('copied');
-                setTimeout(() => {
-                    event.target.closest('.cmd-button').classList.remove('copied');
-                }, 300);
+                // Get the button that was clicked
+                const button = event ? event.target.closest('.cmd-button') : null;
+                if (button) {
+                    button.classList.add('copied');
+                    setTimeout(() => {
+                        button.classList.remove('copied');
+                    }, 300);
+                }
             }).catch(err => {
                 console.error('Failed to copy:', err);
                 alert('Failed to copy to clipboard');
