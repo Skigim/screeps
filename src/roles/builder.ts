@@ -37,6 +37,24 @@ export class RoleBuilder {
         }
       }
     } else {
+      // Energy collection priority:
+      // 1. Ruins (dead structures from previous players) - FREE ENERGY!
+      // 2. Withdraw from spawn/extensions (if room has surplus)
+      // 3. Pickup dropped energy
+      // 4. Harvest directly from source (crisis mode)
+
+      // HIGHEST PRIORITY: Loot ruins (common with captured rooms)
+      // Note: FIND_RUINS = 123, but typed-screeps doesn't have it yet, so we cast
+      const ruins = creep.room.find(123 as FindConstant) as unknown as Ruin[];
+      const ruinWithEnergy = ruins.find(r => (r.store?.getUsedCapacity(RESOURCE_ENERGY) || 0) > 0);
+
+      if (ruinWithEnergy) {
+        if (creep.withdraw(ruinWithEnergy as any, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, ruinWithEnergy);
+        }
+        return;
+      }
+
       // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
       // Reserve energy for spawn if we're below minimum viable energy (200)
       const shouldReserveEnergy = creep.room.energyAvailable < 200;
