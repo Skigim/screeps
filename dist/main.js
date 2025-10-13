@@ -5793,11 +5793,16 @@ class RoleBuilder {
                 }
                 return;
             }
-            // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
-            // Reserve energy for spawn if we're below minimum viable energy (200)
-            const shouldReserveEnergy = creep.room.energyAvailable < 200;
-            if (!shouldReserveEnergy) {
-                // Safe to withdraw - room has enough energy for spawning
+            // THIRD PRIORITY: Withdraw from spawn/extensions
+            // SMART LOGIC: Check if there are pending spawn requests
+            // If no pending requests, spawn energy is "free" for builders!
+            const pendingRequests = SpawnRequestGenerator.generateRequests(creep.room);
+            const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
+            // Allow withdrawal if:
+            // 1. No pending spawn requests (energy is free!), OR
+            // 2. Room has surplus energy (>200 minimum)
+            const canWithdrawFromSpawn = !hasPendingSpawns || creep.room.energyAvailable >= 200;
+            if (canWithdrawFromSpawn) {
                 const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
                     filter: (structure) => {
                         return ((structure.structureType === STRUCTURE_EXTENSION ||
