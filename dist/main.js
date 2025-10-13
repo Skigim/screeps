@@ -4126,6 +4126,18 @@ class SpawnRequestGenerator {
         const progressionState = RoomStateManager.getProgressionState(room.name);
         // Always generate harvester requests first
         requests.push(...this.requestHarvesters(room, config, progressionState));
+        // CRITICAL: Always maintain 1 fallback upgrader to prevent downgrade
+        // This runs BEFORE other upgrader logic and uses minimal body (MOVE+CARRY)
+        const upgraderCount = this.getCreepCount(room, "upgrader");
+        if (upgraderCount === 0) {
+            requests.push({
+                role: "upgrader",
+                priority: 0,
+                reason: `FALLBACK: No upgraders! Controller downgrade imminent`,
+                body: [MOVE, CARRY],
+                minEnergy: 100 // Very cheap to spawn
+            });
+        }
         // Only request other roles if we have minimum harvesters
         const harvesterCount = this.getCreepCount(room, "harvester");
         const minHarvesters = this.getMinimumHarvesters(room);
