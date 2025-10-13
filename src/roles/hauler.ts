@@ -70,7 +70,29 @@ export class RoleHauler {
         }
       }
 
-      // All containers full - idle near controller
+      // 4. FOURTH PRIORITY: Direct transfer to nearby workers (builders/upgraders)
+      // Help workers who need energy - deliver directly to them
+      const nearbyWorker = creep.pos.findClosestByRange(FIND_MY_CREEPS, {
+        filter: (c: Creep) => {
+          // Only help builders and upgraders
+          if (c.memory.role !== "builder" && c.memory.role !== "upgrader") return false;
+          
+          // Only help if they need energy (not full, not currently working)
+          const needsEnergy = c.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+          const notWorking = !c.memory.working;
+          
+          return needsEnergy && notWorking;
+        }
+      });
+
+      if (nearbyWorker && creep.pos.getRangeTo(nearbyWorker) <= 3) {
+        if (creep.transfer(nearbyWorker, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, nearbyWorker);
+        }
+        return;
+      }
+
+      // All containers full and no workers need help - idle near controller
       const controller = creep.room.controller;
       if (controller && creep.pos.getRangeTo(controller) > 3) {
         Traveler.travelTo(creep, controller, { range: 3 });
