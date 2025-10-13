@@ -3366,12 +3366,15 @@ class Traveler {
         }
         // TRAFFIC FLOW OPTIMIZATION: Maintain 1-tile gap on roads for zipper-merge passing
         // Check if next position has a creep AND we're both on/moving to roads
-        let nextPos = Traveler.positionAtDirection(creep.pos, nextDirection);
-        if (nextPos && !options.ignoreCreeps) {
-            let shouldMaintainGap = this.shouldMaintainTrafficGap(creep, nextPos, destination);
-            if (shouldMaintainGap) {
-                // Don't move - maintain gap to allow passing
-                return OK;
+        // Default to TRUE (enabled) unless explicitly disabled
+        if (options.maintainRoadGap !== false) {
+            let nextPos = Traveler.positionAtDirection(creep.pos, nextDirection);
+            if (nextPos && !options.ignoreCreeps) {
+                let shouldMaintainGap = this.shouldMaintainTrafficGap(creep, nextPos, destination);
+                if (shouldMaintainGap) {
+                    // Don't move - maintain gap to allow passing
+                    return OK;
+                }
             }
         }
         return creep.move(nextDirection);
