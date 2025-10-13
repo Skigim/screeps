@@ -5,14 +5,14 @@ import { RoleHauler } from "./hauler";
 
 /**
  * Transporter Role - Specialized hauler for builder support
- * 
+ *
  * Purpose: Reduce traffic around source containers by delivering directly to builders
- * 
+ *
  * Behavior:
  * - Primary: Respond to builder energy requests and deliver directly
  * - Secondary: Stay topped off near construction sites, ready for requests
  * - Fallback: Act as regular hauler if no requests for 10 ticks
- * 
+ *
  * Energy Sources (priority):
  * 1. Global non-source dropped energy (by proximity)
  * 2. Spawn-adjacent destination containers
@@ -26,7 +26,7 @@ export class RoleTransporter {
    */
   private static getBuilderRequests(room: Room): Creep[] {
     return room.find(FIND_MY_CREEPS, {
-      filter: (c) => 
+      filter: (c) =>
         c.memory.role === "builder" &&
         c.memory.requestingEnergy === true &&
         c.store.getFreeCapacity(RESOURCE_ENERGY) > 0
@@ -51,13 +51,13 @@ export class RoleTransporter {
    */
   private static findNonSourceDroppedEnergy(creep: Creep): Resource | null {
     const sources = creep.room.find(FIND_SOURCES);
-    
+
     const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
       filter: (resource) => {
         if (resource.resourceType !== RESOURCE_ENERGY) return false;
 
         // Exclude energy near sources (within 2 tiles)
-        const nearSource = sources.some(source => 
+        const nearSource = sources.some(source =>
           resource.pos.getRangeTo(source) <= 2
         );
 
@@ -164,7 +164,7 @@ export class RoleTransporter {
 
         // Find closest requesting builder
         const target = creep.pos.findClosestByPath(requestingBuilders);
-        
+
         if (target) {
           if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
             Traveler.travelTo(creep, target);

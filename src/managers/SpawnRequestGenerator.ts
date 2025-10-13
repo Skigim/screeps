@@ -512,7 +512,7 @@ export class SpawnRequestGenerator {
   /**
    * Request transporters for builder support
    * Transporters reduce traffic around source containers by delivering directly to builders
-   * 
+   *
    * Spawn conditions:
    * - At least 1 builder exists
    * - At least 2 construction sites exist (active construction)
@@ -521,7 +521,7 @@ export class SpawnRequestGenerator {
    */
   private static requestTransporters(room: Room, config: RCLConfig, progressionState: any): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
-    
+
     // Check if transporter role is configured
     const roleConfig = config.roles.transporter;
     if (!roleConfig) {
