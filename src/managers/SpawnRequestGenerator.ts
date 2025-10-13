@@ -9,6 +9,7 @@ import type { RCLConfig } from "configs/RCL1Config";
 import { AssignmentManager } from "./AssignmentManager";
 import { RoomStateManager } from "./RoomStateManager";
 import { ProgressionManager } from "./ProgressionManager";
+import { PromotionManager } from "./PromotionManager";
 
 export interface SpawnRequest {
   role: string;
@@ -66,6 +67,36 @@ export class SpawnRequestGenerator {
     if (!config) {
       console.log(`[SpawnRequestGenerator] No config found for room ${room.name}`);
       return requests;
+    }
+
+    // HIGHEST PRIORITY: Check for pending promotions
+    if (PromotionManager.hasPendingPromotions(room)) {
+      const promotion = PromotionManager.getNextPromotion(room);
+      if (promotion) {
+        const roleConfig = (config.roles as any)[promotion.role];
+        if (roleConfig) {
+          let body: BodyPartConstant[] = [];
+
+          if (typeof roleConfig.body === 'function') {
+            body = roleConfig.body(room.energyCapacityAvailable, room);
+          } else if (Array.isArray(roleConfig.body)) {
+            body = roleConfig.body;
+          }
+
+          const bodyCost = this.calculateBodyCost(body);
+
+          requests.push({
+            role: promotion.role,
+            priority: -1, // Highest priority (even above harvesters)
+            reason: `🎖️ PROMOTION: Upgrading ${promotion.replacingCreep} to ${bodyCost} energy body`,
+            body: body,
+            minEnergy: bodyCost
+          });
+
+          // Mark promotion as being processed
+          // It will be completed after spawn succeeds
+        }
+      }
     }
 
     // Get progression state for RCL 2+

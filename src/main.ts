@@ -8,6 +8,7 @@ import { RoleBuilder } from "roles/builder";
 import { RoleHauler } from "roles/hauler";
 import { RoomStateManager } from "managers/RoomStateManager";
 import { TrafficManager } from "managers/TrafficManager";
+import { PromotionManager } from "managers/PromotionManager";
 import { StatsCollector } from "utils/StatsCollector";
 import { StatsTracker } from "managers/StatsTracker";
 import { Architect } from "managers/Architect";
@@ -99,8 +100,16 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // Run traffic manager cleanup (handle stale builder assignments)
     TrafficManager.cleanupAssignments(room);
 
+    // Run promotion manager (upgrade creeps when economy allows)
+    PromotionManager.run(room);
+
     // Run room state manager (handles all room-level logic)
     RoomStateManager.run(room);
+  }
+
+  // Clean up stale promotions globally (every 100 ticks)
+  if (Game.time % 100 === 0) {
+    PromotionManager.cleanupStalePromotions();
   }
 
   // Run creep roles

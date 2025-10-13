@@ -1,5 +1,6 @@
 import type { SpawnRequest } from "./SpawnRequestGenerator";
 import { SpawnRequestGenerator } from "./SpawnRequestGenerator";
+import { PromotionManager } from "./PromotionManager";
 
 /**
  * Spawn Manager - Demand-Based Spawning
@@ -87,6 +88,12 @@ export class SpawnManager {
 
     if (result === OK) {
       console.log(`✅ Spawning ${request.role}: ${name} (${request.reason})`);
+
+      // Check if this was a promotion spawn
+      if (request.priority === -1 && request.reason.includes("PROMOTION")) {
+        // Complete the promotion
+        PromotionManager.completePromotion(spawn.room);
+      }
     }
 
     return result;

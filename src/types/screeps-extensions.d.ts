@@ -46,10 +46,19 @@ interface ProgressionStats {
   }>;
 }
 
+// Promotion Request Interface
+interface PromotionRequest {
+  role: string;
+  replacingCreep: string;
+  targetBodyCost: number;
+  timestamp: number;
+}
+
 // Extend Memory interface
 interface Memory {
   progressionStats?: { [roomName: string]: ProgressionStats };
   architectPlans?: { [roomName: string]: number }; // Track last RCL Architect ran for each room
+  promotionQueue?: { [roomName: string]: PromotionRequest[] }; // Pending creep promotions
 }
 
 // Extend CreepMemory interface
