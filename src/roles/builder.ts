@@ -88,12 +88,13 @@ export class RoleBuilder {
           if (assignedHauler) {
             const distanceToHauler = creep.pos.getRangeTo(assignedHauler);
 
-            if (distanceToHauler > 3) {
+            if (distanceToHauler > 5) {
               // Too far - approach the hauler
-              creep.travelTo(assignedHauler, { range: 2 });
+              creep.travelTo(assignedHauler, { range: 3 });
             } else {
-              // Within range - move off road and wait
-              this.moveOffRoadIfNeeded(creep);
+              // Within range - move 2 tiles off road and wait
+              // This gives room for hauler to also move off road for delivery
+              this.moveOffRoadIfNeeded(creep, 2);
             }
           } else {
             // No hauler found (not assigned yet or hauler busy) - just wait off-road
@@ -293,46 +294,57 @@ export class RoleBuilder {
   /**
    * Move creep off road if currently standing on one
    * Keeps roads clear for hauler traffic while building/upgrading
+   * @param creep The creep to move
+   * @param minDistance Minimum distance from any road (default: 1 tile)
    */
-  private static moveOffRoadIfNeeded(creep: Creep): void {
-    // Check if creep is standing on a road
-    const structures = creep.pos.lookFor(LOOK_STRUCTURES);
-    const isOnRoad = structures.some(s => s.structureType === STRUCTURE_ROAD);
+  private static moveOffRoadIfNeeded(creep: Creep, minDistance: number = 1): void {
+    // Check if creep is already far enough from any road
+    const nearbyRoads = creep.pos.findInRange(FIND_STRUCTURES, minDistance, {
+      filter: (s) => s.structureType === STRUCTURE_ROAD
+    });
 
-    if (!isOnRoad) return; // Not on road, all good
+    if (nearbyRoads.length === 0) {
+      return; // Already far enough from roads
+    }
 
-    // Find adjacent non-road positions
-    const adjacentPositions = [
-      { x: creep.pos.x - 1, y: creep.pos.y - 1 },
-      { x: creep.pos.x, y: creep.pos.y - 1 },
-      { x: creep.pos.x + 1, y: creep.pos.y - 1 },
-      { x: creep.pos.x - 1, y: creep.pos.y },
-      { x: creep.pos.x + 1, y: creep.pos.y },
-      { x: creep.pos.x - 1, y: creep.pos.y + 1 },
-      { x: creep.pos.x, y: creep.pos.y + 1 },
-      { x: creep.pos.x + 1, y: creep.pos.y + 1 }
-    ];
+    // Find positions that are at least minDistance tiles from any road
+    const candidates: RoomPosition[] = [];
+    const searchRange = minDistance + 2; // Search a bit beyond minimum distance
 
-    // Find first valid non-road position
-    for (const pos of adjacentPositions) {
-      const roomPos = new RoomPosition(pos.x, pos.y, creep.room.name);
+    for (let dx = -searchRange; dx <= searchRange; dx++) {
+      for (let dy = -searchRange; dy <= searchRange; dy++) {
+        if (dx === 0 && dy === 0) continue;
 
-      // Check if position is valid (not wall, not blocked)
-      const terrain = creep.room.getTerrain().get(pos.x, pos.y);
-      if (terrain === TERRAIN_MASK_WALL) continue;
+        const x = creep.pos.x + dx;
+        const y = creep.pos.y + dy;
 
-      // Check if there's a road here
-      const structuresAtPos = roomPos.lookFor(LOOK_STRUCTURES);
-      const hasRoad = structuresAtPos.some(s => s.structureType === STRUCTURE_ROAD);
+        // Check if position is valid
+        const terrain = creep.room.getTerrain().get(x, y);
+        if (terrain === TERRAIN_MASK_WALL) continue;
 
-      if (!hasRoad) {
-        // Found a non-road spot! Move there
-        creep.move(creep.pos.getDirectionTo(roomPos));
-        return;
+        const pos = new RoomPosition(x, y, creep.room.name);
+
+        // Check if position is at least minDistance tiles from any road
+        const roadsNearPos = pos.findInRange(FIND_STRUCTURES, minDistance - 1, {
+          filter: (s) => s.structureType === STRUCTURE_ROAD
+        });
+
+        if (roadsNearPos.length === 0) {
+          // This position is far enough from roads
+          candidates.push(pos);
+        }
       }
     }
 
-    // All adjacent positions are roads or walls - stay put
+    if (candidates.length === 0) {
+      return; // No valid positions found, stay put
+    }
+
+    // Find closest candidate position
+    const target = creep.pos.findClosestByPath(candidates);
+    if (target) {
+      creep.travelTo(target);
+    }
   }
 
   /**
