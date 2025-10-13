@@ -173,6 +173,48 @@ export class ConsoleCommands {
   }
 
   /**
+   * Display hauler assignments per source
+   * Usage: checkHaulers() or checkHaulers('W1N1')
+   */
+  public static checkHaulers(roomName?: string): string {
+    const room = roomName ? Game.rooms[roomName] : Object.values(Game.rooms)[0];
+    if (!room) {
+      return "❌ Room not found!";
+    }
+
+    const sources = room.find(FIND_SOURCES);
+    const haulers = Object.values(Game.creeps).filter(c => c.memory.role === "hauler" && c.room.name === room.name);
+
+    let result = `🚚 Hauler Assignments in ${room.name}:\n`;
+    result += `Total haulers: ${haulers.length}\n`;
+    result += `Total sources: ${sources.length}\n\n`;
+
+    for (const source of sources) {
+      const assigned = haulers.filter(h => h.memory.assignedSource === source.id);
+      result += `Source @ ${source.pos.x},${source.pos.y}:\n`;
+      result += `  Assigned haulers: ${assigned.length}\n`;
+      if (assigned.length > 0) {
+        assigned.forEach(h => {
+          result += `    - ${h.name} (spawning: ${h.spawning ? "yes" : "no"})\n`;
+        });
+      } else {
+        result += `    ⚠️ NO HAULERS ASSIGNED!\n`;
+      }
+    }
+
+    // Check for unassigned haulers
+    const unassigned = haulers.filter(h => !h.memory.assignedSource);
+    if (unassigned.length > 0) {
+      result += `\n⚠️ Unassigned haulers: ${unassigned.length}\n`;
+      unassigned.forEach(h => {
+        result += `  - ${h.name} (spawning: ${h.spawning ? "yes" : "no"})\n`;
+      });
+    }
+
+    return result;
+  }
+
+  /**
    * Display stats summary
    * Usage: stats()
    */
@@ -268,3 +310,4 @@ Deploy verified: ${hash !== "unknown" ? "✅" : "❌"}`;
 (global as any).resetSim = ConsoleCommands.resetSim.bind(ConsoleCommands);
 (global as any).version = ConsoleCommands.version.bind(ConsoleCommands);
 (global as any).hash = ConsoleCommands.version.bind(ConsoleCommands); // Alias for version
+(global as any).checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
