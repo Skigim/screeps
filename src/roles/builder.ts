@@ -85,13 +85,49 @@ export class RoleBuilder {
 
       // No locked target - find and LOCK onto new energy source
       // Priority:
-      // 1. Dropped energy near construction site (free energy at the worksite!)
+      // 1. PHASE 1 ONLY: Dropped energy AT the locked container site (0 range - exact position)
       // 2. Ruins (free energy from dead structures)
       // 3. Spawn/Extensions (if surplus)
       // 4. Dropped energy anywhere
       // 5. Harvest source (crisis mode)
 
-      // FIRST: Check for dropped energy near our construction target (super efficient!)
+      // Get progression state for Phase 1 detection
+      const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+
+      // PHASE 1 SPECIAL LOGIC: Only pick up energy AT the locked container site
+      if (progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS) {
+        const lockedSite = this.findBestConstructionTarget(creep);
+
+        if (lockedSite && lockedSite.structureType === STRUCTURE_CONTAINER) {
+          // Look for dropped energy EXACTLY at the container construction site (0 range)
+          const droppedAtSite = lockedSite.pos.lookFor(LOOK_RESOURCES)
+            .filter(r => r.resourceType === RESOURCE_ENERGY && r.amount > 0);
+
+          if (droppedAtSite.length > 0) {
+            const dropped = droppedAtSite[0];
+            creep.memory.energySourceId = dropped.id; // LOCK IT
+            if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, dropped);
+            }
+            return;
+          }
+
+          // No energy at the container site yet - harvest from the source
+          // Find which source this container is for (should be adjacent)
+          const adjacentSources = lockedSite.pos.findInRange(FIND_SOURCES, 1);
+
+          if (adjacentSources.length > 0) {
+            const source = adjacentSources[0];
+            creep.memory.energySourceId = source.id; // LOCK IT
+            if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, source);
+            }
+            return;
+          }
+        }
+      }
+
+      // NON-PHASE-1 LOGIC: Check for dropped energy near construction target
       const constructionTarget = this.findBestConstructionTarget(creep);
       if (constructionTarget) {
         const nearbyDropped = constructionTarget.pos.findInRange(FIND_DROPPED_RESOURCES, 3, {
@@ -184,6 +220,11 @@ export class RoleBuilder {
   /**
    * Find the best construction target using progression-aware intelligent prioritization
    *
+   * PHASE 1 SPECIAL LOGIC (Source Containers):
+   * - Lock onto ONE source container and finish it completely
+   * - Store the locked target in creep memory
+   * - Only switch to next container when current one is complete
+   *
    * Priority order:
    * 1. CURRENT PHASE PRIORITY: Build structures needed for current phase progression
    * 2. FINISH STARTED: Continue building partially-built structures
@@ -217,7 +258,49 @@ export class RoleBuilder {
       }
     }
 
-    // 1. HIGHEST PRIORITY: Build phase-appropriate structures FIRST
+    // PHASE 1 SPECIAL LOGIC: Lock onto ONE source container at a time
+    if (progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS) {
+      const containerSites = sites.filter(site => site.structureType === STRUCTURE_CONTAINER);
+
+      if (containerSites.length > 0) {
+        // Check if we have a locked container target
+        if (creep.memory.lockedConstructionSiteId) {
+          const lockedSite = Game.getObjectById(creep.memory.lockedConstructionSiteId) as ConstructionSite | null;
+
+          // If locked site still exists, keep using it
+          if (lockedSite && lockedSite.structureType === STRUCTURE_CONTAINER) {
+            return lockedSite;
+          } else {
+            // Locked site completed or removed - clear the lock
+            delete creep.memory.lockedConstructionSiteId;
+          }
+        }
+
+        // No lock or lock expired - choose ONE container and LOCK onto it
+        // Prefer containers with progress (finish what's started)
+        const partiallyBuilt = containerSites.filter(site => site.progress > 0);
+
+        let chosenSite: ConstructionSite;
+        if (partiallyBuilt.length > 0) {
+          // Sort by most progress
+          partiallyBuilt.sort((a, b) => {
+            const aProgress = a.progress / a.progressTotal;
+            const bProgress = b.progress / b.progressTotal;
+            return bProgress - aProgress;
+          });
+          chosenSite = partiallyBuilt[0];
+        } else {
+          // No partially built - pick closest unstarted container
+          chosenSite = creep.pos.findClosestByPath(containerSites) || containerSites[0];
+        }
+
+        // LOCK this container site
+        creep.memory.lockedConstructionSiteId = chosenSite.id;
+        return chosenSite;
+      }
+    }
+
+    // 1. HIGHEST PRIORITY: Build phase-appropriate structures FIRST (non-Phase-1 logic)
     if (phasePriorityType) {
       const phaseSites = sites.filter(site => site.structureType === phasePriorityType);
 

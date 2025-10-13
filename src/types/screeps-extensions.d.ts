@@ -59,4 +59,11 @@ interface CreepMemory {
    * Cleared when creep becomes full or empty
    */
   energySourceId?: string;
+
+  /**
+   * Locked construction site ID - builders lock onto ONE container during Phase 1
+   * Ensures builders focus on completing one source container at a time
+   * Cleared when construction site is complete or removed
+   */
+  lockedConstructionSiteId?: string;
 }
