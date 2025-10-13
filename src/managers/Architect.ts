@@ -29,6 +29,7 @@ export interface ArchitectPlan {
 export class Architect {
   /**
    * Generate a complete construction plan for a room
+   * Includes cleanup of faulty/misplaced construction sites
    */
   public static planRoom(room: Room): ArchitectPlan {
     const plan: ArchitectPlan = {
@@ -71,6 +72,9 @@ export class Architect {
 
       // Plan road network connecting everything
       plan.roads = this.planRoadNetwork(room, spawn, sources, controller, plan);
+
+      // Clean up faulty construction sites that don't match the plan
+      this.cleanupFaultySites(room, plan);
     }
 
     return plan;
@@ -400,6 +404,61 @@ export class Architect {
    */
   private static isAdjacentTo(pos1: RoomPosition, pos2: RoomPosition): boolean {
     return Math.abs(pos1.x - pos2.x) <= 1 && Math.abs(pos1.y - pos2.y) <= 1;
+  }
+
+  /**
+   * Clean up faulty construction sites that don't match the current plan
+   * Removes misplaced sites so they can be rebuilt correctly
+   */
+  private static cleanupFaultySites(room: Room, plan: ArchitectPlan): void {
+    const allSites = room.find(FIND_CONSTRUCTION_SITES);
+    let removed = 0;
+
+    // Build sets of planned positions for quick lookup
+    const plannedExtensions = new Set(plan.extensions.map(pos => `${pos.x},${pos.y}`));
+    const plannedContainers = new Set([
+      ...Array.from(plan.sourceContainers.values()).map(pos => `${pos.x},${pos.y}`),
+      plan.destContainers.controller ? `${plan.destContainers.controller.x},${plan.destContainers.controller.y}` : null
+    ].filter(Boolean));
+    const plannedRoads = new Set(plan.roads.map(pos => `${pos.x},${pos.y}`));
+
+    for (const site of allSites) {
+      const posKey = `${site.pos.x},${site.pos.y}`;
+      let shouldRemove = false;
+
+      // Check if this site matches the plan
+      switch (site.structureType) {
+        case STRUCTURE_EXTENSION:
+          if (!plannedExtensions.has(posKey)) {
+            shouldRemove = true;
+            console.log(`🗑️ Architect: Removing misplaced extension at ${site.pos}`);
+          }
+          break;
+
+        case STRUCTURE_CONTAINER:
+          if (!plannedContainers.has(posKey)) {
+            shouldRemove = true;
+            console.log(`🗑️ Architect: Removing misplaced container at ${site.pos}`);
+          }
+          break;
+
+        case STRUCTURE_ROAD:
+          if (!plannedRoads.has(posKey)) {
+            shouldRemove = true;
+            console.log(`🗑️ Architect: Removing misplaced road at ${site.pos}`);
+          }
+          break;
+      }
+
+      if (shouldRemove) {
+        site.remove();
+        removed++;
+      }
+    }
+
+    if (removed > 0) {
+      console.log(`🧹 Architect: Cleaned up ${removed} faulty construction site(s) in ${room.name}`);
+    }
   }
 
   /**
