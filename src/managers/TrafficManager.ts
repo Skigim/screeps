@@ -9,6 +9,20 @@
 
 export class TrafficManager {
   /**
+   * Check if any haulers are available to transport to builders
+   * Returns false if all haulers are critical (canTransport: false)
+   */
+  static hasTransportCapableHaulers(room: Room): boolean {
+    const haulers = room.find(FIND_MY_CREEPS, {
+      filter: c =>
+        c.memory.role === "hauler" &&
+        c.memory.canTransport !== false // Allowed to transport
+    });
+
+    return haulers.length > 0;
+  }
+
+  /**
    * Request energy delivery from a nearby hauler
    * Called by builders when they need energy
    */

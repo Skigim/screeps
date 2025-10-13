@@ -61,15 +61,23 @@ export class RoleBuilder {
       // Lock onto ONE energy source and stick with it until COMPLETELY FULL
       // This prevents wandering between ruins, spawns, drops, sources mid-gathering
 
-      // FIRST: Check if haulers are available and request delivery
-      const availableHaulers = creep.room.find(FIND_MY_CREEPS, {
-        filter: (c) => c.memory.role === "hauler" && c.store[RESOURCE_ENERGY] > 0
-      });
+      // FIRST: Check if transport-capable haulers exist, then request delivery
+      const hasTransportHaulers = TrafficManager.hasTransportCapableHaulers(creep.room);
 
-      if (availableHaulers.length > 0 && !creep.memory.energyRequested) {
-        // Request energy delivery from TrafficManager
-        TrafficManager.requestEnergy(creep);
-        // Note: energyRequested flag is set by TrafficManager
+      if (hasTransportHaulers && !creep.memory.energyRequested) {
+        // Check if any haulers have energy available
+        const availableHaulers = creep.room.find(FIND_MY_CREEPS, {
+          filter: (c) =>
+            c.memory.role === "hauler" &&
+            c.store[RESOURCE_ENERGY] > 0 &&
+            c.memory.canTransport !== false
+        });
+
+        if (availableHaulers.length > 0) {
+          // Request energy delivery from TrafficManager
+          TrafficManager.requestEnergy(creep);
+          // Note: energyRequested flag is set by TrafficManager
+        }
       }
 
       // If we requested energy and waiting for delivery
