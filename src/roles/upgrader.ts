@@ -42,11 +42,11 @@ export class RoleUpgrader {
 
         if (!shouldReserveEnergy) {
           // Safe to withdraw - room has enough energy for spawning
+          // ONLY from extensions, NEVER from spawn (spawn energy reserved for spawning)
           const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
             filter: (structure: any) => {
               return (
-                (structure.structureType === STRUCTURE_EXTENSION ||
-                  structure.structureType === STRUCTURE_SPAWN) &&
+                structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NOT spawn
                 structure.store &&
                 structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
               );
