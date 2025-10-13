@@ -117,9 +117,15 @@ export class SpawnRequestGenerator {
   }
 
   /**
-   * Request harvesters based on source capacity
+   * Request harvesters based on source coverage (assignment-driven)
    * Uses RCL config for body composition
-   * Adapts to progression state (stationary vs mobile harvesters)
+   *
+   * NEW STRATEGY: Only spawn harvesters when sources lack coverage
+   * - No emergency spawns (assignment system handles this)
+   * - No "ideal count" spawning (prevents excess weak harvesters)
+   * - Dynamic body generation scales harvesters as economy improves
+   * - Naturally caps harvesters at 1 per source (by design)
+   * - Auto-assigns unassigned harvesters to uncovered sources before spawning
    */
   private static requestHarvesters(room: Room, config: RCLConfig, progressionState: any): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
@@ -129,25 +135,40 @@ export class SpawnRequestGenerator {
     // Get per-source coverage information
     const coverage = AssignmentManager.getSourceCoverage(room);
 
-    // CRITICAL: If only 1 harvester left, request emergency backup immediately
-    if (harvesterCount === 1) {
-      // Emergency harvester uses basic [WORK, CARRY, MOVE] body to deliver energy
-      // Can't use drop mining body - need to actually deliver to spawn!
-      requests.push({
-        role: "harvester",
-        priority: 0, // HIGHEST PRIORITY - single point of failure!
-        reason: `EMERGENCY: Only 1 harvester remaining!`,
-        body: [WORK, CARRY, MOVE], // Basic body that can harvest AND deliver
-        minEnergy: 200
+    // FIRST: Check if any unassigned harvesters exist and assign them to uncovered sources
+    // This handles manual spawns or other edge cases where harvesters aren't assigned
+    if (coverage.uncoveredByHarvesters.length > 0) {
+      const unassignedHarvesters = room.find(FIND_MY_CREEPS, {
+        filter: (c) => c.memory.role === "harvester" && !c.memory.assignedSource
       });
+
+      if (unassignedHarvesters.length > 0) {
+        console.log(`📋 Found ${unassignedHarvesters.length} unassigned harvester(s), assigning to uncovered sources...`);
+        
+        for (const harvester of unassignedHarvesters) {
+          const assigned = AssignmentManager.assignCreepToSource(harvester, room, config);
+          if (assigned) {
+            // Refresh coverage after assignment
+            const newCoverage = AssignmentManager.getSourceCoverage(room);
+            if (newCoverage.uncoveredByHarvesters.length === 0) {
+              // All sources now covered by existing harvesters!
+              console.log(`✓ All sources covered by reassigning existing harvesters`);
+              return requests; // No spawn needed
+            }
+          }
+        }
+      }
     }
 
-    // CRITICAL: If any source lacks harvester coverage, prioritize that
+    // SECOND: Only spawn new harvesters when sources still lack coverage after reassignment
+    // This prevents spawning excess weak harvesters when we already have coverage
+    // and should be waiting for energy to spawn stronger replacements
     if (coverage.uncoveredByHarvesters.length > 0) {
       const roleConfig = config.roles.harvester;
       let body: BodyPartConstant[];
 
       if (typeof roleConfig.body === 'function') {
+        // Dynamic body generation - scales based on aggressive scaling conditions
         body = roleConfig.body(this.getEnergyForBodyGeneration(room), room);
       } else {
         body = roleConfig.body;
@@ -159,77 +180,10 @@ export class SpawnRequestGenerator {
         requests.push({
           role: "harvester",
           priority: 0, // HIGHEST PRIORITY - uncovered source is critical!
-          reason: `PRIORITY: ${coverage.uncoveredByHarvesters.length} source(s) without harvester (${coverage.sourcesWithHarvesters}/${coverage.totalSources} covered)`,
+          reason: `ASSIGNMENT: ${coverage.uncoveredByHarvesters.length} source(s) need harvester (${coverage.sourcesWithHarvesters}/${coverage.totalSources} covered)`,
           body: body,
           minEnergy: bodyCost
         });
-      }
-    }
-
-    // Determine if we need stationary harvesters
-    const useStationaryHarvesters = progressionState?.useStationaryHarvesters || false;
-
-    if (useStationaryHarvesters) {
-      // Phase 2+: One stationary harvester per source
-      const idealCount = sources.length;
-
-      if (harvesterCount < idealCount) {
-        // Get body from config - now dynamic!
-        const roleConfig = config.roles.harvester;
-        let body: BodyPartConstant[];
-
-        if (typeof roleConfig.body === 'function') {
-          // Dynamic body generation - uses aggressive scaling when economy stable
-          body = roleConfig.body(this.getEnergyForBodyGeneration(room));
-        } else {
-          // Static body array
-          body = roleConfig.body;
-        }
-
-        // Calculate actual body cost
-        const bodyCost = this.calculateBodyCost(body);
-
-        // Only create request if body is viable
-        if (body.length > 0) {
-          requests.push({
-            role: "harvester",
-            priority: 1,
-            reason: `Stationary harvesters: ${harvesterCount}/${idealCount} (need ${bodyCost}, have ${room.energyAvailable}/${room.energyCapacityAvailable})`,
-            body: body,
-            minEnergy: bodyCost
-          });
-        }
-      }
-    } else {
-      // Phase 1-2: Mobile harvesters (1 per source + 1 spare)
-      // Use RCL2 config body [WORK, WORK, MOVE] for drop mining
-      const idealCount = sources.length + 1;
-
-      if (harvesterCount < idealCount) {
-        const roleConfig = config.roles.harvester;
-        let body: BodyPartConstant[];
-
-        if (typeof roleConfig.body === 'function') {
-          // Dynamic body generation - uses aggressive scaling when economy stable
-          body = roleConfig.body(this.getEnergyForBodyGeneration(room));
-        } else {
-          // Static body array
-          body = roleConfig.body;
-        }
-
-        // Calculate actual body cost
-        const bodyCost = this.calculateBodyCost(body);
-
-        // Only create request if body is viable
-        if (body.length > 0) {
-          requests.push({
-            role: "harvester",
-            priority: roleConfig.priority,
-            reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (need ${bodyCost}, have ${room.energyAvailable})`,
-            body: body,
-            minEnergy: bodyCost
-          });
-        }
       }
     }
 
