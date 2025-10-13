@@ -263,6 +263,110 @@ Current room: ${room.name}`;
   }
 
   /**
+   * Visualize Architect's plan using room visuals
+   * Usage: showPlan() or showPlan('W1N1')
+   */
+  public static showPlan(roomName?: string): string {
+    const room = roomName ? Game.rooms[roomName] : Object.values(Game.rooms)[0];
+    if (!room) {
+      return "❌ Room not found!";
+    }
+
+    // Import Architect dynamically to avoid circular dependencies
+    const { Architect } = require("../managers/Architect");
+    const plan = Architect.planRoom(room);
+
+    const visual = room.visual;
+
+    // Draw source containers (red circles)
+    for (const pos of plan.sourceContainers.values()) {
+      visual.circle(pos.x, pos.y, {
+        radius: 0.5,
+        fill: "#ff4444",
+        opacity: 0.7,
+        stroke: "#ff0000",
+        strokeWidth: 0.1
+      });
+      visual.text("📦S", pos.x, pos.y, {
+        color: "#ffffff",
+        font: 0.5,
+        stroke: "#000000",
+        strokeWidth: 0.05
+      });
+    }
+
+    // Draw spawn containers (orange circles)
+    for (const pos of plan.spawnContainers) {
+      visual.circle(pos.x, pos.y, {
+        radius: 0.5,
+        fill: "#ff8800",
+        opacity: 0.7,
+        stroke: "#ff6600",
+        strokeWidth: 0.1
+      });
+      visual.text("📦H", pos.x, pos.y, {
+        color: "#ffffff",
+        font: 0.5,
+        stroke: "#000000",
+        strokeWidth: 0.05
+      });
+    }
+
+    // Draw controller container (purple circle)
+    if (plan.destContainers.controller) {
+      const pos = plan.destContainers.controller;
+      visual.circle(pos.x, pos.y, {
+        radius: 0.5,
+        fill: "#8844ff",
+        opacity: 0.7,
+        stroke: "#6622dd",
+        strokeWidth: 0.1
+      });
+      visual.text("📦C", pos.x, pos.y, {
+        color: "#ffffff",
+        font: 0.5,
+        stroke: "#000000",
+        strokeWidth: 0.05
+      });
+    }
+
+    // Draw extensions (green circles)
+    for (const pos of plan.extensions) {
+      visual.circle(pos.x, pos.y, {
+        radius: 0.4,
+        fill: "#44ff44",
+        opacity: 0.6,
+        stroke: "#00ff00",
+        strokeWidth: 0.1
+      });
+      visual.text("⚡", pos.x, pos.y, {
+        color: "#ffffff",
+        font: 0.4,
+        stroke: "#000000",
+        strokeWidth: 0.05
+      });
+    }
+
+    // Draw roads (gray lines)
+    for (const pos of plan.roads) {
+      visual.circle(pos.x, pos.y, {
+        radius: 0.15,
+        fill: "#666666",
+        opacity: 0.4
+      });
+    }
+
+    return `📐 Architect Plan for ${room.name}:
+🔴 📦S = Source Container (${plan.sourceContainers.size})
+🟠 📦H = Spawn Hub Container (${plan.spawnContainers.length})
+🟣 📦C = Controller Container (${plan.destContainers.controller ? 1 : 0})
+🟢 ⚡ = Extension (${plan.extensions.length})
+⚪ Road Network (${plan.roads.length} tiles)
+
+Visuals will persist for this tick. Run again to refresh.`;
+  }
+
+  /**
    * Display current git commit hash
    * Usage: version() or hash()
    */
@@ -311,3 +415,4 @@ Deploy verified: ${hash !== "unknown" ? "✅" : "❌"}`;
 (global as any).version = ConsoleCommands.version.bind(ConsoleCommands);
 (global as any).hash = ConsoleCommands.version.bind(ConsoleCommands); // Alias for version
 (global as any).checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
+(global as any).showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
