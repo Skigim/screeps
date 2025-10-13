@@ -58,6 +58,7 @@ export class AssignmentManager {
   /**
    * Assign a creep to the best available source using RCL config
    * Evenly distributes creeps across sources up to max work parts
+   * For non-work roles (haulers), distributes by creep count instead
    * Returns true if assignment successful
    */
   public static assignCreepToSource(creep: Creep, room: Room, config: RCLConfig): boolean {
@@ -70,33 +71,59 @@ export class AssignmentManager {
       return false;
     }
 
-    // Build assignment map: source -> current work parts
-    const sourceWorkParts = new Map<string, number>();
+    // For haulers (0 work parts), distribute by creep count per source
+    // For harvesters (has work parts), distribute by work parts per source
+    const useCreepCount = creepWorkParts === 0;
+
+    // Build assignment map: source -> current metric (work parts or creep count)
+    const sourceMetrics = new Map<string, number>();
     for (const source of sources) {
-      sourceWorkParts.set(source.id, this.getSourceWorkParts(source.id));
+      if (useCreepCount) {
+        // Count creeps of the same role at this source
+        const assignments = this.getSourceAssignments(source.id);
+        const sameRoleCount = assignments.filter(c => c.memory.role === creep.memory.role).length;
+        sourceMetrics.set(source.id, sameRoleCount);
+      } else {
+        // Count work parts at this source
+        sourceMetrics.set(source.id, this.getSourceWorkParts(source.id));
+      }
     }
 
-    // Find source with fewest work parts that can still accept this creep
+    // Find source with lowest metric that can still accept this creep
     let bestSource: Source | null = null;
-    let minWorkParts = Infinity;
+    let minMetric = Infinity;
 
     for (const source of sources) {
-      const currentWorkParts = sourceWorkParts.get(source.id) || 0;
-      const wouldHaveWorkParts = currentWorkParts + creepWorkParts;
+      const currentMetric = sourceMetrics.get(source.id) || 0;
 
-      // Can this source accept this creep without exceeding the limit?
-      if (wouldHaveWorkParts <= maxWorkParts && currentWorkParts < minWorkParts) {
-        minWorkParts = currentWorkParts;
-        bestSource = source;
+      if (useCreepCount) {
+        // For haulers: Just find source with fewest haulers
+        if (currentMetric < minMetric) {
+          minMetric = currentMetric;
+          bestSource = source;
+        }
+      } else {
+        // For harvesters: Check work part capacity
+        const wouldHaveWorkParts = currentMetric + creepWorkParts;
+        if (wouldHaveWorkParts <= maxWorkParts && currentMetric < minMetric) {
+          minMetric = currentMetric;
+          bestSource = source;
+        }
       }
     }
 
     if (bestSource) {
       creep.memory.assignedSource = bestSource.id;
-      const newTotal = minWorkParts + creepWorkParts;
-      console.log(
-        `✓ Assigned ${creep.name} to source (${newTotal}/${maxWorkParts} work parts)`
-      );
+      if (useCreepCount) {
+        console.log(
+          `✓ Assigned ${creep.name} (${creep.memory.role}) to source @ ${bestSource.pos.x},${bestSource.pos.y} (${minMetric + 1} ${creep.memory.role}s at this source)`
+        );
+      } else {
+        const newTotal = minMetric + creepWorkParts;
+        console.log(
+          `✓ Assigned ${creep.name} to source (${newTotal}/${maxWorkParts} work parts)`
+        );
+      }
       return true;
     } else {
       console.log(
