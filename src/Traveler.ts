@@ -548,17 +548,17 @@ export class Traveler {
     public static addStructuresToMatrix(room: Room, matrix: CostMatrix, roadCost: number): CostMatrix {
 
         let impassibleStructures: Structure[] = [];
-        for (let structure of room.find<Structure>(FIND_STRUCTURES)) {
+        for (let structure of room.find(FIND_STRUCTURES)) {
             if (structure instanceof StructureRampart) {
                 if (!structure.my && !structure.isPublic) {
-                    impassibleStructures.push(structure);
+                    impassibleStructures.push(structure as Structure);
                 }
             } else if (structure instanceof StructureRoad) {
                 matrix.set(structure.pos.x, structure.pos.y, roadCost);
             } else if (structure instanceof StructureContainer) {
                 matrix.set(structure.pos.x, structure.pos.y, 5);
             } else {
-                impassibleStructures.push(structure);
+                impassibleStructures.push(structure as Structure);
             }
         }
 
@@ -583,7 +583,13 @@ export class Traveler {
      */
 
     public static addCreepsToMatrix(room: Room, matrix: CostMatrix): CostMatrix {
-        room.find(FIND_CREEPS).forEach((creep: Creep) => matrix.set(creep.pos.x, creep.pos.y, 0xff) );
+        room.find(FIND_CREEPS).forEach((creep: Creep) => {
+            // OPTIMIZATION: Instead of making creeps impassable (0xff), set high cost (10)
+            // This allows creeps to path through each other when it's more efficient
+            // Enables "zipper merge" behavior on single-lane roads where creeps can pass
+            // if they're moving in compatible directions
+            matrix.set(creep.pos.x, creep.pos.y, 10);
+        });
         return matrix;
     }
 
@@ -632,21 +638,21 @@ export class Traveler {
      */
 
     public static patchMemory(cleanup = false) {
-        if (!Memory.empire) { return; }
-        if (!Memory.empire.hostileRooms) { return; }
+        if (!(Memory as any).empire) { return; }
+        if (!(Memory as any).empire.hostileRooms) { return; }
         let count = 0;
-        for (let roomName in Memory.empire.hostileRooms) {
-            if (Memory.empire.hostileRooms[roomName]) {
+        for (let roomName in (Memory as any).empire.hostileRooms) {
+            if ((Memory as any).empire.hostileRooms[roomName]) {
                 if (!Memory.rooms[roomName]) { Memory.rooms[roomName] = {} as any; }
                 Memory.rooms[roomName].avoid = 1;
                 count++;
             }
             if (cleanup) {
-                delete Memory.empire.hostileRooms[roomName];
+                delete (Memory as any).empire.hostileRooms[roomName];
             }
         }
         if (cleanup) {
-            delete Memory.empire.hostileRooms;
+            delete (Memory as any).empire.hostileRooms;
         }
 
         console.log(`TRAVELER: room avoidance data patched for ${count} rooms`);

@@ -3694,7 +3694,13 @@ class Traveler {
      * @returns {CostMatrix}
      */
     static addCreepsToMatrix(room, matrix) {
-        room.find(FIND_CREEPS).forEach((creep) => matrix.set(creep.pos.x, creep.pos.y, 0xff));
+        room.find(FIND_CREEPS).forEach((creep) => {
+            // OPTIMIZATION: Instead of making creeps impassable (0xff), set high cost (10)
+            // This allows creeps to path through each other when it's more efficient
+            // Enables "zipper merge" behavior on single-lane roads where creeps can pass
+            // if they're moving in compatible directions
+            matrix.set(creep.pos.x, creep.pos.y, 10);
+        });
         return matrix;
     }
     /**

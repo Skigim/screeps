@@ -3,6 +3,17 @@
  * Custom types for project-specific functionality
  */
 
+// Traveler.ts travelTo extension
+interface Creep {
+  /**
+   * Traveler.ts travelTo method - moves the creep using advanced pathfinding
+   * @param destination The target position or object with a pos property
+   * @param options Optional pathfinding options
+   * @returns A return code (OK, ERR_NO_PATH, etc.)
+   */
+  travelTo(destination: RoomPosition | { pos: RoomPosition }, options?: any): number;
+}
+
 // Progression Stats Interface
 interface ProgressionStats {
   startTime: number;
