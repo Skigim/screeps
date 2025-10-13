@@ -197,6 +197,29 @@ export class ConsoleCommands {
     DistanceTransformTest.run(roomName);
   }
 
+  /**
+   * Reset simulation room (regenerate terrain and sources)
+   * Usage: resetSim()
+   * Note: Only works in simulation mode
+   */
+  public static resetSim(): string {
+    // Check if we're in simulation mode
+    const room = Object.values(Game.rooms)[0];
+    if (!room) {
+      return "❌ No room found";
+    }
+
+    // In simulation, you need to use the UI controls to reset
+    // This command provides instructions
+    return `🔄 To reset simulation room:
+1. Click the gear icon (⚙️) in the top-right corner
+2. Select "Reset Room" or "New Room"
+3. Or use the Screeps console command: Game.rooms['${room.name}'].createFlag(0, 0, 'RESET')
+
+Note: Simulation rooms can only be reset through the UI.
+Current room: ${room.name}`;
+  }
+
   // Helper methods
   private static calculateCost(body: BodyPartConstant[]): number {
     return body.reduce((total, part) => total + BODYPART_COST[part], 0);
@@ -229,3 +252,4 @@ export class ConsoleCommands {
 (global as any).stats = ConsoleCommands.showStats.bind(ConsoleCommands);
 (global as any).clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
 (global as any).testDistanceTransform = ConsoleCommands.testDistanceTransform.bind(ConsoleCommands);
+(global as any).resetSim = ConsoleCommands.resetSim.bind(ConsoleCommands);
