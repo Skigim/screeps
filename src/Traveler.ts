@@ -205,7 +205,69 @@ export class Traveler {
             options.returnData.state = state;
             options.returnData.path = travelData.path;
         }
+
+        // TRAFFIC FLOW OPTIMIZATION: Maintain 1-tile gap on roads for zipper-merge passing
+        // Check if next position has a creep AND we're both on/moving to roads
+        let nextPos = Traveler.positionAtDirection(creep.pos, nextDirection);
+        if (nextPos && !options.ignoreCreeps) {
+            let shouldMaintainGap = this.shouldMaintainTrafficGap(creep, nextPos, destination);
+            if (shouldMaintainGap) {
+                // Don't move - maintain gap to allow passing
+                return OK;
+            }
+        }
+
         return creep.move(nextDirection);
+    }
+
+    /**
+     * Traffic flow optimization: Determine if creep should maintain 1-tile gap
+     * Allows "zipper merge" behavior where creeps can pass each other on roads
+     * 
+     * @param creep The creep considering movement
+     * @param nextPos The position the creep wants to move to
+     * @param destination The creep's final destination
+     * @returns true if creep should wait to maintain gap
+     */
+    private static shouldMaintainTrafficGap(creep: Creep, nextPos: RoomPosition, destination: RoomPosition): boolean {
+        // Only apply gap logic on roads (or if moving to road)
+        const currentTerrain = creep.room.lookForAt(LOOK_STRUCTURES, creep.pos);
+        const nextTerrain = creep.room.lookForAt(LOOK_STRUCTURES, nextPos);
+        
+        const onRoad = currentTerrain.some(s => s.structureType === STRUCTURE_ROAD);
+        const nextIsRoad = nextTerrain.some(s => s.structureType === STRUCTURE_ROAD);
+        
+        if (!onRoad && !nextIsRoad) {
+            return false; // Not on road network, no gap needed
+        }
+
+        // Check if there's a creep at next position
+        const creepsAtNext = nextPos.lookFor(LOOK_CREEPS);
+        if (creepsAtNext.length === 0) {
+            return false; // No creep ahead, move normally
+        }
+
+        const creepAhead = creepsAtNext[0];
+        
+        // Don't maintain gap if creep ahead is stationary (harvester, upgrader at controller)
+        if (!creepAhead.memory._trav || creepAhead.fatigue > 0) {
+            return false; // Stationary creep, we need to path around
+        }
+
+        // Check if creep ahead is moving in same general direction
+        const ourDirection = creep.pos.getDirectionTo(destination);
+        const theirDirection = creepAhead.pos.getDirectionTo(destination);
+        
+        // If moving in similar direction (within 2 directions), maintain gap
+        const directionDiff = Math.abs(ourDirection - theirDirection);
+        const similarDirection = directionDiff <= 2 || directionDiff >= 6; // Handles wrapping (1-8)
+        
+        if (similarDirection) {
+            // Both moving same direction on road - maintain 1 tile gap
+            return true;
+        }
+
+        return false; // Different directions, normal pathfinding
     }
 
     /**
