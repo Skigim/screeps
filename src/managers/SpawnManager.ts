@@ -1,14 +1,15 @@
-import type { RCLConfig, RoleConfig } from "configs/RCL1Config";
+import type { SpawnRequest } from "./SpawnRequestGenerator";
+import { SpawnRequestGenerator } from "./SpawnRequestGenerator";
 
 /**
- * Spawn Manager
- * Handles spawning logic based on provided RCL config
+ * Spawn Manager - Demand-Based Spawning
+ * Evaluates spawn requests and spawns creeps based on actual room needs
  */
 export class SpawnManager {
   /**
-   * Main spawn logic - uses provided config
+   * Main spawn logic - evaluates requests and spawns
    */
-  public static run(spawn: StructureSpawn, config: RCLConfig): void {
+  public static run(spawn: StructureSpawn): void {
     // Don't spawn if already spawning
     if (spawn.spawning) {
       this.displaySpawningStatus(spawn);
@@ -17,102 +18,75 @@ export class SpawnManager {
 
     const room = spawn.room;
 
-    // Count creeps by role in this room
-    const creepCounts = this.getCreepCounts(room);
+    // Generate spawn requests based on room conditions
+    const requests = SpawnRequestGenerator.generateRequests(room);
 
     // Display status periodically
     if (Game.time % 10 === 0) {
-      this.displayStatus(room, config, creepCounts);
+      this.displayStatus(room, requests);
     }
 
-    // Spawn based on priority
-    this.spawnByPriority(spawn, config, creepCounts);
+    // Process requests by priority
+    this.processRequests(spawn, requests);
   }
 
   /**
-   * Count creeps by role in a room
+   * Process spawn requests in priority order
    */
-  private static getCreepCounts(room: Room): { [role: string]: number } {
-    const counts: { [role: string]: number } = {};
-
-    const creeps = room.find(FIND_MY_CREEPS);
-    for (const creep of creeps) {
-      const role = creep.memory.role;
-      counts[role] = (counts[role] || 0) + 1;
+  private static processRequests(spawn: StructureSpawn, requests: SpawnRequest[]): void {
+    if (requests.length === 0) {
+      return; // No requests
     }
 
-    return counts;
-  }
+    // Sort by priority (lower number = higher priority)
+    const sortedRequests = requests.sort((a, b) => a.priority - b.priority);
 
-  /**
-   * Spawn creeps based on priority
-   */
-  private static spawnByPriority(
-    spawn: StructureSpawn,
-    config: RCLConfig,
-    creepCounts: { [role: string]: number }
-  ): void {
-    // Sort roles by priority
-    const roleEntries = Object.entries(config.roles).sort(
-      ([, a], [, b]) => a.priority - b.priority
-    );
+    // Emergency: If no creeps alive, spawn first request immediately
+    const totalCreeps = Object.keys(Game.creeps).filter(
+      name => Game.creeps[name].room.name === spawn.room.name
+    ).length;
 
-    // Critical: Always maintain at least 1 creep
-    const totalCreeps = Object.values(creepCounts).reduce((sum, count) => sum + count, 0);
     if (totalCreeps === 0) {
       console.log("⚠️ CRITICAL: No creeps alive! Spawning emergency creep");
-      const [firstRole, firstConfig] = roleEntries[0];
-      this.spawnCreep(spawn, firstRole, firstConfig);
+      const firstRequest = sortedRequests[0];
+      this.spawnFromRequest(spawn, firstRequest);
       return;
     }
 
-    // GUARDRAIL: Get harvester count
-    const harvesterCount = creepCounts.harvester || 0;
-    const harvesterTarget = config.roles.harvester?.target || 0;
-    const harvesterRatio = harvesterTarget > 0 ? harvesterCount / harvesterTarget : 1;
+    // Process first viable request
+    for (const request of sortedRequests) {
+      // Check if we can afford this spawn
+      const bodyCost = this.calculateBodyCost(request.body);
+      const minEnergy = request.minEnergy || bodyCost;
 
-    // Spawn first needed role
-    for (const [roleName, roleConfig] of roleEntries) {
-      const currentCount = creepCounts[roleName] || 0;
+      if (spawn.room.energyAvailable >= minEnergy) {
+        const result = this.spawnFromRequest(spawn, request);
 
-      if (currentCount < roleConfig.target) {
-        // GUARDRAIL: If harvester ratio < 50%, ONLY spawn harvesters (force energy income)
-        if (harvesterRatio < 0.5 && roleName !== "harvester") {
-          console.log(`🛡️ Harvester deficit detected (${harvesterCount}/${harvesterTarget}) - skipping ${roleName}`);
-          continue; // Skip non-harvester roles until we have enough harvesters
+        if (result === OK) {
+          return; // Successfully spawned
+        } else if (result !== ERR_NOT_ENOUGH_ENERGY) {
+          console.log(`❌ Spawn failed for ${request.role}: ${this.getErrorName(result)}`);
         }
-
-        const result = this.spawnCreep(spawn, roleName, roleConfig);
-
-        if (result !== OK && result !== ERR_NOT_ENOUGH_ENERGY) {
-          console.log(`❌ Spawn failed for ${roleName}: ${this.getErrorName(result)}`);
-        }
-
-        return; // Only spawn one creep per tick
       }
     }
   }
 
   /**
-   * Spawn a single creep
+   * Spawn a creep from a request
    */
-  private static spawnCreep(
-    spawn: StructureSpawn,
-    roleName: string,
-    config: RoleConfig
-  ): ScreepsReturnCode {
-    const name = `${roleName.charAt(0).toUpperCase() + roleName.slice(1)}_${Game.time}`;
+  private static spawnFromRequest(spawn: StructureSpawn, request: SpawnRequest): ScreepsReturnCode {
+    const name = `${request.role.charAt(0).toUpperCase() + request.role.slice(1)}_${Game.time}`;
 
-    const result = spawn.spawnCreep(config.body, name, {
+    const result = spawn.spawnCreep(request.body, name, {
       memory: {
-        role: roleName,
+        role: request.role,
         room: spawn.room.name,
         working: false
       }
     });
 
     if (result === OK) {
-      console.log(`✅ Spawning ${roleName}: ${name}`);
+      console.log(`✅ Spawning ${request.role}: ${name} (${request.reason})`);
     }
 
     return result;
@@ -134,21 +108,46 @@ export class SpawnManager {
   }
 
   /**
-   * Display room status
+   * Display room status with active requests
    */
-  private static displayStatus(
-    room: Room,
-    config: RCLConfig,
-    creepCounts: { [role: string]: number }
-  ): void {
-    console.log(`\n=== RCL${room.controller?.level} Status (${room.name}) ===`);
-    console.log(`Controller Progress: ${room.controller?.progress}/${room.controller?.progressTotal}`);
-    console.log(`Energy: ${room.energyAvailable}/${room.energyCapacityAvailable}`);
+  private static displayStatus(room: Room, requests: SpawnRequest[]): void {
+    const creeps = room.find(FIND_MY_CREEPS);
+    const creepCounts: { [role: string]: number } = {};
 
-    for (const [roleName, roleConfig] of Object.entries(config.roles)) {
-      const count = creepCounts[roleName] || 0;
-      console.log(`${roleName}: ${count}/${roleConfig.target}`);
+    for (const creep of creeps) {
+      const role = creep.memory.role;
+      creepCounts[role] = (creepCounts[role] || 0) + 1;
     }
+
+    console.log(`\n=== Room Status (${room.name}) ===`);
+    console.log(`RCL: ${room.controller?.level || 0} | Energy: ${room.energyAvailable}/${room.energyCapacityAvailable}`);
+    console.log(`Controller: ${room.controller?.progress}/${room.controller?.progressTotal}`);
+
+    // Show creep counts
+    console.log(`\nCreeps:`);
+    const allRoles = new Set([...Object.keys(creepCounts), ...requests.map(r => r.role)]);
+    for (const role of allRoles) {
+      const count = creepCounts[role] || 0;
+      const request = requests.find(r => r.role === role);
+      const max = request?.maxCount || '?';
+      console.log(`  ${role}: ${count}/${max}`);
+    }
+
+    // Show active requests
+    if (requests.length > 0) {
+      console.log(`\nSpawn Requests (${requests.length}):`);
+      const sorted = requests.sort((a, b) => a.priority - b.priority);
+      for (const req of sorted.slice(0, 3)) { // Show top 3
+        console.log(`  [P${req.priority}] ${req.role}: ${req.reason}`);
+      }
+    }
+  }
+
+  /**
+   * Calculate body cost
+   */
+  private static calculateBodyCost(body: BodyPartConstant[]): number {
+    return body.reduce((total, part) => total + BODYPART_COST[part], 0);
   }
 
   /**

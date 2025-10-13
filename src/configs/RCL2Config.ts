@@ -1,15 +1,23 @@
 /**
  * RCL 2 Configuration
- * Defines spawn targets and body configurations for RCL 2
+ * Defines behaviors, body compositions, and strategic guidelines for RCL 2
  *
- * Strategy:
- * - Increased harvester capacity with larger bodies
- * - More upgraders to push to RCL 3
- * - Builders now active for construction sites
+ * Strategy (from documentation):
+ * Phase 1 (Immediate): Build 5 extensions (300→550 energy capacity)
+ * Phase 2 (Infrastructure): Build containers at sources, roads to core
+ * Phase 3 (Economic Overhaul): Transition to specialist economy
+ *   - Stationary Harvesters: [WORK×5, MOVE] mine to containers
+ *   - Haulers: [CARRY×3, MOVE×3] transport from containers
+ *   - Upgraders: Pull from containers, not spawn
+ * Phase 4 (Stabilize): Scale upgraders, prepare for RCL 3 towers
+ *
+ * Key Principles:
+ * - Build infrastructure first (extensions, containers, roads)
+ * - Transition to specialist logistics (stationary miners + haulers)
+ * - Minimize walking, maximize working
  */
 
 export interface RoleConfig {
-  target: number;
   body: BodyPartConstant[];
   priority: number;
   assignToSource?: boolean; // Whether this role should be assigned to sources
@@ -26,40 +34,51 @@ export interface RCLConfig {
   sourceAssignment: {
     maxWorkPartsPerSource: number; // Maximum work parts allowed per source
   };
+  spawning: {
+    enableBuilders: boolean; // Whether builders should spawn at this RCL
+    useContainers: boolean; // Whether to use container-based logistics
+  };
 }
 
 export const RCL2Config: RCLConfig = {
   roles: {
     harvester: {
-      target: 4,
-      body: [WORK, CARRY, MOVE], // Cost: 200 energy - will tune later
+      body: [WORK, CARRY, MOVE], // Cost: 200 energy - basic for transition
+      // TODO: Upgrade to [WORK×5, MOVE] once containers are built
       priority: 1, // Highest priority - energy income
       assignToSource: true, // Harvesters get assigned to sources
       behavior: {
-        energySource: "harvest",
-        workTarget: "spawn/extensions"
+        energySource: "harvest", // Mine from sources
+        workTarget: "spawn/extensions" // Deliver to spawn/extensions
+        // TODO: Change to "container" once containers built
       }
     },
     upgrader: {
-      target: 3,
       body: [WORK, CARRY, MOVE], // Cost: 200 energy
+      // TODO: Scale up with more WORK parts once energy available
       priority: 2, // Second priority - controller progress
       behavior: {
-        energySource: "withdraw", // Upgraders withdraw from spawn/extensions
-        workTarget: "controller"
+        energySource: "withdraw", // Withdraw from spawn/extensions
+        workTarget: "controller" // Upgrade controller
       }
     },
     builder: {
-      target: 2,
-      body: [WORK, CARRY, MOVE], // Cost: 200 energy
+      body: [WORK, CARRY, MOVE], // Cost: 200 energy - dedicated builder
       priority: 3, // Third priority - construction
       behavior: {
-        energySource: "withdraw", // Builders withdraw from spawn/extensions
-        workTarget: "construction"
+        energySource: "withdraw", // Withdraw from spawn/extensions
+        workTarget: "construction" // Build extensions/containers/roads
       }
     }
+    // TODO: Add "hauler" role once containers are operational
+    // hauler: { body: [CARRY×3, MOVE×3], priority: 1, behavior: { energySource: "container", workTarget: "logistics" } }
   },
   sourceAssignment: {
-    maxWorkPartsPerSource: 5 // Maximum efficiency: 5 work parts = 10 energy/tick (source regen rate)
+    maxWorkPartsPerSource: 5 // Maximum efficiency: 5 work parts = 10 energy/tick (source max)
+  },
+  spawning: {
+    enableBuilders: true, // YES builders at RCL 2 (extensions, containers, roads)
+    useContainers: false // Not yet - will enable once containers built
+    // TODO: Set to true once containers operational
   }
 };

@@ -4014,171 +4014,332 @@ class RoleBuilder {
 
 /**
  * RCL 1 Configuration
- * Defines spawn targets and body configurations for RCL 1
+ * Defines behaviors, body compositions, and strategic guidelines for RCL 1
  *
- * Strategy:
- * Phase 1 (Bootstrap): Spawn first generalist
- * Phase 2 (Stabilization): Spawn 2-3 harvesters, then 1-2 upgraders
+ * Strategy (from documentation):
+ * Phase 1 (Bootstrap): Spawn first generalist [WORK, CARRY, MOVE]
+ * Phase 2 (Stabilization): Build assembly line with 2-3 harvesters, 1-2 upgraders
  * Phase 3 (The Push): Maintain economy and upgrade to RCL 2
+ *
+ * Key Principles:
+ * - DO NOT BUILD (no structures available at RCL 1)
+ * - Specialists only (harvesters harvest, upgraders upgrade)
+ * - Simple assembly line: Harvesters -> Spawn -> Upgraders -> Controller
  */
 const RCL1Config = {
     roles: {
         harvester: {
-            target: 3,
             body: [WORK, CARRY, MOVE],
             priority: 1,
             assignToSource: true,
             behavior: {
                 energySource: "harvest",
-                workTarget: "spawn/extensions"
+                workTarget: "spawn/extensions" // Deliver to spawn
             }
         },
         upgrader: {
-            target: 2,
             body: [WORK, CARRY, MOVE],
             priority: 2,
             behavior: {
                 energySource: "withdraw",
-                workTarget: "controller"
+                workTarget: "controller" // Upgrade controller
             }
         }
     },
     sourceAssignment: {
-        maxWorkPartsPerSource: 5 // RCL1: Limit to 5 work parts per source
+        maxWorkPartsPerSource: 5 // RCL1: 5 work parts = 10 energy/tick (source max)
+    },
+    spawning: {
+        enableBuilders: false,
+        useContainers: false // No containers available yet
     }
 };
 
 /**
  * RCL 2 Configuration
- * Defines spawn targets and body configurations for RCL 2
+ * Defines behaviors, body compositions, and strategic guidelines for RCL 2
  *
- * Strategy:
- * - Increased harvester capacity with larger bodies
- * - More upgraders to push to RCL 3
- * - Builders now active for construction sites
+ * Strategy (from documentation):
+ * Phase 1 (Immediate): Build 5 extensions (300→550 energy capacity)
+ * Phase 2 (Infrastructure): Build containers at sources, roads to core
+ * Phase 3 (Economic Overhaul): Transition to specialist economy
+ *   - Stationary Harvesters: [WORK×5, MOVE] mine to containers
+ *   - Haulers: [CARRY×3, MOVE×3] transport from containers
+ *   - Upgraders: Pull from containers, not spawn
+ * Phase 4 (Stabilize): Scale upgraders, prepare for RCL 3 towers
+ *
+ * Key Principles:
+ * - Build infrastructure first (extensions, containers, roads)
+ * - Transition to specialist logistics (stationary miners + haulers)
+ * - Minimize walking, maximize working
  */
 const RCL2Config = {
     roles: {
         harvester: {
-            target: 4,
             body: [WORK, CARRY, MOVE],
+            // TODO: Upgrade to [WORK×5, MOVE] once containers are built
             priority: 1,
             assignToSource: true,
             behavior: {
                 energySource: "harvest",
-                workTarget: "spawn/extensions"
+                workTarget: "spawn/extensions" // Deliver to spawn/extensions
+                // TODO: Change to "container" once containers built
             }
         },
         upgrader: {
-            target: 3,
             body: [WORK, CARRY, MOVE],
+            // TODO: Scale up with more WORK parts once energy available
             priority: 2,
             behavior: {
                 energySource: "withdraw",
-                workTarget: "controller"
+                workTarget: "controller" // Upgrade controller
             }
         },
         builder: {
-            target: 2,
             body: [WORK, CARRY, MOVE],
             priority: 3,
             behavior: {
                 energySource: "withdraw",
-                workTarget: "construction"
+                workTarget: "construction" // Build extensions/containers/roads
             }
         }
+        // TODO: Add "hauler" role once containers are operational
+        // hauler: { body: [CARRY×3, MOVE×3], priority: 1, behavior: { energySource: "container", workTarget: "logistics" } }
     },
     sourceAssignment: {
-        maxWorkPartsPerSource: 5 // Maximum efficiency: 5 work parts = 10 energy/tick (source regen rate)
+        maxWorkPartsPerSource: 5 // Maximum efficiency: 5 work parts = 10 energy/tick (source max)
+    },
+    spawning: {
+        enableBuilders: true,
+        useContainers: false // Not yet - will enable once containers built
+        // TODO: Set to true once containers operational
     }
 };
 
 /**
- * Spawn Manager
- * Handles spawning logic based on provided RCL config
+ * Spawn Request System
+ * Generates spawn requests based on actual room conditions
+ * Uses RCL configs for body parts and behaviors
+ * Calculates counts dynamically based on room state
+ */
+class SpawnRequestGenerator {
+    /**
+     * Generate all spawn requests for a room
+     */
+    static generateRequests(room) {
+        const requests = [];
+        const config = RoomStateManager.getConfigForRoom(room);
+        // Null check - if no config available, return empty requests
+        if (!config) {
+            console.log(`[SpawnRequestGenerator] No config found for room ${room.name}`);
+            return requests;
+        }
+        // Always generate harvester requests first
+        requests.push(...this.requestHarvesters(room, config));
+        // Only request other roles if we have minimum harvesters
+        const harvesterCount = this.getCreepCount(room, "harvester");
+        const minHarvesters = this.getMinimumHarvesters(room);
+        if (harvesterCount >= minHarvesters) {
+            requests.push(...this.requestUpgraders(room, config));
+            // Only request builders if enabled in config
+            if (config.spawning.enableBuilders) {
+                requests.push(...this.requestBuilders(room, config));
+            }
+        }
+        return requests;
+    }
+    /**
+     * Request harvesters based on source capacity
+     * Uses RCL config for body composition
+     */
+    static requestHarvesters(room, config) {
+        const requests = [];
+        const sources = room.find(FIND_SOURCES);
+        const harvesterCount = this.getCreepCount(room, "harvester");
+        // Calculate ideal harvester count: 1 harvester per source + 1 spare
+        const idealCount = sources.length + 1;
+        const currentCount = harvesterCount;
+        if (currentCount < idealCount) {
+            const harvesterConfig = config.roles.harvester;
+            requests.push({
+                role: "harvester",
+                priority: harvesterConfig.priority,
+                reason: `Source coverage: ${currentCount}/${idealCount} harvesters`,
+                body: harvesterConfig.body,
+                minEnergy: this.calculateBodyCost(harvesterConfig.body),
+                maxCount: idealCount
+            });
+        }
+        return requests;
+    }
+    /**
+     * Request upgraders based on available energy and controller needs
+     * Uses RCL config for body composition
+     */
+    static requestUpgraders(room, config) {
+        var _a;
+        const requests = [];
+        const upgraderCount = this.getCreepCount(room, "upgrader");
+        const harvesterCount = this.getCreepCount(room, "harvester");
+        // Don't spawn upgraders if we don't have enough harvesters
+        const minHarvesters = this.getMinimumHarvesters(room);
+        if (harvesterCount < minHarvesters) {
+            return requests;
+        }
+        // Calculate ideal upgraders based on RCL and energy capacity
+        const rcl = ((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) || 1;
+        let idealCount = 0;
+        if (rcl === 1) {
+            // RCL 1: Just enough to keep upgrading (2 upgraders)
+            idealCount = 2;
+        }
+        else if (rcl === 2) {
+            // RCL 2: More upgraders to push to RCL 3 (3 upgraders)
+            idealCount = 3;
+        }
+        else if (rcl >= 3) {
+            // RCL 3+: Scale based on available extensions
+            idealCount = Math.min(5, Math.floor(room.energyCapacityAvailable / 200));
+        }
+        if (upgraderCount < idealCount) {
+            const upgraderConfig = config.roles.upgrader;
+            requests.push({
+                role: "upgrader",
+                priority: upgraderConfig.priority,
+                reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
+                body: upgraderConfig.body,
+                minEnergy: this.calculateBodyCost(upgraderConfig.body),
+                maxCount: idealCount
+            });
+        }
+        return requests;
+    }
+    /**
+     * Request builders only when construction sites exist
+     * Uses RCL config for body composition
+     */
+    static requestBuilders(room, config) {
+        const requests = [];
+        const builderCount = this.getCreepCount(room, "builder");
+        const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+        // No construction sites = no builders needed
+        if (constructionSites.length === 0) {
+            return requests;
+        }
+        // Calculate builders needed based on construction volume
+        const progressNeeded = constructionSites.reduce((sum, site) => {
+            return sum + (site.progressTotal - site.progress);
+        }, 0);
+        // 1 builder per 10,000 progress needed, min 1, max 3
+        const idealCount = Math.min(3, Math.max(1, Math.ceil(progressNeeded / 10000)));
+        if (builderCount < idealCount) {
+            const builderConfig = config.roles.builder;
+            requests.push({
+                role: "builder",
+                priority: builderConfig.priority,
+                reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
+                body: builderConfig.body,
+                minEnergy: this.calculateBodyCost(builderConfig.body),
+                maxCount: idealCount
+            });
+        }
+        return requests;
+    }
+    /**
+     * Calculate the energy cost of a body
+     */
+    static calculateBodyCost(body) {
+        return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+    }
+    /**
+     * Get minimum harvesters needed for room stability
+     */
+    static getMinimumHarvesters(room) {
+        const sources = room.find(FIND_SOURCES);
+        // Minimum: 1 harvester per source
+        return sources.length;
+    }
+    /**
+     * Count creeps by role in a room
+     */
+    static getCreepCount(room, role) {
+        return room.find(FIND_MY_CREEPS, {
+            filter: (c) => c.memory.role === role
+        }).length;
+    }
+}
+
+/**
+ * Spawn Manager - Demand-Based Spawning
+ * Evaluates spawn requests and spawns creeps based on actual room needs
  */
 class SpawnManager {
     /**
-     * Main spawn logic - uses provided config
+     * Main spawn logic - evaluates requests and spawns
      */
-    static run(spawn, config) {
+    static run(spawn) {
         // Don't spawn if already spawning
         if (spawn.spawning) {
             this.displaySpawningStatus(spawn);
             return;
         }
         const room = spawn.room;
-        // Count creeps by role in this room
-        const creepCounts = this.getCreepCounts(room);
+        // Generate spawn requests based on room conditions
+        const requests = SpawnRequestGenerator.generateRequests(room);
         // Display status periodically
         if (Game.time % 10 === 0) {
-            this.displayStatus(room, config, creepCounts);
+            this.displayStatus(room, requests);
         }
-        // Spawn based on priority
-        this.spawnByPriority(spawn, config, creepCounts);
+        // Process requests by priority
+        this.processRequests(spawn, requests);
     }
     /**
-     * Count creeps by role in a room
+     * Process spawn requests in priority order
      */
-    static getCreepCounts(room) {
-        const counts = {};
-        const creeps = room.find(FIND_MY_CREEPS);
-        for (const creep of creeps) {
-            const role = creep.memory.role;
-            counts[role] = (counts[role] || 0) + 1;
+    static processRequests(spawn, requests) {
+        if (requests.length === 0) {
+            return; // No requests
         }
-        return counts;
-    }
-    /**
-     * Spawn creeps based on priority
-     */
-    static spawnByPriority(spawn, config, creepCounts) {
-        var _a;
-        // Sort roles by priority
-        const roleEntries = Object.entries(config.roles).sort(([, a], [, b]) => a.priority - b.priority);
-        // Critical: Always maintain at least 1 creep
-        const totalCreeps = Object.values(creepCounts).reduce((sum, count) => sum + count, 0);
+        // Sort by priority (lower number = higher priority)
+        const sortedRequests = requests.sort((a, b) => a.priority - b.priority);
+        // Emergency: If no creeps alive, spawn first request immediately
+        const totalCreeps = Object.keys(Game.creeps).filter(name => Game.creeps[name].room.name === spawn.room.name).length;
         if (totalCreeps === 0) {
             console.log("⚠️ CRITICAL: No creeps alive! Spawning emergency creep");
-            const [firstRole, firstConfig] = roleEntries[0];
-            this.spawnCreep(spawn, firstRole, firstConfig);
+            const firstRequest = sortedRequests[0];
+            this.spawnFromRequest(spawn, firstRequest);
             return;
         }
-        // GUARDRAIL: Get harvester count
-        const harvesterCount = creepCounts.harvester || 0;
-        const harvesterTarget = ((_a = config.roles.harvester) === null || _a === void 0 ? void 0 : _a.target) || 0;
-        const harvesterRatio = harvesterTarget > 0 ? harvesterCount / harvesterTarget : 1;
-        // Spawn first needed role
-        for (const [roleName, roleConfig] of roleEntries) {
-            const currentCount = creepCounts[roleName] || 0;
-            if (currentCount < roleConfig.target) {
-                // GUARDRAIL: If harvester ratio < 50%, ONLY spawn harvesters (force energy income)
-                if (harvesterRatio < 0.5 && roleName !== "harvester") {
-                    console.log(`🛡️ Harvester deficit detected (${harvesterCount}/${harvesterTarget}) - skipping ${roleName}`);
-                    continue; // Skip non-harvester roles until we have enough harvesters
+        // Process first viable request
+        for (const request of sortedRequests) {
+            // Check if we can afford this spawn
+            const bodyCost = this.calculateBodyCost(request.body);
+            const minEnergy = request.minEnergy || bodyCost;
+            if (spawn.room.energyAvailable >= minEnergy) {
+                const result = this.spawnFromRequest(spawn, request);
+                if (result === OK) {
+                    return; // Successfully spawned
                 }
-                const result = this.spawnCreep(spawn, roleName, roleConfig);
-                if (result !== OK && result !== ERR_NOT_ENOUGH_ENERGY) {
-                    console.log(`❌ Spawn failed for ${roleName}: ${this.getErrorName(result)}`);
+                else if (result !== ERR_NOT_ENOUGH_ENERGY) {
+                    console.log(`❌ Spawn failed for ${request.role}: ${this.getErrorName(result)}`);
                 }
-                return; // Only spawn one creep per tick
             }
         }
     }
     /**
-     * Spawn a single creep
+     * Spawn a creep from a request
      */
-    static spawnCreep(spawn, roleName, config) {
-        const name = `${roleName.charAt(0).toUpperCase() + roleName.slice(1)}_${Game.time}`;
-        const result = spawn.spawnCreep(config.body, name, {
+    static spawnFromRequest(spawn, request) {
+        const name = `${request.role.charAt(0).toUpperCase() + request.role.slice(1)}_${Game.time}`;
+        const result = spawn.spawnCreep(request.body, name, {
             memory: {
-                role: roleName,
+                role: request.role,
                 room: spawn.room.name,
                 working: false
             }
         });
         if (result === OK) {
-            console.log(`✅ Spawning ${roleName}: ${name}`);
+            console.log(`✅ Spawning ${request.role}: ${name} (${request.reason})`);
         }
         return result;
     }
@@ -4192,17 +4353,42 @@ class SpawnManager {
         spawn.room.visual.text(`🛠️ ${spawningCreep.memory.role}`, spawn.pos.x + 1, spawn.pos.y, { align: "left", opacity: 0.8 });
     }
     /**
-     * Display room status
+     * Display room status with active requests
      */
-    static displayStatus(room, config, creepCounts) {
+    static displayStatus(room, requests) {
         var _a, _b, _c;
-        console.log(`\n=== RCL${(_a = room.controller) === null || _a === void 0 ? void 0 : _a.level} Status (${room.name}) ===`);
-        console.log(`Controller Progress: ${(_b = room.controller) === null || _b === void 0 ? void 0 : _b.progress}/${(_c = room.controller) === null || _c === void 0 ? void 0 : _c.progressTotal}`);
-        console.log(`Energy: ${room.energyAvailable}/${room.energyCapacityAvailable}`);
-        for (const [roleName, roleConfig] of Object.entries(config.roles)) {
-            const count = creepCounts[roleName] || 0;
-            console.log(`${roleName}: ${count}/${roleConfig.target}`);
+        const creeps = room.find(FIND_MY_CREEPS);
+        const creepCounts = {};
+        for (const creep of creeps) {
+            const role = creep.memory.role;
+            creepCounts[role] = (creepCounts[role] || 0) + 1;
         }
+        console.log(`\n=== Room Status (${room.name}) ===`);
+        console.log(`RCL: ${((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) || 0} | Energy: ${room.energyAvailable}/${room.energyCapacityAvailable}`);
+        console.log(`Controller: ${(_b = room.controller) === null || _b === void 0 ? void 0 : _b.progress}/${(_c = room.controller) === null || _c === void 0 ? void 0 : _c.progressTotal}`);
+        // Show creep counts
+        console.log(`\nCreeps:`);
+        const allRoles = new Set([...Object.keys(creepCounts), ...requests.map(r => r.role)]);
+        for (const role of allRoles) {
+            const count = creepCounts[role] || 0;
+            const request = requests.find(r => r.role === role);
+            const max = (request === null || request === void 0 ? void 0 : request.maxCount) || '?';
+            console.log(`  ${role}: ${count}/${max}`);
+        }
+        // Show active requests
+        if (requests.length > 0) {
+            console.log(`\nSpawn Requests (${requests.length}):`);
+            const sorted = requests.sort((a, b) => a.priority - b.priority);
+            for (const req of sorted.slice(0, 3)) { // Show top 3
+                console.log(`  [P${req.priority}] ${req.role}: ${req.reason}`);
+            }
+        }
+    }
+    /**
+     * Calculate body cost
+     */
+    static calculateBodyCost(body) {
+        return body.reduce((total, part) => total + BODYPART_COST[part], 0);
     }
     /**
      * Get error name from code
@@ -4367,8 +4553,8 @@ class RoomStateManager {
         if (spawns.length === 0)
             return;
         const spawn = spawns[0];
-        // Run spawn manager
-        SpawnManager.run(spawn, config);
+        // Run spawn manager (demand-based, no config needed)
+        SpawnManager.run(spawn);
         // Run assignment manager
         AssignmentManager.run(room, config);
         // Display status periodically

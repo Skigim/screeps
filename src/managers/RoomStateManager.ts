@@ -39,8 +39,8 @@ export class RoomStateManager {
     if (spawns.length === 0) return;
     const spawn = spawns[0];
 
-    // Run spawn manager
-    SpawnManager.run(spawn, config);
+    // Run spawn manager (demand-based, no config needed)
+    SpawnManager.run(spawn);
 
     // Run assignment manager
     AssignmentManager.run(room, config);
