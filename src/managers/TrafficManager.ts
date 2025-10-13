@@ -13,12 +13,13 @@ export class TrafficManager {
    * Called by builders when they need energy
    */
   static requestEnergy(builder: Creep): void {
-    // Find available haulers with energy
+    // Find available haulers with energy that are allowed to transport
     const haulers = builder.room.find(FIND_MY_CREEPS, {
       filter: c =>
         c.memory.role === "hauler" &&
         c.store[RESOURCE_ENERGY] > 0 &&
-        !c.memory.assignedBuilder // Not already assigned to help someone
+        !c.memory.assignedBuilder && // Not already assigned to help someone
+        c.memory.canTransport !== false // Allowed to transport (undefined defaults to true)
     });
 
     if (haulers.length === 0) return;
@@ -75,6 +76,9 @@ export class TrafficManager {
    * Called from main loop to handle edge cases (builder died, got energy elsewhere, etc.)
    */
   static cleanupAssignments(room: Room): void {
+    // Manage canTransport flags first
+    this.manageTransportFlags(room);
+
     const assignedHaulers = room.find(FIND_MY_CREEPS, {
       filter: c => c.memory.role === "hauler" && c.memory.assignedBuilder
     });
@@ -107,6 +111,50 @@ export class TrafficManager {
         console.log(`TrafficManager: Request timeout for ${builder.name}, allowing self-serve`);
         delete builder.memory.energyRequested;
         delete builder.memory.requestTime;
+      }
+    }
+  }
+
+  /**
+   * Manage canTransport flags on haulers
+   * Ensures at least 2 haulers are dedicated to spawn/extension delivery (canTransport: false)
+   * Remaining haulers can help builders (canTransport: true or undefined)
+   */
+  private static manageTransportFlags(room: Room): void {
+    const haulers = room.find(FIND_MY_CREEPS, {
+      filter: c => c.memory.role === "hauler"
+    });
+
+    if (haulers.length === 0) return;
+
+    // Count how many haulers are currently flagged as critical (canTransport: false)
+    const criticalHaulers = haulers.filter(h => h.memory.canTransport === false);
+    const minCriticalHaulers = Math.min(2, haulers.length); // Want 2 critical, but if only 1-2 haulers total, adjust
+
+    if (criticalHaulers.length < minCriticalHaulers) {
+      // Need more critical haulers - flag some
+      const needToFlag = minCriticalHaulers - criticalHaulers.length;
+      const availableHaulers = haulers.filter(h => h.memory.canTransport !== false);
+
+      for (let i = 0; i < Math.min(needToFlag, availableHaulers.length); i++) {
+        availableHaulers[i].memory.canTransport = false;
+        console.log(`TrafficManager: Flagged ${availableHaulers[i].name} as critical hauler (canTransport: false)`);
+      }
+    } else if (criticalHaulers.length > minCriticalHaulers && haulers.length > 3) {
+      // Have more critical haulers than needed AND enough total haulers - free one up
+      const excessCritical = criticalHaulers.length - minCriticalHaulers;
+
+      for (let i = 0; i < excessCritical; i++) {
+        criticalHaulers[i].memory.canTransport = true;
+        console.log(`TrafficManager: Freed ${criticalHaulers[i].name} to help builders (canTransport: true)`);
+      }
+    }
+
+    // For any hauler without a flag set, default to true (can transport) if we have enough critical haulers
+    if (criticalHaulers.length >= minCriticalHaulers) {
+      const unsetHaulers = haulers.filter(h => h.memory.canTransport === undefined);
+      for (const hauler of unsetHaulers) {
+        hauler.memory.canTransport = true;
       }
     }
   }

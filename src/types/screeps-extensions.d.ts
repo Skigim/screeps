@@ -102,4 +102,11 @@ interface CreepMemory {
    * Prevents over-delivery when builder has limited capacity
    */
   deliveryAmount?: number;
+
+  /**
+   * Can transport flag - whether this hauler is allowed to help builders
+   * Set to false for critical haulers that must focus on spawn/extension delivery
+   * At least 2 haulers should have this set to false to prevent spawn starvation
+   */
+  canTransport?: boolean;
 }
