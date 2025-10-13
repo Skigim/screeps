@@ -137,6 +137,14 @@ export class RoleTransporter {
       creep.memory.lastRequestTick = Game.time;
     }
 
+    // Check for active builder requests (regardless of transporter state)
+    const requestingBuilders = this.getBuilderRequests(creep.room);
+    
+    // Update lastRequestTick if there are any requests (prevents premature fallback)
+    if (requestingBuilders.length > 0) {
+      creep.memory.lastRequestTick = Game.time;
+    }
+
     // Toggle working state based on energy
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = false;
@@ -155,17 +163,11 @@ export class RoleTransporter {
     if (creep.memory.working) {
       // WORKING MODE: Deliver to builders or stay ready
 
-      // Check for active builder requests
-      const requestingBuilders = this.getBuilderRequests(creep.room);
-
       // Only respond to requests if we have energy to give (not empty)
       // If we have some energy but not full, we should still deliver what we have
       const hasEnergyToDeliver = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
 
       if (requestingBuilders.length > 0 && hasEnergyToDeliver) {
-        // Update last request tick - we have active requests
-        creep.memory.lastRequestTick = Game.time;
-
         // Find closest requesting builder
         const target = creep.pos.findClosestByPath(requestingBuilders);
 
