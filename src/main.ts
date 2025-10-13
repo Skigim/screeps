@@ -1,4 +1,4 @@
-/// <reference types="typed-screeps" />
+/// <reference types="screeps" />
 /// <reference path="types/screeps-extensions.d.ts" />
 
 import { ErrorMapper } from "utils/ErrorMapper";

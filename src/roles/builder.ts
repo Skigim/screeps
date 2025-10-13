@@ -47,12 +47,11 @@ export class RoleBuilder {
       // 4. Harvest directly from source (crisis mode)
 
       // HIGHEST PRIORITY: Loot ruins (common with captured rooms)
-      // Note: FIND_RUINS = 123, but typed-screeps doesn't have it yet, so we cast
-      const ruins = creep.room.find(123 as FindConstant) as unknown as Ruin[];
-      const ruinWithEnergy = ruins.find(r => (r.store?.getUsedCapacity(RESOURCE_ENERGY) || 0) > 0);
+      const ruins = creep.room.find(FIND_RUINS);
+      const ruinWithEnergy = ruins.find(r => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
 
       if (ruinWithEnergy) {
-        if (creep.withdraw(ruinWithEnergy as any, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+        if (creep.withdraw(ruinWithEnergy, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
           Traveler.travelTo(creep, ruinWithEnergy);
         }
         return;

@@ -4739,8 +4739,10 @@ class Architect {
             if (positions.length >= count)
                 break;
             const pos = new RoomPosition(spawnPos.x + offset.x, spawnPos.y + offset.y, room.name);
-            // Validate position (buildable, no structures)
-            if (this.isValidBuildPosition(room, pos) && !this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
+            // Validate position (buildable terrain)
+            // NOTE: Don't filter out positions with existing structures here!
+            // Let executePlan() handle that - otherwise replan will delete all sites
+            if (this.isValidBuildPosition(room, pos)) {
                 positions.push(pos);
             }
         }
@@ -5596,12 +5598,15 @@ class RoleBuilder {
             console.log(`⚠️ No builder config found for ${creep.name}`);
             return;
         }
-        // Toggle working state
+        // CRITICAL: State transitions only happen when COMPLETELY full or COMPLETELY empty
+        // This prevents builders from wandering around half-full
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
             creep.memory.working = false;
+            delete creep.memory.energySourceId; // Clear locked source when empty
         }
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
             creep.memory.working = true;
+            delete creep.memory.energySourceId; // Clear locked source when full
         }
         if (creep.memory.working) {
             // Intelligent construction prioritization
@@ -5621,6 +5626,20 @@ class RoleBuilder {
             }
         }
         else {
+            // Energy collection priority:
+            // 1. Ruins (dead structures from previous players) - FREE ENERGY!
+            // 2. Withdraw from spawn/extensions (if room has surplus)
+            // 3. Pickup dropped energy
+            // 4. Harvest directly from source (crisis mode)
+            // HIGHEST PRIORITY: Loot ruins (common with captured rooms)
+            const ruins = creep.room.find(FIND_RUINS);
+            const ruinWithEnergy = ruins.find(r => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+            if (ruinWithEnergy) {
+                if (creep.withdraw(ruinWithEnergy, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, ruinWithEnergy);
+                }
+                return;
+            }
             // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
             // Reserve energy for spawn if we're below minimum viable energy (200)
             const shouldReserveEnergy = creep.room.energyAvailable < 200;
@@ -5653,7 +5672,27 @@ class RoleBuilder {
             }
             else {
                 // CRISIS MODE: Harvest directly from source
-                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+                // CRITICAL: Lock onto ONE source and don't switch until COMPLETELY FULL
+                // This prevents builders from wandering around half-empty
+                let source = null;
+                // If we have a locked source, use it (prevents random wandering)
+                if (creep.memory.energySourceId) {
+                    source = Game.getObjectById(creep.memory.energySourceId);
+                    // If locked source is gone or depleted, clear the lock
+                    if (!source || source.energy === 0) {
+                        delete creep.memory.energySourceId;
+                        source = null;
+                    }
+                }
+                // If no locked source, find closest active source and LOCK IT
+                if (!source) {
+                    source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+                    if (source) {
+                        // LOCK onto this source - we won't switch until completely full
+                        creep.memory.energySourceId = source.id;
+                    }
+                }
+                // Harvest from locked source
                 if (source) {
                     if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
                         Traveler.travelTo(creep, source);
@@ -6209,7 +6248,7 @@ global.spawns = ConsoleCommands.listSpawns.bind(ConsoleCommands);
 global.stats = ConsoleCommands.showStats.bind(ConsoleCommands);
 global.clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
 
-/// <reference types="typed-screeps" />
+/// <reference types="screeps" />
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 const loop = ErrorMapper.wrapLoop(() => {

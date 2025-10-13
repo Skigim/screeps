@@ -210,8 +210,10 @@ export class Architect {
         room.name
       );
 
-      // Validate position (buildable, no structures)
-      if (this.isValidBuildPosition(room, pos) && !this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
+      // Validate position (buildable terrain)
+      // NOTE: Don't filter out positions with existing structures here!
+      // Let executePlan() handle that - otherwise replan will delete all sites
+      if (this.isValidBuildPosition(room, pos)) {
         positions.push(pos);
       }
     }
