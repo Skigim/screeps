@@ -62,7 +62,7 @@ export class RoleUpgrader {
         // Priority:
         // 1. Controller container (primary energy source)
         // 2. Vacuum dropped energy (non-source areas) and return to base
-        // 
+        //
         // This creates a clean separation of duties:
         // - Haulers: Source containers → Spawn/Extensions
         // - Upgraders: Controller container → Controller (+ vacuum cleanup)
@@ -134,7 +134,7 @@ export class RoleUpgrader {
             if (resource.resourceType !== RESOURCE_ENERGY) return false;
 
             // Exclude energy near sources (within 2 tiles)
-            const nearSource = sources.some(source => 
+            const nearSource = sources.some(source =>
               resource.pos.getRangeTo(source) <= 2
             );
 
