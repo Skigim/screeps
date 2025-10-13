@@ -78,4 +78,16 @@ interface CreepMemory {
    * When true, upgrader will return energy to spawn/dest container before resuming work
    */
   vacuuming?: boolean;
+
+  /**
+   * Energy request flag - set by builders when they need energy delivery from transporter
+   * Cleared when builder receives energy or becomes full
+   */
+  requestingEnergy?: boolean;
+
+  /**
+   * Last request tick - tracks when transporter last saw an energy request
+   * Used to determine when to fallback to hauler behavior (10 tick threshold)
+   */
+  lastRequestTick?: number;
 }

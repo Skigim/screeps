@@ -176,6 +176,16 @@ export const RCL2Config: RCLConfig = {
         energySource: "withdraw", // Withdraw from containers
         workTarget: "logistics" // Transport to spawn/extensions
       }
+    },
+    transporter: {
+      body: generateHaulerBody, // Same body as hauler (CARRY/MOVE pairs)
+      // Transporter is a specialized hauler for builder support
+      priority: 2, // Lower priority than haulers - spawned when economy stable
+      assignToSource: false, // Transporters roam freely to serve builders
+      behavior: {
+        energySource: "withdraw", // Withdraw from various sources (non-source drops, containers)
+        workTarget: "builder-support" // Deliver directly to builders on request
+      }
     }
   },
   sourceAssignment: {

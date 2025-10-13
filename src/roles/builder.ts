@@ -18,10 +18,12 @@ export class RoleBuilder {
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = false;
       delete creep.memory.energySourceId; // Clear locked source when empty
+      delete creep.memory.requestingEnergy; // Clear energy request when empty
     }
     if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = true;
       delete creep.memory.energySourceId; // Clear locked source when full
+      delete creep.memory.requestingEnergy; // Clear energy request when full
     }
 
     if (creep.memory.working) {
@@ -55,6 +57,29 @@ export class RoleBuilder {
       // Energy collection priority with TARGET LOCKING
       // Lock onto ONE energy source and stick with it until COMPLETELY FULL
       // This prevents wandering between ruins, spawns, drops, sources mid-gathering
+
+      // FIRST: Check if transporter exists - if so, request delivery instead of self-gathering
+      const transporterExists = creep.room.find(FIND_MY_CREEPS, {
+        filter: (c) => c.memory.role === "transporter"
+      }).length > 0;
+
+      if (transporterExists) {
+        // Transporter available - broadcast energy request and wait
+        if (!creep.memory.requestingEnergy) {
+          creep.memory.requestingEnergy = true;
+          // Stay near current position or construction site to receive delivery
+        }
+
+        // Wait for transporter delivery (stay put or move to nearest construction site)
+        const nearbyConstruction = creep.pos.findInRange(FIND_CONSTRUCTION_SITES, 5)[0];
+        if (nearbyConstruction && creep.pos.getRangeTo(nearbyConstruction) > 2) {
+          Traveler.travelTo(creep, nearbyConstruction, { range: 2 });
+        }
+        return; // Wait for delivery, don't self-gather
+      }
+
+      // No transporter - proceed with normal energy gathering behavior
+      delete creep.memory.requestingEnergy; // Clear request if transporter is gone
 
       // If we have a locked target, try to use it first
       if (creep.memory.energySourceId) {
