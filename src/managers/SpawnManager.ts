@@ -128,9 +128,7 @@ export class SpawnManager {
     const allRoles = new Set([...Object.keys(creepCounts), ...requests.map(r => r.role)]);
     for (const role of allRoles) {
       const count = creepCounts[role] || 0;
-      const request = requests.find(r => r.role === role);
-      const max = request?.maxCount || '?';
-      console.log(`  ${role}: ${count}/${max}`);
+      console.log(`  ${role}: ${count}`);
     }
 
     // Show active requests
