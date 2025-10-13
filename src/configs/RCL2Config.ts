@@ -68,6 +68,10 @@ export const RCL2Config: RCLConfig = {
       behavior: {
         energySource: "withdraw", // Withdraw from spawn/extensions
         workTarget: "construction" // Build extensions/containers/roads
+        // Builder Intelligence (in builder role):
+        // - Prioritizes finishing partially-built structures first
+        // - Construction order: Extensions > Containers > Roads
+        // - Focuses on one structure at a time until complete
       }
     }
     // TODO: Add "hauler" role once containers are operational

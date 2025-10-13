@@ -3952,8 +3952,8 @@ class RoleBuilder {
             creep.memory.working = true;
         }
         if (creep.memory.working) {
-            // Build nearest construction site
-            const target = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
+            // Intelligent construction prioritization
+            const target = this.findBestConstructionTarget(creep);
             if (target) {
                 if (creep.build(target) === ERR_NOT_IN_RANGE) {
                     Traveler.travelTo(creep, target);
@@ -4009,6 +4009,50 @@ class RoleBuilder {
                 }
             }
         }
+    }
+    /**
+     * Find the best construction target using intelligent prioritization
+     *
+     * Priority order:
+     * 1. Continue building partially-built structures (finish what you started)
+     * 2. Extensions (increase energy capacity)
+     * 3. Containers (enable logistics)
+     * 4. Roads (speed boost)
+     * 5. Everything else
+     */
+    static findBestConstructionTarget(creep) {
+        const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
+        if (sites.length === 0)
+            return null;
+        // Define priority order
+        const priorityOrder = [
+            STRUCTURE_EXTENSION,
+            STRUCTURE_CONTAINER,
+            STRUCTURE_ROAD
+        ];
+        // 1. HIGHEST PRIORITY: Continue building partially-built structures
+        // Find any site that has progress > 0 (already started)
+        const partiallyBuilt = sites.filter(site => site.progress > 0);
+        if (partiallyBuilt.length > 0) {
+            // Sort by most progress (closest to completion)
+            partiallyBuilt.sort((a, b) => {
+                const aProgress = a.progress / a.progressTotal;
+                const bProgress = b.progress / b.progressTotal;
+                return bProgress - aProgress; // Most complete first
+            });
+            // Build the most complete structure
+            return partiallyBuilt[0];
+        }
+        // 2. No partially-built structures, use priority order
+        for (const structureType of priorityOrder) {
+            const sitesOfType = sites.filter(site => site.structureType === structureType);
+            if (sitesOfType.length > 0) {
+                // Find closest site of this type
+                return creep.pos.findClosestByPath(sitesOfType) || sitesOfType[0];
+            }
+        }
+        // 3. Fallback: Any remaining construction site
+        return creep.pos.findClosestByPath(sites);
     }
 }
 
@@ -4101,6 +4145,10 @@ const RCL2Config = {
             behavior: {
                 energySource: "withdraw",
                 workTarget: "construction" // Build extensions/containers/roads
+                // Builder Intelligence (in builder role):
+                // - Prioritizes finishing partially-built structures first
+                // - Construction order: Extensions > Containers > Roads
+                // - Focuses on one structure at a time until complete
             }
         }
         // TODO: Add "hauler" role once containers are operational
