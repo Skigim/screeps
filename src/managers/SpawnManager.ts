@@ -75,7 +75,7 @@ export class SpawnManager {
    * Spawn a creep from a request
    */
   private static spawnFromRequest(spawn: StructureSpawn, request: SpawnRequest): ScreepsReturnCode {
-    const name = `${request.role.charAt(0).toUpperCase() + request.role.slice(1)}_${Game.time}`;
+    const name = this.generateCreepName(request.role);
 
     const result = spawn.spawnCreep(request.body, name, {
       memory: {
@@ -90,6 +90,32 @@ export class SpawnManager {
     }
 
     return result;
+  }
+
+  /**
+   * Generate a clean, readable creep name with incremental numbering per role
+   * Format: RoleName_X (e.g., Harvester_1, Upgrader_2)
+   */
+  private static generateCreepName(role: string): string {
+    // Capitalize first letter
+    const roleName = role.charAt(0).toUpperCase() + role.slice(1);
+
+    // Find the highest existing number for this role
+    let maxNumber = 0;
+    for (const name in Game.creeps) {
+      if (name.startsWith(roleName + "_")) {
+        const parts = name.split("_");
+        if (parts.length === 2) {
+          const num = parseInt(parts[1], 10);
+          if (!isNaN(num) && num > maxNumber) {
+            maxNumber = num;
+          }
+        }
+      }
+    }
+
+    // Return next available number
+    return `${roleName}_${maxNumber + 1}`;
   }
 
   /**
