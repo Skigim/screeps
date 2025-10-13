@@ -22,9 +22,6 @@ export class RoomStateManager {
   // Cache configs by room name for creep access
   private static roomConfigs: Map<string, RCLConfig> = new Map();
 
-  // Track if room plan has been executed (one-time planning per RCL)
-  private static roomPlansExecuted: Map<string, number> = new Map(); // roomName -> RCL when last planned
-
   // Cache progression states for each room
   private static progressionStates: Map<string, ProgressionState> = new Map();
 
@@ -88,7 +85,7 @@ export class RoomStateManager {
     AssignmentManager.run(room, config);
 
     // Run architect (automatic infrastructure planning)
-    this.runArchitect(room);
+    Architect.run(room);
 
     // Display status periodically
     if (Game.time % 50 === 0) {
@@ -147,49 +144,6 @@ export class RoomStateManager {
     }
 
     return null;
-  }
-
-  /**
-   * Run architect to plan and build infrastructure
-   */
-  private static runArchitect(room: Room): void {
-    if (!room.controller) return;
-
-    const rcl = room.controller.level;
-    const roomKey = room.name;
-    const lastPlannedRCL = this.roomPlansExecuted.get(roomKey);
-
-    // Only plan once per RCL (when RCL changes or first time)
-    if (lastPlannedRCL !== rcl && rcl >= 2) {
-      console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
-
-      const plan = Architect.planRoom(room);
-      Architect.executePlan(room, plan);
-
-      // Mark this RCL as planned
-      this.roomPlansExecuted.set(roomKey, rcl);
-
-      // Visualize plan (optional - can disable in production)
-      if (Game.time % 10 === 0) {
-        Architect.visualizePlan(room, plan);
-      }
-    }
-  }
-
-  /**
-   * Force Architect to replan (useful for manual fixes or after destroying structures)
-   */
-  public static forceReplan(roomName: string): void {
-    const room = Game.rooms[roomName];
-    if (!room || !room.controller || !room.controller.my) {
-      console.log(`❌ Cannot replan ${roomName}: Invalid room or not owned`);
-      return;
-    }
-
-    console.log(`🔄 Forcing Architect replan for ${roomName}...`);
-    this.roomPlansExecuted.delete(roomName);
-    this.runArchitect(room);
-    console.log(`✅ Replan complete for ${roomName}`);
   }
 
   /**

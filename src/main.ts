@@ -9,6 +9,7 @@ import { RoleHauler } from "roles/hauler";
 import { RoomStateManager } from "managers/RoomStateManager";
 import { StatsCollector } from "utils/StatsCollector";
 import { StatsTracker } from "managers/StatsTracker";
+import { Architect } from "managers/Architect";
 import "utils/ConsoleCommands"; // Import to register global console commands
 import * as _ from "lodash";
 
@@ -47,7 +48,7 @@ declare global {
     interface Global {
       log: any;
       StatsTracker: typeof StatsTracker; // Export stats tracker to console
-      RoomStateManager: typeof RoomStateManager; // Export for manual replan commands
+      Architect: typeof Architect; // Export Architect for manual commands
     }
   }
 }
@@ -57,7 +58,7 @@ declare global {
 export const loop = ErrorMapper.wrapLoop(() => {
   // Export to global for console access
   global.StatsTracker = StatsTracker;
-  global.RoomStateManager = RoomStateManager;
+  global.Architect = Architect;
 
   // Clean up memory of dead creeps
   for (const name in Memory.creeps) {

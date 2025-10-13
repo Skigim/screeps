@@ -27,6 +27,48 @@ export interface ArchitectPlan {
 }
 
 export class Architect {
+  // Track which RCLs have been planned for each room
+  private static roomPlansExecuted: Map<string, number> = new Map();
+
+  /**
+   * Main entry point - automatically plans and executes for a room
+   * Call this once per tick for each room
+   */
+  public static run(room: Room): void {
+    if (!room.controller || !room.controller.my) return;
+
+    const rcl = room.controller.level;
+    const roomKey = room.name;
+    const lastPlannedRCL = this.roomPlansExecuted.get(roomKey);
+
+    // Only plan once per RCL (when RCL changes or first time)
+    if (lastPlannedRCL !== rcl && rcl >= 2) {
+      console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
+
+      const plan = this.planRoom(room);
+      this.executePlan(room, plan);
+
+      // Mark this RCL as planned
+      this.roomPlansExecuted.set(roomKey, rcl);
+    }
+  }
+
+  /**
+   * Force replan for a room (useful after manual cleanup or structure destruction)
+   */
+  public static forceReplan(roomName: string): void {
+    const room = Game.rooms[roomName];
+    if (!room || !room.controller || !room.controller.my) {
+      console.log(`❌ Architect: Cannot replan ${roomName} - invalid room or not owned`);
+      return;
+    }
+
+    console.log(`🔄 Architect: Force replanning ${roomName}...`);
+    this.roomPlansExecuted.delete(roomName);
+    this.run(room);
+    console.log(`✅ Architect: Replan complete for ${roomName}`);
+  }
+
   /**
    * Generate a complete construction plan for a room
    * Includes cleanup of faulty/misplaced construction sites

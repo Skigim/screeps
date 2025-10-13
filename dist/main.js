@@ -4593,6 +4593,39 @@ class AssignmentManager {
  */
 class Architect {
     /**
+     * Main entry point - automatically plans and executes for a room
+     * Call this once per tick for each room
+     */
+    static run(room) {
+        if (!room.controller || !room.controller.my)
+            return;
+        const rcl = room.controller.level;
+        const roomKey = room.name;
+        const lastPlannedRCL = this.roomPlansExecuted.get(roomKey);
+        // Only plan once per RCL (when RCL changes or first time)
+        if (lastPlannedRCL !== rcl && rcl >= 2) {
+            console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
+            const plan = this.planRoom(room);
+            this.executePlan(room, plan);
+            // Mark this RCL as planned
+            this.roomPlansExecuted.set(roomKey, rcl);
+        }
+    }
+    /**
+     * Force replan for a room (useful after manual cleanup or structure destruction)
+     */
+    static forceReplan(roomName) {
+        const room = Game.rooms[roomName];
+        if (!room || !room.controller || !room.controller.my) {
+            console.log(`❌ Architect: Cannot replan ${roomName} - invalid room or not owned`);
+            return;
+        }
+        console.log(`🔄 Architect: Force replanning ${roomName}...`);
+        this.roomPlansExecuted.delete(roomName);
+        this.run(room);
+        console.log(`✅ Architect: Replan complete for ${roomName}`);
+    }
+    /**
      * Generate a complete construction plan for a room
      * Includes cleanup of faulty/misplaced construction sites
      */
@@ -4978,6 +5011,8 @@ class Architect {
         }
     }
 }
+// Track which RCLs have been planned for each room
+Architect.roomPlansExecuted = new Map();
 
 /**
  * Progression Manager - Intelligent Phase Detection
@@ -5476,7 +5511,7 @@ class RoomStateManager {
         // Run assignment manager
         AssignmentManager.run(room, config);
         // Run architect (automatic infrastructure planning)
-        this.runArchitect(room);
+        Architect.run(room);
         // Display status periodically
         if (Game.time % 50 === 0) {
             this.displayRoomStatus(room, config);
@@ -5529,42 +5564,6 @@ class RoomStateManager {
         return null;
     }
     /**
-     * Run architect to plan and build infrastructure
-     */
-    static runArchitect(room) {
-        if (!room.controller)
-            return;
-        const rcl = room.controller.level;
-        const roomKey = room.name;
-        const lastPlannedRCL = this.roomPlansExecuted.get(roomKey);
-        // Only plan once per RCL (when RCL changes or first time)
-        if (lastPlannedRCL !== rcl && rcl >= 2) {
-            console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
-            const plan = Architect.planRoom(room);
-            Architect.executePlan(room, plan);
-            // Mark this RCL as planned
-            this.roomPlansExecuted.set(roomKey, rcl);
-            // Visualize plan (optional - can disable in production)
-            if (Game.time % 10 === 0) {
-                Architect.visualizePlan(room, plan);
-            }
-        }
-    }
-    /**
-     * Force Architect to replan (useful for manual fixes or after destroying structures)
-     */
-    static forceReplan(roomName) {
-        const room = Game.rooms[roomName];
-        if (!room || !room.controller || !room.controller.my) {
-            console.log(`❌ Cannot replan ${roomName}: Invalid room or not owned`);
-            return;
-        }
-        console.log(`🔄 Forcing Architect replan for ${roomName}...`);
-        this.roomPlansExecuted.delete(roomName);
-        this.runArchitect(room);
-        console.log(`✅ Replan complete for ${roomName}`);
-    }
-    /**
      * Display consolidated room status
      */
     static displayRoomStatus(room, config) {
@@ -5586,8 +5585,6 @@ RoomStateManager.RCL_CONFIGS = {
 };
 // Cache configs by room name for creep access
 RoomStateManager.roomConfigs = new Map();
-// Track if room plan has been executed (one-time planning per RCL)
-RoomStateManager.roomPlansExecuted = new Map(); // roomName -> RCL when last planned
 // Cache progression states for each room
 RoomStateManager.progressionStates = new Map();
 
@@ -6218,7 +6215,7 @@ global.clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
 const loop = ErrorMapper.wrapLoop(() => {
     // Export to global for console access
     global.StatsTracker = StatsTracker;
-    global.RoomStateManager = RoomStateManager;
+    global.Architect = Architect;
     // Clean up memory of dead creeps
     for (const name in Memory.creeps) {
         if (!(name in Game.creeps)) {
