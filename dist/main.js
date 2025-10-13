@@ -5791,23 +5791,6 @@ class RoleHauler {
             creep.memory.working = true;
         }
         if (creep.memory.working) {
-            // Phase 2 Special: Drop energy on road sites (exactly enough to complete)
-            const roadSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
-                filter: s => s.structureType === STRUCTURE_ROAD && s.progress < s.progressTotal
-            });
-            if (roadSite) {
-                const energyNeeded = roadSite.progressTotal - roadSite.progress;
-                const creepEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0;
-                const energyToDeliver = Math.min(energyNeeded, creepEnergy);
-                if (creep.pos.isNearTo(roadSite)) {
-                    // Drop exactly enough energy to complete the road
-                    creep.drop(RESOURCE_ENERGY, energyToDeliver);
-                }
-                else {
-                    Traveler.travelTo(creep, roadSite.pos);
-                }
-                return;
-            }
             // Deliver to spawn/extensions
             const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
                 filter: (structure) => {
