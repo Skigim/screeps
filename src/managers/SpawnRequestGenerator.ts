@@ -91,13 +91,13 @@ export class SpawnRequestGenerator {
 
     // CRITICAL: If only 1 harvester left, request emergency backup immediately
     if (harvesterCount === 1) {
-      const harvesterConfig = config.roles.harvester;
+      const body = this.buildScaledBody(room, "harvester");
       requests.push({
         role: "harvester",
         priority: 0, // HIGHEST PRIORITY - single point of failure!
-        reason: `EMERGENCY: Only 1 harvester remaining!`,
-        body: harvesterConfig.body,
-        minEnergy: this.calculateBodyCost(harvesterConfig.body)
+        reason: `EMERGENCY: Only 1 harvester remaining! (${room.energyCapacityAvailable} energy)`,
+        body: body,
+        minEnergy: this.calculateBodyCost(body)
       });
     }
 
@@ -124,17 +124,18 @@ export class SpawnRequestGenerator {
       }
     } else {
       // Phase 1: Mobile harvesters (1 per source + 1 spare)
+      // Scale body based on available energy capacity
       const idealCount = sources.length + 1;
 
       if (harvesterCount < idealCount) {
-        const harvesterConfig = config.roles.harvester;
+        const body = this.buildScaledBody(room, "harvester");
 
         requests.push({
           role: "harvester",
-          priority: harvesterConfig.priority,
-          reason: `Mobile harvesters: ${harvesterCount}/${idealCount}`,
-          body: harvesterConfig.body,
-          minEnergy: this.calculateBodyCost(harvesterConfig.body)
+          priority: config.roles.harvester.priority,
+          reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (${room.energyCapacityAvailable} energy)`,
+          body: body,
+          minEnergy: this.calculateBodyCost(body)
         });
       }
     }
@@ -173,14 +174,14 @@ export class SpawnRequestGenerator {
     }
 
     if (upgraderCount < idealCount) {
-      const upgraderConfig = config.roles.upgrader;
+      const body = this.buildScaledBody(room, "upgrader");
 
       requests.push({
         role: "upgrader",
-        priority: upgraderConfig.priority,
-        reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
-        body: upgraderConfig.body, // Use body from config
-        minEnergy: this.calculateBodyCost(upgraderConfig.body)
+        priority: config.roles.upgrader.priority,
+        reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders (${room.energyCapacityAvailable} energy)`,
+        body: body,
+        minEnergy: this.calculateBodyCost(body)
       });
     }
 
@@ -210,14 +211,14 @@ export class SpawnRequestGenerator {
     const idealCount = Math.min(3, Math.max(1, Math.ceil(progressNeeded / 10000)));
 
     if (builderCount < idealCount) {
-      const builderConfig = config.roles.builder;
+      const body = this.buildScaledBody(room, "builder");
 
       requests.push({
         role: "builder",
-        priority: builderConfig.priority,
-        reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
-        body: builderConfig.body, // Use body from config
-        minEnergy: this.calculateBodyCost(builderConfig.body)
+        priority: config.roles.builder.priority,
+        reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed (${room.energyCapacityAvailable} energy)`,
+        body: body,
+        minEnergy: this.calculateBodyCost(body)
       });
     }
 
@@ -229,6 +230,59 @@ export class SpawnRequestGenerator {
    */
   private static calculateBodyCost(body: BodyPartConstant[]): number {
     return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+  }
+
+  /**
+   * Build a dynamically scaled body based on available energy
+   * Scales up as extensions are completed during Phase 1
+   */
+  private static buildScaledBody(room: Room, role: string): BodyPartConstant[] {
+    const energy = room.energyCapacityAvailable;
+    const body: BodyPartConstant[] = [];
+
+    if (role === "harvester") {
+      // Harvester: Prioritize WORK parts, then balance CARRY and MOVE
+      // Pattern: [WORK×N, CARRY, MOVE×N]
+      // 300 energy: [WORK, CARRY, MOVE] = 200
+      // 350 energy: [WORK, WORK, CARRY, MOVE] = 300
+      // 400 energy: [WORK, WORK, CARRY, MOVE, MOVE] = 350
+      // 550 energy: [WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE] = 500
+
+      const pattern = [WORK, CARRY, MOVE]; // 200 energy base
+      const sets = Math.floor(energy / 200);
+
+      for (let i = 0; i < sets && body.length < 50; i++) {
+        body.push(...pattern);
+      }
+
+      // Use remaining energy for extra WORK parts (most important)
+      let remaining = energy - this.calculateBodyCost(body);
+      while (remaining >= 100 && body.length < 50) {
+        body.push(WORK);
+        remaining -= 100;
+      }
+
+      // Add MOVE parts to match WORK parts for mobility
+      const workParts = body.filter(p => p === WORK).length;
+      const moveParts = body.filter(p => p === MOVE).length;
+      while (moveParts < workParts && remaining >= 50 && body.length < 50) {
+        body.push(MOVE);
+        remaining -= 50;
+      }
+
+    } else if (role === "upgrader" || role === "builder") {
+      // Upgrader/Builder: Balanced WORK, CARRY, MOVE
+      // Pattern: [WORK, CARRY, MOVE] = 200 energy per set
+      const pattern = [WORK, CARRY, MOVE];
+      const sets = Math.floor(energy / 200);
+
+      for (let i = 0; i < sets && body.length < 50; i++) {
+        body.push(...pattern);
+      }
+    }
+
+    // Fallback: Minimum viable body
+    return body.length > 0 ? body : [WORK, CARRY, MOVE];
   }
 
   /**
