@@ -4665,9 +4665,17 @@ class Architect {
             Memory.architectPlans = {};
         }
         const lastPlannedRCL = Memory.architectPlans[roomKey];
-        // Only plan when RCL changes (not on every code push!)
+        // Only plan when RCL has CHANGED (not on fresh deploy with no memory!)
+        // If lastPlannedRCL is undefined, just record current RCL without planning
+        if (lastPlannedRCL === undefined) {
+            // First time seeing this room - record RCL without triggering
+            Memory.architectPlans[roomKey] = rcl;
+            console.log(`📐 Architect: Initialized tracking for ${room.name} at RCL ${rcl} (no planning yet)`);
+            return;
+        }
+        // Now we have previous data - only plan if RCL actually changed
         if (lastPlannedRCL !== rcl && rcl >= 2) {
-            console.log(`📐 Architect: RCL changed ${lastPlannedRCL || 'unknown'} → ${rcl} in ${room.name}`);
+            console.log(`📐 Architect: RCL changed ${lastPlannedRCL} → ${rcl} in ${room.name}`);
             console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
             const plan = this.planRoom(room);
             this.executePlan(room, plan);
