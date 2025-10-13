@@ -110,18 +110,28 @@ export class SpawnRequestGenerator {
       const idealCount = sources.length;
 
       if (harvesterCount < idealCount) {
-        // Stationary harvester: [WORK×5, MOVE] = 550 energy
-        // Note: buildStationaryHarvesterBody() has scaling logic for future RCL3+,
-        // but during RCL2 phased progression we use fixed bodies from config
-        const stationaryBody = [WORK, WORK, WORK, WORK, WORK, MOVE];
+        // Get body from config - now dynamic!
+        const roleConfig = config.roles.harvester;
+        let body: BodyPartConstant[];
+        
+        if (typeof roleConfig.body === 'function') {
+          // Dynamic body generation based on room energy capacity
+          body = roleConfig.body(room.energyCapacityAvailable);
+        } else {
+          // Static body array
+          body = roleConfig.body;
+        }
 
-        requests.push({
-          role: "harvester",
-          priority: 1,
-          reason: `Stationary harvesters: ${harvesterCount}/${idealCount}`,
-          body: stationaryBody,
-          minEnergy: 550
-        });
+        // Only create request if body is viable
+        if (body.length > 0) {
+          requests.push({
+            role: "harvester",
+            priority: 1,
+            reason: `Stationary harvesters: ${harvesterCount}/${idealCount} (${room.energyCapacityAvailable} energy)`,
+            body: body,
+            minEnergy: this.calculateBodyCost(body)
+          });
+        }
       }
     } else {
       // Phase 1-2: Mobile harvesters (1 per source + 1 spare)
@@ -129,15 +139,27 @@ export class SpawnRequestGenerator {
       const idealCount = sources.length + 1;
 
       if (harvesterCount < idealCount) {
-        const body = config.roles.harvester.body; // [WORK, WORK, MOVE] from RCL2Config
+        const roleConfig = config.roles.harvester;
+        let body: BodyPartConstant[];
+        
+        if (typeof roleConfig.body === 'function') {
+          // Dynamic body generation based on room energy capacity
+          body = roleConfig.body(room.energyCapacityAvailable);
+        } else {
+          // Static body array
+          body = roleConfig.body;
+        }
 
-        requests.push({
-          role: "harvester",
-          priority: config.roles.harvester.priority,
-          reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (drop mining)`,
-          body: body,
-          minEnergy: this.calculateBodyCost(body)
-        });
+        // Only create request if body is viable
+        if (body.length > 0) {
+          requests.push({
+            role: "harvester",
+            priority: roleConfig.priority,
+            reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (drop mining)`,
+            body: body,
+            minEnergy: this.calculateBodyCost(body)
+          });
+        }
       }
     }
 
@@ -175,17 +197,28 @@ export class SpawnRequestGenerator {
     }
 
     if (upgraderCount < idealCount) {
-      // Use RCL1 bodies during Phase 1-2, scaled bodies after
-      const useRCL1Bodies = progressionState?.allowRCL1Bodies || false;
-      const body = useRCL1Bodies ? config.roles.upgrader.body : this.buildScaledBody(room, "upgrader");
+      // Get body from config - check if dynamic
+      const roleConfig = config.roles.upgrader;
+      let body: BodyPartConstant[];
+      
+      if (typeof roleConfig.body === 'function') {
+        // Dynamic body generation based on room energy capacity
+        body = roleConfig.body(room.energyCapacityAvailable);
+      } else {
+        // Static body array
+        body = roleConfig.body;
+      }
 
-      requests.push({
-        role: "upgrader",
-        priority: config.roles.upgrader.priority,
-        reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
-        body: body,
-        minEnergy: this.calculateBodyCost(body)
-      });
+      // Only create request if body is viable
+      if (body.length > 0) {
+        requests.push({
+          role: "upgrader",
+          priority: roleConfig.priority,
+          reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
+          body: body,
+          minEnergy: this.calculateBodyCost(body)
+        });
+      }
     }
 
     return requests;
@@ -214,17 +247,28 @@ export class SpawnRequestGenerator {
     const idealCount = Math.min(3, Math.max(1, Math.ceil(progressNeeded / 10000)));
 
     if (builderCount < idealCount) {
-      // Use RCL1 bodies during Phase 1-2, scaled bodies after
-      const useRCL1Bodies = progressionState?.allowRCL1Bodies || false;
-      const body = useRCL1Bodies ? config.roles.builder.body : this.buildScaledBody(room, "builder");
+      // Get body from config - check if dynamic
+      const roleConfig = config.roles.builder;
+      let body: BodyPartConstant[];
+      
+      if (typeof roleConfig.body === 'function') {
+        // Dynamic body generation based on room energy capacity
+        body = roleConfig.body(room.energyCapacityAvailable);
+      } else {
+        // Static body array
+        body = roleConfig.body;
+      }
 
-      requests.push({
-        role: "builder",
-        priority: config.roles.builder.priority,
-        reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
-        body: body,
-        minEnergy: this.calculateBodyCost(body)
-      });
+      // Only create request if body is viable
+      if (body.length > 0) {
+        requests.push({
+          role: "builder",
+          priority: roleConfig.priority,
+          reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
+          body: body,
+          minEnergy: this.calculateBodyCost(body)
+        });
+      }
     }
 
     return requests;
@@ -340,15 +384,31 @@ export class SpawnRequestGenerator {
     const idealCount = sources.length;
 
     if (haulerCount < idealCount) {
-      const body = this.buildHaulerBody(room);
+      // Get body from config - check if dynamic
+      const roleConfig = config.roles.hauler;
+      let body: BodyPartConstant[];
+      
+      if (roleConfig && typeof roleConfig.body === 'function') {
+        // Dynamic body generation based on room energy capacity
+        body = roleConfig.body(room.energyCapacityAvailable);
+      } else if (roleConfig && Array.isArray(roleConfig.body)) {
+        // Static body array
+        body = roleConfig.body;
+      } else {
+        // Fallback to building hauler body manually
+        body = this.buildHaulerBody(room);
+      }
 
-      requests.push({
-        role: "hauler",
-        priority: 1, // High priority - critical for logistics
-        reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${room.energyCapacityAvailable} energy)`,
-        body: body,
-        minEnergy: this.calculateBodyCost(body)
-      });
+      // Only create request if body is viable
+      if (body.length > 0) {
+        requests.push({
+          role: "hauler",
+          priority: roleConfig?.priority || 1, // High priority - critical for logistics
+          reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${room.energyCapacityAvailable} energy)`,
+          body: body,
+          minEnergy: this.calculateBodyCost(body)
+        });
+      }
     }
 
     return requests;

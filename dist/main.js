@@ -4089,11 +4089,62 @@ const RCL1Config = {
  * - Transition to specialist logistics (stationary miners + haulers)
  * - Minimize walking, maximize working
  */
+/**
+ * Generate a stationary harvester body dynamically based on available energy
+ * Stationary harvesters sit on containers and mine continuously
+ * Target: Up to 5 WORK parts (max source efficiency) + 1 MOVE
+ */
+function generateHarvesterBody(energyCapacity) {
+    // Ideal: [WORK×5, MOVE] = 550 energy (5 work parts = 10 energy/tick, source max)
+    if (energyCapacity >= 550) {
+        return [WORK, WORK, WORK, WORK, WORK, MOVE];
+    }
+    // Scale down based on available energy: try to get as many WORK parts as possible
+    // Reserve 50 energy for MOVE
+    const workParts = Math.min(5, Math.max(1, Math.floor((energyCapacity - 50) / 100)));
+    const body = [];
+    for (let i = 0; i < workParts; i++) {
+        body.push(WORK);
+    }
+    body.push(MOVE);
+    return body;
+}
+/**
+ * Generate a hauler body dynamically based on available energy
+ * Haulers transport energy from containers to spawn/extensions
+ * Pattern: Balanced CARRY/MOVE pairs
+ */
+function generateHaulerBody(energyCapacity) {
+    // Build balanced CARRY/MOVE pairs (50 + 50 = 100 per pair)
+    const pairs = Math.floor(energyCapacity / 100);
+    const maxPairs = Math.min(pairs, 6); // Cap at 6 pairs (600 energy)
+    const body = [];
+    for (let i = 0; i < maxPairs; i++) {
+        body.push(CARRY, MOVE);
+    }
+    // Minimum viable: at least 1 pair
+    return body.length > 0 ? body : [CARRY, MOVE];
+}
+/**
+ * Generate a general-purpose body for upgraders and builders
+ * Pattern: Balanced WORK/CARRY/MOVE sets
+ */
+function generateGeneralPurposeBody(energyCapacity) {
+    // Pattern: [WORK, CARRY, MOVE] = 200 energy per set
+    const sets = Math.floor(energyCapacity / 200);
+    const maxSets = Math.min(sets, 10); // Cap at reasonable size
+    const body = [];
+    for (let i = 0; i < maxSets; i++) {
+        body.push(WORK, CARRY, MOVE);
+    }
+    // Minimum viable: at least 1 set
+    return body.length > 0 ? body : [WORK, CARRY, MOVE];
+}
 const RCL2Config = {
     roles: {
         harvester: {
-            body: [WORK, WORK, MOVE],
-            // Double mining speed vs [WORK, CARRY, MOVE]
+            body: generateHarvesterBody,
+            // Scales from [WORK, MOVE] at 150 energy to [WORK×5, MOVE] at 550 energy
             // Phase 1: Drop energy near container sites for builders
             // Phase 2: Keep until extensions complete (can't afford stationary yet)
             // Phase 3: Replaced by [WORK×5, MOVE] stationary harvesters
@@ -4105,8 +4156,8 @@ const RCL2Config = {
             }
         },
         upgrader: {
-            body: [WORK, CARRY, MOVE],
-            // TODO: Scale up with more WORK parts once energy available
+            body: generateGeneralPurposeBody,
+            // Scales from [WORK, CARRY, MOVE] at 200 to multiple sets as energy increases
             priority: 2,
             behavior: {
                 energySource: "withdraw",
@@ -4114,7 +4165,8 @@ const RCL2Config = {
             }
         },
         builder: {
-            body: [WORK, CARRY, MOVE],
+            body: generateGeneralPurposeBody,
+            // Scales from [WORK, CARRY, MOVE] at 200 to multiple sets as energy increases
             priority: 3,
             behavior: {
                 energySource: "withdraw",
@@ -4124,9 +4176,16 @@ const RCL2Config = {
                 // - Construction order: Extensions > Containers > Roads
                 // - Focuses on one structure at a time until complete
             }
+        },
+        hauler: {
+            body: generateHaulerBody,
+            // Scales from [CARRY, MOVE] at 100 to [CARRY×6, MOVE×6] at 600 energy
+            priority: 1,
+            behavior: {
+                energySource: "withdraw",
+                workTarget: "logistics" // Transport to spawn/extensions
+            }
         }
-        // TODO: Add "hauler" role once containers are operational
-        // hauler: { body: [CARRY×3, MOVE×3], priority: 1, behavior: { energySource: "container", workTarget: "logistics" } }
     },
     sourceAssignment: {
         maxWorkPartsPerSource: 5 // Maximum efficiency: 5 work parts = 10 energy/tick (source max)
@@ -4223,17 +4282,27 @@ class SpawnRequestGenerator {
             // Phase 2+: One stationary harvester per source
             const idealCount = sources.length;
             if (harvesterCount < idealCount) {
-                // Stationary harvester: [WORK×5, MOVE] = 550 energy
-                // Note: buildStationaryHarvesterBody() has scaling logic for future RCL3+,
-                // but during RCL2 phased progression we use fixed bodies from config
-                const stationaryBody = [WORK, WORK, WORK, WORK, WORK, MOVE];
-                requests.push({
-                    role: "harvester",
-                    priority: 1,
-                    reason: `Stationary harvesters: ${harvesterCount}/${idealCount}`,
-                    body: stationaryBody,
-                    minEnergy: 550
-                });
+                // Get body from config - now dynamic!
+                const roleConfig = config.roles.harvester;
+                let body;
+                if (typeof roleConfig.body === 'function') {
+                    // Dynamic body generation based on room energy capacity
+                    body = roleConfig.body(room.energyCapacityAvailable);
+                }
+                else {
+                    // Static body array
+                    body = roleConfig.body;
+                }
+                // Only create request if body is viable
+                if (body.length > 0) {
+                    requests.push({
+                        role: "harvester",
+                        priority: 1,
+                        reason: `Stationary harvesters: ${harvesterCount}/${idealCount} (${room.energyCapacityAvailable} energy)`,
+                        body: body,
+                        minEnergy: this.calculateBodyCost(body)
+                    });
+                }
             }
         }
         else {
@@ -4241,14 +4310,26 @@ class SpawnRequestGenerator {
             // Use RCL2 config body [WORK, WORK, MOVE] for drop mining
             const idealCount = sources.length + 1;
             if (harvesterCount < idealCount) {
-                const body = config.roles.harvester.body; // [WORK, WORK, MOVE] from RCL2Config
-                requests.push({
-                    role: "harvester",
-                    priority: config.roles.harvester.priority,
-                    reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (drop mining)`,
-                    body: body,
-                    minEnergy: this.calculateBodyCost(body)
-                });
+                const roleConfig = config.roles.harvester;
+                let body;
+                if (typeof roleConfig.body === 'function') {
+                    // Dynamic body generation based on room energy capacity
+                    body = roleConfig.body(room.energyCapacityAvailable);
+                }
+                else {
+                    // Static body array
+                    body = roleConfig.body;
+                }
+                // Only create request if body is viable
+                if (body.length > 0) {
+                    requests.push({
+                        role: "harvester",
+                        priority: roleConfig.priority,
+                        reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (drop mining)`,
+                        body: body,
+                        minEnergy: this.calculateBodyCost(body)
+                    });
+                }
             }
         }
         return requests;
@@ -4283,16 +4364,27 @@ class SpawnRequestGenerator {
             idealCount = Math.min(5, Math.floor(room.energyCapacityAvailable / 200));
         }
         if (upgraderCount < idealCount) {
-            // Use RCL1 bodies during Phase 1-2, scaled bodies after
-            const useRCL1Bodies = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.allowRCL1Bodies) || false;
-            const body = useRCL1Bodies ? config.roles.upgrader.body : this.buildScaledBody(room, "upgrader");
-            requests.push({
-                role: "upgrader",
-                priority: config.roles.upgrader.priority,
-                reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
-                body: body,
-                minEnergy: this.calculateBodyCost(body)
-            });
+            // Get body from config - check if dynamic
+            const roleConfig = config.roles.upgrader;
+            let body;
+            if (typeof roleConfig.body === 'function') {
+                // Dynamic body generation based on room energy capacity
+                body = roleConfig.body(room.energyCapacityAvailable);
+            }
+            else {
+                // Static body array
+                body = roleConfig.body;
+            }
+            // Only create request if body is viable
+            if (body.length > 0) {
+                requests.push({
+                    role: "upgrader",
+                    priority: roleConfig.priority,
+                    reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
+                    body: body,
+                    minEnergy: this.calculateBodyCost(body)
+                });
+            }
         }
         return requests;
     }
@@ -4315,16 +4407,27 @@ class SpawnRequestGenerator {
         // 1 builder per 10,000 progress needed, min 1, max 3
         const idealCount = Math.min(3, Math.max(1, Math.ceil(progressNeeded / 10000)));
         if (builderCount < idealCount) {
-            // Use RCL1 bodies during Phase 1-2, scaled bodies after
-            const useRCL1Bodies = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.allowRCL1Bodies) || false;
-            const body = useRCL1Bodies ? config.roles.builder.body : this.buildScaledBody(room, "builder");
-            requests.push({
-                role: "builder",
-                priority: config.roles.builder.priority,
-                reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
-                body: body,
-                minEnergy: this.calculateBodyCost(body)
-            });
+            // Get body from config - check if dynamic
+            const roleConfig = config.roles.builder;
+            let body;
+            if (typeof roleConfig.body === 'function') {
+                // Dynamic body generation based on room energy capacity
+                body = roleConfig.body(room.energyCapacityAvailable);
+            }
+            else {
+                // Static body array
+                body = roleConfig.body;
+            }
+            // Only create request if body is viable
+            if (body.length > 0) {
+                requests.push({
+                    role: "builder",
+                    priority: roleConfig.priority,
+                    reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
+                    body: body,
+                    minEnergy: this.calculateBodyCost(body)
+                });
+            }
         }
         return requests;
     }
@@ -4420,14 +4523,31 @@ class SpawnRequestGenerator {
         // Ideal: 1 hauler per source container
         const idealCount = sources.length;
         if (haulerCount < idealCount) {
-            const body = this.buildHaulerBody(room);
-            requests.push({
-                role: "hauler",
-                priority: 1,
-                reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${room.energyCapacityAvailable} energy)`,
-                body: body,
-                minEnergy: this.calculateBodyCost(body)
-            });
+            // Get body from config - check if dynamic
+            const roleConfig = config.roles.hauler;
+            let body;
+            if (roleConfig && typeof roleConfig.body === 'function') {
+                // Dynamic body generation based on room energy capacity
+                body = roleConfig.body(room.energyCapacityAvailable);
+            }
+            else if (roleConfig && Array.isArray(roleConfig.body)) {
+                // Static body array
+                body = roleConfig.body;
+            }
+            else {
+                // Fallback to building hauler body manually
+                body = this.buildHaulerBody(room);
+            }
+            // Only create request if body is viable
+            if (body.length > 0) {
+                requests.push({
+                    role: "hauler",
+                    priority: (roleConfig === null || roleConfig === void 0 ? void 0 : roleConfig.priority) || 1,
+                    reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${room.energyCapacityAvailable} energy)`,
+                    body: body,
+                    minEnergy: this.calculateBodyCost(body)
+                });
+            }
         }
         return requests;
     }
@@ -5935,13 +6055,13 @@ class RoleBuilder {
             // Allow withdrawal ONLY if:
             // 1. No emergency spawn requests (priority 0), AND
             // 2. Either no pending requests OR room has surplus energy (>=200)
+            // 3. ONLY from extensions (NEVER from spawn to reserve spawn energy for creeps)
             const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
-            const canWithdrawFromSpawn = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
-            if (canWithdrawFromSpawn) {
+            const canWithdrawFromExtensions = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
+            if (canWithdrawFromExtensions) {
                 const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
                     filter: (structure) => {
-                        return ((structure.structureType === STRUCTURE_EXTENSION ||
-                            structure.structureType === STRUCTURE_SPAWN) &&
+                        return (structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NEVER spawn
                             structure.store &&
                             structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
                     }

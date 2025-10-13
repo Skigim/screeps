@@ -14,7 +14,7 @@
  */
 
 export interface RoleConfig {
-  body: BodyPartConstant[];
+  body: BodyPartConstant[] | ((energyCapacity: number) => BodyPartConstant[]);
   priority: number;
   assignToSource?: boolean; // Whether this role should be assigned to sources
   behavior?: {
