@@ -415,7 +415,7 @@ export class SpawnRequestGenerator {
   /**
    * Request haulers based on progression state
    * Haulers transport energy from containers to spawn/extensions
-   * CRITICAL: Ensure each source container has at least one hauler
+   * SEQUENTIAL ACTIVATION: Only spawn haulers for sources that have BOTH container + harvester
    */
   private static requestHaulers(room: Room, config: RCLConfig): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
@@ -425,8 +425,37 @@ export class SpawnRequestGenerator {
     // Get per-source coverage information
     const coverage = AssignmentManager.getSourceCoverage(room);
 
-    // CRITICAL: If any source lacks hauler coverage, prioritize that
-    if (coverage.uncoveredByHaulers.length > 0) {
+    // Find containers near each source
+    const containers = room.find(FIND_STRUCTURES, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+
+    // Check which sources are "ready" for a hauler (have container + harvester)
+    const readySources: Source[] = [];
+    for (const source of sources) {
+      // Check if source has a container
+      const nearbyContainer = source.pos.findInRange(containers, 1);
+      const hasContainer = nearbyContainer.length > 0;
+
+      // Check if source has a harvester assigned
+      const assignments = AssignmentManager.getSourceAssignments(source.id);
+      const hasHarvester = assignments.some(c => c.memory.role === "harvester");
+
+      // Source is ready if it has BOTH
+      if (hasContainer && hasHarvester) {
+        readySources.push(source);
+      }
+    }
+
+    // Count ready sources that still need haulers
+    const readySourcesWithoutHaulers = readySources.filter(source => {
+      const assignments = AssignmentManager.getSourceAssignments(source.id);
+      const hasHauler = assignments.some(c => c.memory.role === "hauler");
+      return !hasHauler;
+    });
+
+    // CRITICAL: If any ready source lacks a hauler, prioritize that
+    if (readySourcesWithoutHaulers.length > 0) {
       const roleConfig = config.roles.hauler;
       let body: BodyPartConstant[];
 
@@ -443,16 +472,16 @@ export class SpawnRequestGenerator {
       if (body.length > 0) {
         requests.push({
           role: "hauler",
-          priority: 0, // HIGHEST PRIORITY - uncovered source means energy won't flow!
-          reason: `PRIORITY: ${coverage.uncoveredByHaulers.length} source(s) without hauler (${coverage.sourcesWithHaulers}/${coverage.totalSources} covered)`,
+          priority: 0, // HIGHEST PRIORITY - ready source without hauler means energy won't flow!
+          reason: `PRIORITY: ${readySourcesWithoutHaulers.length} ready source(s) need haulers (container + harvester ready)`,
           body: body,
           minEnergy: bodyCost
         });
       }
     }
 
-    // Ideal: 1 hauler per source container
-    const idealCount = sources.length;
+    // Secondary: Request haulers up to the number of ready sources
+    const idealCount = readySources.length;
 
     if (haulerCount < idealCount) {
       // Get body from config - check if dynamic
@@ -478,7 +507,7 @@ export class SpawnRequestGenerator {
         requests.push({
           role: "hauler",
           priority: roleConfig?.priority || 1, // High priority - critical for logistics
-          reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (need ${bodyCost}, have ${room.energyAvailable}/${room.energyCapacityAvailable})`,
+          reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${readySources.length} sources ready)`,
           body: body,
           minEnergy: bodyCost
         });
