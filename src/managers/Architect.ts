@@ -19,6 +19,7 @@ import { Traveler } from "../Traveler";
 export interface ArchitectPlan {
   extensions: RoomPosition[];
   sourceContainers: Map<string, RoomPosition>; // sourceId -> position
+  spawnContainers: RoomPosition[]; // Spawn-adjacent containers (one per source road)
   destContainers: {
     controller?: RoomPosition;
     // Future: storage, terminal, etc.
@@ -95,6 +96,7 @@ export class Architect {
     const plan: ArchitectPlan = {
       extensions: [],
       sourceContainers: new Map(),
+      spawnContainers: [],
       destContainers: {},
       roads: []
     };
@@ -122,8 +124,13 @@ export class Architect {
         }
       }
 
+      // Phase 1.5: Spawn-adjacent containers (one per source road)
+      // These go BEFORE extensions so extensions can fit around them
+      plan.spawnContainers = this.planSpawnContainers(room, spawn, sources);
+
       // Phase 2: Extensions (haulers bring energy from containers)
-      plan.extensions = this.planExtensions(room, spawn, 5); // RCL 2 unlocks 5 extensions
+      // Extensions now avoid spawn containers
+      plan.extensions = this.planExtensions(room, spawn, 5, plan.spawnContainers); // RCL 2 unlocks 5 extensions
 
       // Phase 4: Controller container (last)
       if (controller) {
@@ -163,21 +170,28 @@ export class Architect {
       }
     }
 
-    // 2. Extensions (second priority - increase energy capacity for stationary harvesters)
+    // 2. Spawn-adjacent containers (second priority - central logistics hubs)
+    for (const pos of plan.spawnContainers) {
+      if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
+        placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
+      }
+    }
+
+    // 3. Extensions (third priority - increase energy capacity for stationary harvesters)
     for (const pos of plan.extensions) {
       if (!this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
         placementQueue.push({ pos, type: STRUCTURE_EXTENSION });
       }
     }
 
-    // 3. Roads (third priority - improve logistics)
+    // 4. Roads (fourth priority - improve logistics)
     for (const pos of plan.roads) {
       if (!this.hasStructureAt(room, pos, STRUCTURE_ROAD) && !this.hasStructureAt(room, pos, STRUCTURE_SPAWN)) {
         placementQueue.push({ pos, type: STRUCTURE_ROAD });
       }
     }
 
-    // 4. Controller container (lowest priority - final polish)
+    // 5. Controller container (lowest priority - final polish)
     if (plan.destContainers.controller) {
       const pos = plan.destContainers.controller;
       if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
@@ -207,8 +221,14 @@ export class Architect {
 
   /**
    * Plan extension positions in a crescent around spawn
+   * Avoids spawn containers to prevent blocking logistics hubs
    */
-  private static planExtensions(room: Room, spawn: StructureSpawn, count: number): RoomPosition[] {
+  private static planExtensions(
+    room: Room,
+    spawn: StructureSpawn,
+    count: number,
+    avoidPositions: RoomPosition[] = []
+  ): RoomPosition[] {
     const positions: RoomPosition[] = [];
     const spawnPos = spawn.pos;
 
@@ -231,6 +251,11 @@ export class Architect {
         room.name
       );
 
+      // Skip positions that are reserved for spawn containers
+      if (avoidPositions.some(avoid => avoid.x === pos.x && avoid.y === pos.y)) {
+        continue;
+      }
+
       // Validate position (buildable terrain)
       // NOTE: Don't filter out positions with existing structures here!
       // Let executePlan() handle that - otherwise replan will delete all sites
@@ -240,6 +265,43 @@ export class Architect {
     }
 
     return positions;
+  }
+
+  /**
+   * Plan spawn-adjacent containers (one per source)
+   * Positioned where roads from spawn to sources intersect spawn area
+   * These act as central logistics hubs for haulers to deliver energy
+   */
+  private static planSpawnContainers(room: Room, spawn: StructureSpawn, sources: Source[]): RoomPosition[] {
+    const containers: RoomPosition[] = [];
+    const spawnPos = spawn.pos;
+
+    for (const source of sources) {
+      // Find the path from spawn to source
+      const path = Traveler.findTravelPath(spawnPos, source.pos);
+
+      if (!path || path.path.length < 2) continue;
+
+      // Find a position along the path that's close to spawn (range 2-3)
+      // This creates a "logistics hub" where haulers can deposit energy
+      for (const step of path.path) {
+        const distance = spawnPos.getRangeTo(step.x, step.y);
+
+        // Look for positions at range 2-3 from spawn (not too close, not too far)
+        if (distance >= 2 && distance <= 3) {
+          const pos = new RoomPosition(step.x, step.y, room.name);
+
+          // Validate it's buildable and not already used
+          if (this.isValidBuildPosition(room, pos) &&
+              !containers.some(c => c.x === pos.x && c.y === pos.y)) {
+            containers.push(pos);
+            break; // One container per source
+          }
+        }
+      }
+    }
+
+    return containers;
   }
 
   /**
