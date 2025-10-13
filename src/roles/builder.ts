@@ -40,17 +40,57 @@ export class RoleBuilder {
         }
       }
     } else {
-      // Energy collection priority:
-      // 1. Ruins (dead structures from previous players) - FREE ENERGY!
-      // 2. Withdraw from spawn/extensions (if room has surplus)
-      // 3. Pickup dropped energy
-      // 4. Harvest directly from source (crisis mode)
+      // Energy collection priority with TARGET LOCKING
+      // Lock onto ONE energy source and stick with it until COMPLETELY FULL
+      // This prevents wandering between ruins, spawns, drops, sources mid-gathering
+
+      // If we have a locked target, try to use it first
+      if (creep.memory.energySourceId) {
+        const lockedTarget = Game.getObjectById(creep.memory.energySourceId) as any;
+
+        // Validate locked target still has energy
+        let targetValid = false;
+        if (lockedTarget) {
+          if (lockedTarget instanceof Resource) {
+            targetValid = lockedTarget.amount > 0;
+          } else if (lockedTarget instanceof Source) {
+            targetValid = lockedTarget.energy > 0;
+          } else if (lockedTarget.store) {
+            targetValid = lockedTarget.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+          }
+        }
+
+        // If locked target is still valid, use it
+        if (targetValid) {
+          if (lockedTarget instanceof Resource) {
+            if (creep.pickup(lockedTarget) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, lockedTarget);
+            }
+          } else if (lockedTarget instanceof Source) {
+            if (creep.harvest(lockedTarget) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, lockedTarget);
+            }
+          } else {
+            if (creep.withdraw(lockedTarget, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, lockedTarget);
+            }
+          }
+          return; // Stick with locked target
+        } else {
+          // Locked target exhausted - clear lock and find new target
+          delete creep.memory.energySourceId;
+        }
+      }
+
+      // No locked target - find and LOCK onto new energy source
+      // Priority: 1. Ruins, 2. Spawn/Extensions (if surplus), 3. Dropped energy, 4. Harvest source
 
       // HIGHEST PRIORITY: Loot ruins (common with captured rooms)
       const ruins = creep.room.find(FIND_RUINS);
       const ruinWithEnergy = ruins.find(r => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
 
       if (ruinWithEnergy) {
+        creep.memory.energySourceId = ruinWithEnergy.id; // LOCK IT
         if (creep.withdraw(ruinWithEnergy, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
           Traveler.travelTo(creep, ruinWithEnergy);
         }
@@ -75,6 +115,7 @@ export class RoleBuilder {
         });
 
         if (target) {
+          creep.memory.energySourceId = target.id; // LOCK IT
           if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
             Traveler.travelTo(creep, target);
           }
@@ -83,45 +124,22 @@ export class RoleBuilder {
       }
 
       // Energy reserved for spawning OR no energy in spawn/extensions
-      // Help bootstrap economy: harvest from sources or pickup dropped energy
+      // Help bootstrap economy: pickup dropped energy or harvest from sources
       const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
         filter: resource => resource.resourceType === RESOURCE_ENERGY
       });
 
       if (droppedEnergy) {
+        creep.memory.energySourceId = droppedEnergy.id; // LOCK IT
         if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
           Traveler.travelTo(creep, droppedEnergy);
         }
       } else {
         // CRISIS MODE: Harvest directly from source
-        // CRITICAL: Lock onto ONE source and don't switch until COMPLETELY FULL
-        // This prevents builders from wandering around half-empty
+        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
 
-        let source: Source | null = null;
-
-        // If we have a locked source, use it (prevents random wandering)
-        if (creep.memory.energySourceId) {
-          source = Game.getObjectById(creep.memory.energySourceId) as Source | null;
-
-          // If locked source is gone or depleted, clear the lock
-          if (!source || source.energy === 0) {
-            delete creep.memory.energySourceId;
-            source = null;
-          }
-        }
-
-        // If no locked source, find closest active source and LOCK IT
-        if (!source) {
-          source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-
-          if (source) {
-            // LOCK onto this source - we won't switch until completely full
-            creep.memory.energySourceId = source.id;
-          }
-        }
-
-        // Harvest from locked source
         if (source) {
+          creep.memory.energySourceId = source.id; // LOCK IT
           if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
             Traveler.travelTo(creep, source);
           }
