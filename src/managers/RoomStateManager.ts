@@ -4,6 +4,7 @@ import type { RCLConfig } from "configs/RCL1Config";
 import { SpawnManager } from "./SpawnManager";
 import { AssignmentManager } from "./AssignmentManager";
 import { Architect } from "./Architect";
+import { ProgressionManager, type ProgressionState } from "./ProgressionManager";
 
 /**
  * Room State Manager - RCL-based state machine
@@ -23,6 +24,9 @@ export class RoomStateManager {
   // Track if room plan has been executed (one-time planning per RCL)
   private static roomPlansExecuted: Map<string, number> = new Map(); // roomName -> RCL when last planned
 
+  // Cache progression states for each room
+  private static progressionStates: Map<string, ProgressionState> = new Map();
+
   /**
    * Main state machine - runs all managers for a room
    */
@@ -37,6 +41,14 @@ export class RoomStateManager {
 
     // Cache config for creeps to access
     this.roomConfigs.set(room.name, config);
+
+    // Detect and cache progression state (RCL 2+)
+    const rcl = room.controller.level;
+    let progressionState: ProgressionState | undefined;
+    if (rcl >= 2) {
+      progressionState = ProgressionManager.detectRCL2State(room);
+      this.progressionStates.set(room.name, progressionState);
+    }
 
     // Get primary spawn
     const spawns = room.find(FIND_MY_SPAWNS);
@@ -55,7 +67,19 @@ export class RoomStateManager {
     // Display status periodically
     if (Game.time % 50 === 0) {
       this.displayRoomStatus(room, config);
+
+      // Display progression status for RCL 2+
+      if (progressionState) {
+        ProgressionManager.displayStatus(room, progressionState);
+      }
     }
+  }
+
+  /**
+   * Get cached progression state for a room
+   */
+  public static getProgressionState(roomName: string): ProgressionState | null {
+    return this.progressionStates.get(roomName) || null;
   }
 
   /**

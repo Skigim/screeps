@@ -4056,6 +4056,103 @@ class RoleBuilder {
     }
 }
 
+class RoleHauler {
+    static run(creep, config) {
+        var _a;
+        // Toggle working state
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = false;
+        }
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = true;
+        }
+        if (creep.memory.working) {
+            // Phase 2 Special: Drop energy on road sites (exactly enough to complete)
+            const roadSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
+                filter: s => s.structureType === STRUCTURE_ROAD && s.progress < s.progressTotal
+            });
+            if (roadSite) {
+                const energyNeeded = roadSite.progressTotal - roadSite.progress;
+                const creepEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0;
+                const energyToDeliver = Math.min(energyNeeded, creepEnergy);
+                if (creep.pos.isNearTo(roadSite)) {
+                    // Drop exactly enough energy to complete the road
+                    creep.drop(RESOURCE_ENERGY, energyToDeliver);
+                }
+                else {
+                    Traveler.travelTo(creep, roadSite.pos);
+                }
+                return;
+            }
+            // Deliver to spawn/extensions
+            const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+                filter: (structure) => {
+                    return ((structure.structureType === STRUCTURE_EXTENSION ||
+                        structure.structureType === STRUCTURE_SPAWN) &&
+                        structure.store &&
+                        structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+                }
+            });
+            if (target) {
+                if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, target);
+                }
+            }
+            else {
+                // If spawn/extensions full, deliver to controller container
+                const controllerContainer = (_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.pos.findInRange(FIND_STRUCTURES, 3, {
+                    filter: s => s.structureType === STRUCTURE_CONTAINER
+                })[0];
+                if (controllerContainer === null || controllerContainer === void 0 ? void 0 : controllerContainer.store) {
+                    const freeCapacity = controllerContainer.store.getFreeCapacity(RESOURCE_ENERGY);
+                    if (freeCapacity && freeCapacity > 0) {
+                        if (creep.transfer(controllerContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                            Traveler.travelTo(creep, controllerContainer);
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // Collect energy - prioritize dropped energy, then containers
+            // 1. Dropped energy (from stationary harvesters during Phase 2)
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: resource => resource.resourceType === RESOURCE_ENERGY && resource.amount >= 50
+            });
+            if (droppedEnergy) {
+                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, droppedEnergy);
+                }
+                return;
+            }
+            // 2. Source containers
+            const sourceContainer = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                filter: s => {
+                    var _a;
+                    if (s.structureType !== STRUCTURE_CONTAINER)
+                        return false;
+                    const container = s;
+                    const energy = (_a = container.store) === null || _a === void 0 ? void 0 : _a.getUsedCapacity(RESOURCE_ENERGY);
+                    return energy !== null && energy !== undefined && energy > 0;
+                }
+            });
+            if (sourceContainer) {
+                if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, sourceContainer);
+                }
+                return;
+            }
+            // 3. Fallback: Harvest directly (emergency)
+            const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+            if (source) {
+                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, source);
+                }
+            }
+        }
+    }
+}
+
 /**
  * RCL 1 Configuration
  * Defines behaviors, body compositions, and strategic guidelines for RCL 1
@@ -4182,8 +4279,10 @@ class SpawnRequestGenerator {
             console.log(`[SpawnRequestGenerator] No config found for room ${room.name}`);
             return requests;
         }
+        // Get progression state for RCL 2+
+        const progressionState = RoomStateManager.getProgressionState(room.name);
         // Always generate harvester requests first
-        requests.push(...this.requestHarvesters(room, config));
+        requests.push(...this.requestHarvesters(room, config, progressionState));
         // Only request other roles if we have minimum harvesters
         const harvesterCount = this.getCreepCount(room, "harvester");
         const minHarvesters = this.getMinimumHarvesters(room);
@@ -4193,29 +4292,52 @@ class SpawnRequestGenerator {
             if (config.spawning.enableBuilders) {
                 requests.push(...this.requestBuilders(room, config));
             }
+            // Request haulers if progression state indicates they're needed
+            if (progressionState === null || progressionState === void 0 ? void 0 : progressionState.useHaulers) {
+                requests.push(...this.requestHaulers(room, config));
+            }
         }
         return requests;
     }
     /**
      * Request harvesters based on source capacity
      * Uses RCL config for body composition
+     * Adapts to progression state (stationary vs mobile harvesters)
      */
-    static requestHarvesters(room, config) {
+    static requestHarvesters(room, config, progressionState) {
         const requests = [];
         const sources = room.find(FIND_SOURCES);
         const harvesterCount = this.getCreepCount(room, "harvester");
-        // Calculate ideal harvester count: 1 harvester per source + 1 spare
-        const idealCount = sources.length + 1;
-        const currentCount = harvesterCount;
-        if (currentCount < idealCount) {
-            const harvesterConfig = config.roles.harvester;
-            requests.push({
-                role: "harvester",
-                priority: harvesterConfig.priority,
-                reason: `Source coverage: ${currentCount}/${idealCount} harvesters`,
-                body: harvesterConfig.body,
-                minEnergy: this.calculateBodyCost(harvesterConfig.body)
-            });
+        // Determine if we need stationary harvesters
+        const useStationaryHarvesters = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.useStationaryHarvesters) || false;
+        if (useStationaryHarvesters) {
+            // Phase 2+: One stationary harvester per source
+            const idealCount = sources.length;
+            if (harvesterCount < idealCount) {
+                // Build powerful stationary harvester: [WORK×5, MOVE]
+                const body = this.buildStationaryHarvesterBody(room);
+                requests.push({
+                    role: "harvester",
+                    priority: 1,
+                    reason: `Stationary harvesters: ${harvesterCount}/${idealCount}`,
+                    body: body,
+                    minEnergy: this.calculateBodyCost(body)
+                });
+            }
+        }
+        else {
+            // Phase 1: Mobile harvesters (1 per source + 1 spare)
+            const idealCount = sources.length + 1;
+            if (harvesterCount < idealCount) {
+                const harvesterConfig = config.roles.harvester;
+                requests.push({
+                    role: "harvester",
+                    priority: harvesterConfig.priority,
+                    reason: `Mobile harvesters: ${harvesterCount}/${idealCount}`,
+                    body: harvesterConfig.body,
+                    minEnergy: this.calculateBodyCost(harvesterConfig.body)
+                });
+            }
         }
         return requests;
     }
@@ -4295,6 +4417,62 @@ class SpawnRequestGenerator {
      */
     static calculateBodyCost(body) {
         return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+    }
+    /**
+     * Build stationary harvester body: [WORK×5, MOVE]
+     * Designed to sit on container and mine continuously
+     */
+    static buildStationaryHarvesterBody(room) {
+        const energy = room.energyCapacityAvailable;
+        // Ideal: [WORK×5, MOVE] = 550 energy (5 work parts mine full source capacity)
+        if (energy >= 550) {
+            return [WORK, WORK, WORK, WORK, WORK, MOVE];
+        }
+        // Fallback: Scale down based on available energy
+        const workParts = Math.min(5, Math.floor((energy - 50) / 100)); // Reserve 50 for MOVE
+        const body = [];
+        for (let i = 0; i < workParts; i++) {
+            body.push(WORK);
+        }
+        body.push(MOVE);
+        return body.length > 0 ? body : [WORK, MOVE]; // Minimum viable
+    }
+    /**
+     * Build hauler body: [CARRY×N, MOVE×N]
+     * Designed to transport energy quickly
+     */
+    static buildHaulerBody(room) {
+        const energy = room.energyCapacityAvailable;
+        // Build balanced CARRY/MOVE pairs (50 + 50 = 100 per pair)
+        const pairs = Math.floor(energy / 100);
+        const maxPairs = Math.min(pairs, 6); // Cap at 6 pairs (600 energy)
+        const body = [];
+        for (let i = 0; i < maxPairs; i++) {
+            body.push(CARRY, MOVE);
+        }
+        return body.length > 0 ? body : [CARRY, MOVE]; // Minimum viable
+    }
+    /**
+     * Request haulers based on progression state
+     * Haulers transport energy from containers to spawn/extensions
+     */
+    static requestHaulers(room, config) {
+        const requests = [];
+        const haulerCount = this.getCreepCount(room, "hauler");
+        const sources = room.find(FIND_SOURCES);
+        // Ideal: 1 hauler per source container
+        const idealCount = sources.length;
+        if (haulerCount < idealCount) {
+            const body = this.buildHaulerBody(room);
+            requests.push({
+                role: "hauler",
+                priority: 1,
+                reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers`,
+                body: body,
+                minEnergy: this.calculateBodyCost(body)
+            });
+        }
+        return requests;
     }
     /**
      * Get minimum harvesters needed for room stability
@@ -4889,6 +5067,151 @@ class Architect {
 }
 
 /**
+ * Progression Manager - Intelligent Phase Detection
+ *
+ * Detects room progression state and triggers appropriate transitions
+ * Enables fully autonomous progression from RCL 1 → RCL 6+
+ *
+ * Phase detection is data-driven based on actual room state:
+ * - Structure completion
+ * - Container operational status
+ * - Creep composition readiness
+ */
+var RCL2Phase;
+(function (RCL2Phase) {
+    RCL2Phase["PHASE_1_EXTENSIONS"] = "phase1_extensions";
+    RCL2Phase["PHASE_2_CONTAINERS"] = "phase2_containers";
+    RCL2Phase["PHASE_3_HAULER_LOGISTICS"] = "phase3_logistics";
+    RCL2Phase["COMPLETE"] = "complete"; // RCL 2 progression complete
+})(RCL2Phase || (RCL2Phase = {}));
+class ProgressionManager {
+    /**
+     * Detect current progression state for RCL 2
+     */
+    static detectRCL2State(room) {
+        const state = {
+            phase: RCL2Phase.PHASE_1_EXTENSIONS,
+            containersOperational: false,
+            extensionsComplete: false,
+            sourceContainersBuilt: 0,
+            controllerContainerBuilt: false,
+            useStationaryHarvesters: false,
+            useHaulers: false
+        };
+        // Count infrastructure
+        const extensions = room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTENSION
+        });
+        const containers = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+        const sources = room.find(FIND_SOURCES);
+        const controller = room.controller;
+        // Check extension completion (RCL 2 = 5 extensions)
+        state.extensionsComplete = extensions.length >= 5;
+        // Check source containers
+        for (const source of sources) {
+            const nearbyContainers = source.pos.findInRange(containers, 1);
+            if (nearbyContainers.length > 0) {
+                state.sourceContainersBuilt++;
+            }
+        }
+        // Check controller container
+        if (controller) {
+            const nearbyContainers = controller.pos.findInRange(containers, 3);
+            state.controllerContainerBuilt = nearbyContainers.length > 0;
+        }
+        // Determine if containers are operational (at least 1 source container built)
+        state.containersOperational = state.sourceContainersBuilt > 0;
+        // Phase detection logic
+        if (!state.extensionsComplete) {
+            // Phase 1: Building extensions
+            state.phase = RCL2Phase.PHASE_1_EXTENSIONS;
+            state.useStationaryHarvesters = false;
+            state.useHaulers = false;
+        }
+        else if (state.sourceContainersBuilt < sources.length) {
+            // Phase 2: Building containers with first stationary harvester
+            state.phase = RCL2Phase.PHASE_2_CONTAINERS;
+            state.useStationaryHarvesters = true; // Enable stationary harvesters
+            state.useHaulers = state.sourceContainersBuilt > 0; // Enable haulers once first container done
+        }
+        else if (!state.controllerContainerBuilt) {
+            // Phase 2 (continued): Still building controller container
+            state.phase = RCL2Phase.PHASE_2_CONTAINERS;
+            state.useStationaryHarvesters = true;
+            state.useHaulers = true;
+        }
+        else {
+            // Phase 3: Full logistics operational
+            state.phase = RCL2Phase.PHASE_3_HAULER_LOGISTICS;
+            state.useStationaryHarvesters = true;
+            state.useHaulers = true;
+            state.containersOperational = true;
+        }
+        return state;
+    }
+    /**
+     * Check if at least one extension is built (triggers harvester filling)
+     */
+    static hasAnyExtensions(room) {
+        const extensions = room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTENSION
+        });
+        return extensions.length > 0;
+    }
+    /**
+     * Get container under construction sites for stationary harvester targeting
+     */
+    static getContainerConstructionSites(room) {
+        return room.find(FIND_CONSTRUCTION_SITES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+    }
+    /**
+     * Find the next source container construction site to work on
+     * Prioritizes sources closest to spawn
+     */
+    static getNextSourceContainerSite(room) {
+        var _a;
+        const spawn = room.find(FIND_MY_SPAWNS)[0];
+        if (!spawn)
+            return null;
+        const containerSites = this.getContainerConstructionSites(room);
+        const sources = room.find(FIND_SOURCES);
+        // Find container sites near sources
+        const sourceContainerSites = [];
+        for (const site of containerSites) {
+            for (const source of sources) {
+                if (site.pos.inRangeTo(source.pos, 1)) {
+                    const distance = spawn.pos.getRangeTo(site.pos);
+                    sourceContainerSites.push({ site, distance });
+                    break;
+                }
+            }
+        }
+        // Sort by distance from spawn (closest first)
+        sourceContainerSites.sort((a, b) => a.distance - b.distance);
+        return ((_a = sourceContainerSites[0]) === null || _a === void 0 ? void 0 : _a.site) || null;
+    }
+    /**
+     * Display progression status
+     */
+    static displayStatus(room, state) {
+        console.log(`\n╔═════════════════════════════════════════╗`);
+        console.log(`║ RCL 2 Progression Status                ║`);
+        console.log(`╠═════════════════════════════════════════╣`);
+        console.log(`║ Phase: ${state.phase.padEnd(32)} ║`);
+        console.log(`║ Extensions: ${state.extensionsComplete ? '✅ Complete' : '⏳ Building'.padEnd(27)} ║`);
+        console.log(`║ Source Containers: ${state.sourceContainersBuilt}          ║`);
+        console.log(`║ Controller Container: ${state.controllerContainerBuilt ? '✅' : '❌'}          ║`);
+        console.log(`║ Stationary Harvesters: ${state.useStationaryHarvesters ? 'Enabled ' : 'Disabled'}        ║`);
+        console.log(`║ Hauler Logistics: ${state.useHaulers ? 'Enabled ' : 'Disabled'}            ║`);
+        console.log(`╚═════════════════════════════════════════╝`);
+    }
+}
+
+/**
  * Room State Manager - RCL-based state machine
  * Orchestrates all room-level managers based on RCL configuration
  */
@@ -4906,6 +5229,13 @@ class RoomStateManager {
         }
         // Cache config for creeps to access
         this.roomConfigs.set(room.name, config);
+        // Detect and cache progression state (RCL 2+)
+        const rcl = room.controller.level;
+        let progressionState;
+        if (rcl >= 2) {
+            progressionState = ProgressionManager.detectRCL2State(room);
+            this.progressionStates.set(room.name, progressionState);
+        }
         // Get primary spawn
         const spawns = room.find(FIND_MY_SPAWNS);
         if (spawns.length === 0)
@@ -4920,7 +5250,17 @@ class RoomStateManager {
         // Display status periodically
         if (Game.time % 50 === 0) {
             this.displayRoomStatus(room, config);
+            // Display progression status for RCL 2+
+            if (progressionState) {
+                ProgressionManager.displayStatus(room, progressionState);
+            }
         }
+    }
+    /**
+     * Get cached progression state for a room
+     */
+    static getProgressionState(roomName) {
+        return this.progressionStates.get(roomName) || null;
     }
     /**
      * Get config for a room based on its RCL
@@ -5004,6 +5344,8 @@ RoomStateManager.RCL_CONFIGS = {
 RoomStateManager.roomConfigs = new Map();
 // Track if room plan has been executed (one-time planning per RCL)
 RoomStateManager.roomPlansExecuted = new Map(); // roomName -> RCL when last planned
+// Cache progression states for each room
+RoomStateManager.progressionStates = new Map();
 
 /**
  * Stats Collector - Tracks performance and room metrics
@@ -5429,6 +5771,9 @@ const loop = ErrorMapper.wrapLoop(() => {
         }
         else if (creep.memory.role === "builder") {
             RoleBuilder.run(creep, config);
+        }
+        else if (creep.memory.role === "hauler") {
+            RoleHauler.run(creep, config);
         }
     }
     // Collect stats at the end of each tick

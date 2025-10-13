@@ -5,6 +5,7 @@ import { ErrorMapper } from "utils/ErrorMapper";
 import { RoleHarvester } from "roles/harvester";
 import { RoleUpgrader } from "roles/upgrader";
 import { RoleBuilder } from "roles/builder";
+import { RoleHauler } from "roles/hauler";
 import { RoomStateManager } from "managers/RoomStateManager";
 import { StatsCollector } from "utils/StatsCollector";
 import "utils/ConsoleCommands"; // Import to register global console commands
@@ -104,6 +105,8 @@ export const loop = ErrorMapper.wrapLoop(() => {
       RoleUpgrader.run(creep, config);
     } else if (creep.memory.role === "builder") {
       RoleBuilder.run(creep, config);
+    } else if (creep.memory.role === "hauler") {
+      RoleHauler.run(creep, config);
     }
   }
 

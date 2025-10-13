@@ -7,6 +7,7 @@
 
 import { RCLConfig } from "../configs/RCL1Config";
 import { RoomStateManager } from "./RoomStateManager";
+import { ProgressionManager } from "./ProgressionManager";
 
 export interface SpawnRequest {
   role: string;
@@ -30,8 +31,11 @@ export class SpawnRequestGenerator {
       return requests;
     }
 
+    // Get progression state for RCL 2+
+    const progressionState = RoomStateManager.getProgressionState(room.name);
+
     // Always generate harvester requests first
-    requests.push(...this.requestHarvesters(room, config));
+    requests.push(...this.requestHarvesters(room, config, progressionState));
 
     // Only request other roles if we have minimum harvesters
     const harvesterCount = this.getCreepCount(room, "harvester");
@@ -44,6 +48,11 @@ export class SpawnRequestGenerator {
       if (config.spawning.enableBuilders) {
         requests.push(...this.requestBuilders(room, config));
       }
+
+      // Request haulers if progression state indicates they're needed
+      if (progressionState?.useHaulers) {
+        requests.push(...this.requestHaulers(room, config));
+      }
     }
 
     return requests;
@@ -52,26 +61,47 @@ export class SpawnRequestGenerator {
   /**
    * Request harvesters based on source capacity
    * Uses RCL config for body composition
+   * Adapts to progression state (stationary vs mobile harvesters)
    */
-  private static requestHarvesters(room: Room, config: RCLConfig): SpawnRequest[] {
+  private static requestHarvesters(room: Room, config: RCLConfig, progressionState: any): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
     const sources = room.find(FIND_SOURCES);
     const harvesterCount = this.getCreepCount(room, "harvester");
 
-    // Calculate ideal harvester count: 1 harvester per source + 1 spare
-    const idealCount = sources.length + 1;
-    const currentCount = harvesterCount;
+    // Determine if we need stationary harvesters
+    const useStationaryHarvesters = progressionState?.useStationaryHarvesters || false;
 
-    if (currentCount < idealCount) {
-      const harvesterConfig = config.roles.harvester;
+    if (useStationaryHarvesters) {
+      // Phase 2+: One stationary harvester per source
+      const idealCount = sources.length;
 
-      requests.push({
-        role: "harvester",
-        priority: harvesterConfig.priority,
-        reason: `Source coverage: ${currentCount}/${idealCount} harvesters`,
-        body: harvesterConfig.body, // Use body from config
-        minEnergy: this.calculateBodyCost(harvesterConfig.body)
-      });
+      if (harvesterCount < idealCount) {
+        // Build powerful stationary harvester: [WORK×5, MOVE]
+        const body = this.buildStationaryHarvesterBody(room);
+
+        requests.push({
+          role: "harvester",
+          priority: 1,
+          reason: `Stationary harvesters: ${harvesterCount}/${idealCount}`,
+          body: body,
+          minEnergy: this.calculateBodyCost(body)
+        });
+      }
+    } else {
+      // Phase 1: Mobile harvesters (1 per source + 1 spare)
+      const idealCount = sources.length + 1;
+
+      if (harvesterCount < idealCount) {
+        const harvesterConfig = config.roles.harvester;
+
+        requests.push({
+          role: "harvester",
+          priority: harvesterConfig.priority,
+          reason: `Mobile harvesters: ${harvesterCount}/${idealCount}`,
+          body: harvesterConfig.body,
+          minEnergy: this.calculateBodyCost(harvesterConfig.body)
+        });
+      }
     }
 
     return requests;
@@ -164,6 +194,76 @@ export class SpawnRequestGenerator {
    */
   private static calculateBodyCost(body: BodyPartConstant[]): number {
     return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+  }
+
+  /**
+   * Build stationary harvester body: [WORK×5, MOVE]
+   * Designed to sit on container and mine continuously
+   */
+  private static buildStationaryHarvesterBody(room: Room): BodyPartConstant[] {
+    const energy = room.energyCapacityAvailable;
+    
+    // Ideal: [WORK×5, MOVE] = 550 energy (5 work parts mine full source capacity)
+    if (energy >= 550) {
+      return [WORK, WORK, WORK, WORK, WORK, MOVE];
+    }
+    
+    // Fallback: Scale down based on available energy
+    const workParts = Math.min(5, Math.floor((energy - 50) / 100)); // Reserve 50 for MOVE
+    const body: BodyPartConstant[] = [];
+    
+    for (let i = 0; i < workParts; i++) {
+      body.push(WORK);
+    }
+    body.push(MOVE);
+    
+    return body.length > 0 ? body : [WORK, MOVE]; // Minimum viable
+  }
+
+  /**
+   * Build hauler body: [CARRY×N, MOVE×N]
+   * Designed to transport energy quickly
+   */
+  private static buildHaulerBody(room: Room): BodyPartConstant[] {
+    const energy = room.energyCapacityAvailable;
+    
+    // Build balanced CARRY/MOVE pairs (50 + 50 = 100 per pair)
+    const pairs = Math.floor(energy / 100);
+    const maxPairs = Math.min(pairs, 6); // Cap at 6 pairs (600 energy)
+    
+    const body: BodyPartConstant[] = [];
+    for (let i = 0; i < maxPairs; i++) {
+      body.push(CARRY, MOVE);
+    }
+    
+    return body.length > 0 ? body : [CARRY, MOVE]; // Minimum viable
+  }
+
+  /**
+   * Request haulers based on progression state
+   * Haulers transport energy from containers to spawn/extensions
+   */
+  private static requestHaulers(room: Room, config: RCLConfig): SpawnRequest[] {
+    const requests: SpawnRequest[] = [];
+    const haulerCount = this.getCreepCount(room, "hauler");
+    const sources = room.find(FIND_SOURCES);
+
+    // Ideal: 1 hauler per source container
+    const idealCount = sources.length;
+
+    if (haulerCount < idealCount) {
+      const body = this.buildHaulerBody(room);
+
+      requests.push({
+        role: "hauler",
+        priority: 1, // High priority - critical for logistics
+        reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers`,
+        body: body,
+        minEnergy: this.calculateBodyCost(body)
+      });
+    }
+
+    return requests;
   }
 
   /**
