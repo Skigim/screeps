@@ -3,6 +3,8 @@
  * Usage: Call these functions from the Screeps console
  */
 
+import { StatsCollector } from "./StatsCollector";
+
 export class ConsoleCommands {
   /**
    * Spawn a creep with specified role and body parts
@@ -169,6 +171,23 @@ export class ConsoleCommands {
     return result;
   }
 
+  /**
+   * Display stats summary
+   * Usage: stats()
+   */
+  public static showStats(): void {
+    StatsCollector.displaySummary();
+  }
+
+  /**
+   * Clear all collected stats
+   * Usage: clearStats()
+   */
+  public static clearStats(): string {
+    StatsCollector.clear();
+    return "✅ Stats cleared";
+  }
+
   // Helper methods
   private static calculateCost(body: BodyPartConstant[]): number {
     return body.reduce((total, part) => total + BODYPART_COST[part], 0);
@@ -198,3 +217,5 @@ export class ConsoleCommands {
 (global as any).bodyCost = ConsoleCommands.bodyCost.bind(ConsoleCommands);
 (global as any).optimalBody = ConsoleCommands.optimalBody.bind(ConsoleCommands);
 (global as any).spawns = ConsoleCommands.listSpawns.bind(ConsoleCommands);
+(global as any).stats = ConsoleCommands.showStats.bind(ConsoleCommands);
+(global as any).clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);

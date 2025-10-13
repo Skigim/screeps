@@ -269,6 +269,38 @@
                     <span class="cmd-label">Spawn Status</span>
                     <span class="cmd-text">spawns()</span>
                 </button>
+                <button class="cmd-button" onclick="copyCommand('stats()')">
+                    <span class="cmd-label">Stats Summary</span>
+                    <span class="cmd-text">stats()</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats Commands -->
+        <div class="section">
+            <h2>📈 Statistics & Performance</h2>
+            <div class="button-grid">
+                <button class="cmd-button" onclick="copyCommand('stats()')">
+                    <span class="cmd-label">Display Stats</span>
+                    <span class="cmd-text">stats()</span>
+                </button>
+                <button class="cmd-button" onclick="copyCommand('clearStats()')">
+                    <span class="cmd-label">Clear All Stats</span>
+                    <span class="cmd-text">clearStats()</span>
+                </button>
+                <button class="cmd-button" onclick="copyCommand('Memory.stats')">
+                    <span class="cmd-label">View Raw Stats Data</span>
+                    <span class="cmd-text">Memory.stats</span>
+                </button>
+                <button class="cmd-button" onclick="copyCommand('Object.keys(Memory.stats || {}).length')">
+                    <span class="cmd-label">Stats Ticks Stored</span>
+                    <span class="cmd-text">Object.keys(Memory.stats || {}).length</span>
+                </button>
+            </div>
+            <div class="info-box" style="margin-top: 15px; border-left-color: #569cd6;">
+                <h3>💡 Stats Info</h3>
+                <p>Stats are automatically collected every tick and stored for the last 20 ticks.</p>
+                <p><strong>Tracked:</strong> CPU usage, Memory size, GCL progress, Room stats, Creep counts, Source efficiency</p>
             </div>
         </div>
 

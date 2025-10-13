@@ -4436,6 +4436,177 @@ RoomStateManager.RCL_CONFIGS = {
 RoomStateManager.roomConfigs = new Map();
 
 /**
+ * Stats Collector - Tracks performance and room metrics
+ * Stores data in Memory.stats with automatic cleanup of old data
+ */
+class StatsCollector {
+    /**
+     * Collect stats for current tick
+     */
+    static collect() {
+        const tick = Game.time;
+        // Initialize stats structure if needed
+        if (!Memory.stats) {
+            Memory.stats = {};
+        }
+        const stats = {
+            time: tick,
+            cpu: {
+                used: Game.cpu.getUsed(),
+                limit: Game.cpu.limit,
+                bucket: Game.cpu.bucket
+            },
+            memory: {
+                used: RawMemory.get().length
+            },
+            gcl: {
+                level: Game.gcl.level,
+                progress: Game.gcl.progress,
+                progressTotal: Game.gcl.progressTotal
+            },
+            rooms: {}
+        };
+        // Collect room stats
+        for (const roomName in Game.rooms) {
+            const room = Game.rooms[roomName];
+            if (!room.controller || !room.controller.my)
+                continue;
+            stats.rooms[roomName] = this.collectRoomStats(room);
+        }
+        // Store stats for this tick
+        Memory.stats[tick] = stats;
+        // Clean up old stats
+        this.cleanup();
+    }
+    /**
+     * Collect stats for a single room
+     */
+    static collectRoomStats(room) {
+        var _a, _b, _c, _d;
+        // Count creeps by role
+        const creepCounts = {};
+        const creeps = room.find(FIND_MY_CREEPS);
+        for (const creep of creeps) {
+            const role = creep.memory.role;
+            creepCounts[role] = (creepCounts[role] || 0) + 1;
+        }
+        // Count spawns
+        const spawns = room.find(FIND_MY_SPAWNS);
+        const spawningCount = spawns.filter(s => s.spawning).length;
+        // Source stats
+        const sources = room.find(FIND_SOURCES);
+        let totalEnergy = 0;
+        let totalCapacity = 0;
+        let assignedWorkParts = 0;
+        for (const source of sources) {
+            totalEnergy += source.energy;
+            totalCapacity += source.energyCapacity;
+            // Count assigned work parts
+            const assignedCreeps = Object.values(Game.creeps).filter(c => c.memory.assignedSource === source.id);
+            assignedWorkParts += assignedCreeps.reduce((total, creep) => {
+                return total + creep.body.filter(part => part.type === WORK).length;
+            }, 0);
+        }
+        return {
+            rcl: ((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) || 0,
+            controller: {
+                progress: ((_b = room.controller) === null || _b === void 0 ? void 0 : _b.progress) || 0,
+                progressTotal: ((_c = room.controller) === null || _c === void 0 ? void 0 : _c.progressTotal) || 0,
+                ticksToDowngrade: ((_d = room.controller) === null || _d === void 0 ? void 0 : _d.ticksToDowngrade) || 0
+            },
+            energy: {
+                available: room.energyAvailable,
+                capacity: room.energyCapacityAvailable
+            },
+            creeps: creepCounts,
+            spawns: {
+                total: spawns.length,
+                spawning: spawningCount
+            },
+            sources: {
+                total: sources.length,
+                energyAvailable: totalEnergy,
+                energyCapacity: totalCapacity,
+                assignedWorkParts: assignedWorkParts,
+                maxWorkParts: sources.length * 5 // 5 work parts per source max
+            }
+        };
+    }
+    /**
+     * Clean up old stats to prevent Memory bloat
+     */
+    static cleanup() {
+        if (!Memory.stats)
+            return;
+        const ticks = Object.keys(Memory.stats).map(Number).sort((a, b) => b - a);
+        // Keep only the most recent ticks
+        if (ticks.length > this.MAX_TICKS_STORED) {
+            const ticksToRemove = ticks.slice(this.MAX_TICKS_STORED);
+            for (const tick of ticksToRemove) {
+                delete Memory.stats[tick];
+            }
+        }
+    }
+    /**
+     * Get stats for a specific tick
+     */
+    static getStats(tick) {
+        if (!Memory.stats || !Memory.stats[tick])
+            return null;
+        return Memory.stats[tick];
+    }
+    /**
+     * Get all stored stats
+     */
+    static getAllStats() {
+        return Memory.stats || {};
+    }
+    /**
+     * Clear all stats (useful for debugging)
+     */
+    static clear() {
+        Memory.stats = {};
+    }
+    /**
+     * Display stats summary in console
+     */
+    static displaySummary() {
+        if (!Memory.stats) {
+            console.log("No stats collected yet");
+            return;
+        }
+        const ticks = Object.keys(Memory.stats).map(Number).sort((a, b) => b - a);
+        if (ticks.length === 0) {
+            console.log("No stats collected yet");
+            return;
+        }
+        const latestTick = ticks[0];
+        const stats = Memory.stats[latestTick];
+        console.log(`\n╔════════════════════════════════════════════╗`);
+        console.log(`║ Stats Summary (Tick ${latestTick})`.padEnd(45) + '║');
+        console.log(`╠════════════════════════════════════════════╣`);
+        console.log(`║ CPU: ${stats.cpu.used.toFixed(2)}/${stats.cpu.limit} | Bucket: ${stats.cpu.bucket}`.padEnd(45) + '║');
+        console.log(`║ Memory: ${(stats.memory.used / 1024).toFixed(1)} KB`.padEnd(45) + '║');
+        console.log(`║ GCL: ${stats.gcl.level} (${stats.gcl.progress}/${stats.gcl.progressTotal})`.padEnd(45) + '║');
+        console.log(`╠════════════════════════════════════════════╣`);
+        for (const roomName in stats.rooms) {
+            const room = stats.rooms[roomName];
+            const creepCounts = Object.values(room.creeps);
+            const totalCreeps = creepCounts.reduce((a, b) => a + b, 0);
+            console.log(`║ Room: ${roomName}`.padEnd(45) + '║');
+            console.log(`║   RCL: ${room.rcl} | Energy: ${room.energy.available}/${room.energy.capacity}`.padEnd(45) + '║');
+            console.log(`║   Creeps: ${totalCreeps}`.padEnd(45) + '║');
+            for (const role in room.creeps) {
+                console.log(`║     ${role}: ${room.creeps[role]}`.padEnd(45) + '║');
+            }
+        }
+        console.log(`╚════════════════════════════════════════════╝`);
+        console.log(`Stored ticks: ${ticks.length}/${this.MAX_TICKS_STORED}`);
+    }
+}
+StatsCollector.MAX_TICKS_STORED = 20; // Keep last 20 ticks of stats
+
+/**
  * Console commands for manual spawn control
  * Usage: Call these functions from the Screeps console
  */
@@ -4590,6 +4761,21 @@ class ConsoleCommands {
         }
         return result;
     }
+    /**
+     * Display stats summary
+     * Usage: stats()
+     */
+    static showStats() {
+        StatsCollector.displaySummary();
+    }
+    /**
+     * Clear all collected stats
+     * Usage: clearStats()
+     */
+    static clearStats() {
+        StatsCollector.clear();
+        return "✅ Stats cleared";
+    }
     // Helper methods
     static calculateCost(body) {
         return body.reduce((total, part) => total + BODYPART_COST[part], 0);
@@ -4617,6 +4803,8 @@ global.killRole = ConsoleCommands.killRole.bind(ConsoleCommands);
 global.bodyCost = ConsoleCommands.bodyCost.bind(ConsoleCommands);
 global.optimalBody = ConsoleCommands.optimalBody.bind(ConsoleCommands);
 global.spawns = ConsoleCommands.listSpawns.bind(ConsoleCommands);
+global.stats = ConsoleCommands.showStats.bind(ConsoleCommands);
+global.clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
 
 /// <reference types="typed-screeps" />
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
@@ -4673,6 +4861,8 @@ const loop = ErrorMapper.wrapLoop(() => {
             RoleBuilder.run(creep, config);
         }
     }
+    // Collect stats at the end of each tick
+    StatsCollector.collect();
 });
 
 exports.loop = loop;

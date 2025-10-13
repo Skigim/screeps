@@ -6,6 +6,7 @@ import { RoleHarvester } from "roles/harvester";
 import { RoleUpgrader } from "roles/upgrader";
 import { RoleBuilder } from "roles/builder";
 import { RoomStateManager } from "managers/RoomStateManager";
+import { StatsCollector } from "utils/StatsCollector";
 import "utils/ConsoleCommands"; // Import to register global console commands
 import * as _ from "lodash";
 
@@ -105,4 +106,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
       RoleBuilder.run(creep, config);
     }
   }
+
+  // Collect stats at the end of each tick
+  StatsCollector.collect();
 });
