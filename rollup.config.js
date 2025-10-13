@@ -5,6 +5,15 @@ import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import typescript from 'rollup-plugin-typescript2';
 import screeps from 'rollup-plugin-screeps';
+import { execSync } from 'child_process';
+
+// Get git commit hash
+let gitHash = 'unknown';
+try {
+  gitHash = execSync('git rev-parse --short HEAD').toString().trim();
+} catch (e) {
+  console.warn('⚠️ Could not retrieve git hash');
+}
 
 let cfg;
 const dest = process.env.DEST;
@@ -34,10 +43,24 @@ export default {
     typescript({tsconfig: "./tsconfig.json"}),
     screeps({config: cfg, dryRun: cfg == null}),
     {
+      name: 'inject-git-hash',
+      transform(code, id) {
+        if (id.endsWith('main.ts')) {
+          // Inject git hash as a global constant
+          return code.replace(
+            /\/\/ @GIT_HASH@/g,
+            `global.__GIT_HASH__ = "${gitHash}";`
+          );
+        }
+        return null;
+      }
+    },
+    {
       name: 'upload-logger',
       writeBundle() {
         if (cfg) {
           console.log('\n📤 Uploading to Screeps...');
+          console.log(`📋 Git Hash: ${gitHash}`);
           setTimeout(() => {
             console.log('✅ Upload complete! (Check your Screeps console to verify)');
           }, 1000);

@@ -3874,160 +3874,6 @@ Creep.prototype.travelTo = function (destination, options) {
     return Traveler.travelTo(this, destination, options);
 };
 
-class RoleHarvester {
-    static run(creep, config) {
-        // Get role config for this role
-        const roleConfig = config.roles.harvester;
-        if (!roleConfig) {
-            console.log(`⚠️ No harvester config found for ${creep.name}`);
-            return;
-        }
-        // Toggle working state
-        if (creep.store.getFreeCapacity() === 0) {
-            creep.memory.working = true;
-        }
-        if (creep.store.getUsedCapacity() === 0) {
-            creep.memory.working = false;
-        }
-        if (!creep.memory.working) {
-            // Harvest energy from assigned source
-            if (creep.memory.assignedSource) {
-                const source = Game.getObjectById(creep.memory.assignedSource);
-                if (source) {
-                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, source);
-                    }
-                }
-            }
-            else {
-                // Fallback: find any source if no assignment
-                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-                if (source) {
-                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, source);
-                    }
-                }
-            }
-        }
-        else {
-            // Check if source containers exist (for drop mining strategy)
-            const sourceContainers = creep.room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER
-            });
-            const hasSourceContainers = sourceContainers.some(container => {
-                const sources = creep.room.find(FIND_SOURCES);
-                return sources.some(source => container.pos.inRangeTo(source, 1));
-            });
-            // Phase 1 (no source containers): DROP MINING STRATEGY
-            // Drop energy near container sites for builders to pick up
-            if (!hasSourceContainers) {
-                // Find container construction sites near sources
-                const containerSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
-                    filter: site => {
-                        if (site.structureType !== STRUCTURE_CONTAINER)
-                            return false;
-                        const sources = creep.room.find(FIND_SOURCES);
-                        return sources.some(source => site.pos.inRangeTo(source, 1));
-                    }
-                });
-                if (containerSite) {
-                    // Move to container site and drop energy
-                    if (creep.pos.inRangeTo(containerSite, 0)) {
-                        // At container site - drop energy for builders
-                        creep.drop(RESOURCE_ENERGY);
-                    }
-                    else {
-                        Traveler.travelTo(creep, containerSite, { range: 0 });
-                    }
-                    return;
-                }
-            }
-            // Phase 2+: Normal delivery to spawn/extensions
-            // Transfer energy to spawn or extensions
-            const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                filter: (structure) => {
-                    return ((structure.structureType === STRUCTURE_EXTENSION ||
-                        structure.structureType === STRUCTURE_SPAWN ||
-                        structure.structureType === STRUCTURE_TOWER) &&
-                        structure.store && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-                }
-            });
-            if (target) {
-                if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, target);
-                }
-            }
-        }
-    }
-}
-
-class RoleUpgrader {
-    static run(creep, config) {
-        // Get role config for this role
-        const roleConfig = config.roles.upgrader;
-        if (!roleConfig) {
-            console.log(`⚠️ No upgrader config found for ${creep.name}`);
-            return;
-        }
-        // Toggle working state
-        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            creep.memory.working = false;
-        }
-        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
-            creep.memory.working = true;
-        }
-        if (creep.memory.working) {
-            // Upgrade controller
-            if (creep.room.controller) {
-                if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, creep.room.controller);
-                }
-            }
-        }
-        else {
-            // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
-            // Reserve energy for spawn if we're below minimum viable energy (200)
-            const shouldReserveEnergy = creep.room.energyAvailable < 200;
-            if (!shouldReserveEnergy) {
-                // Safe to withdraw - room has enough energy for spawning
-                const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                    filter: (structure) => {
-                        return ((structure.structureType === STRUCTURE_EXTENSION ||
-                            structure.structureType === STRUCTURE_SPAWN) &&
-                            structure.store &&
-                            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
-                    }
-                });
-                if (target) {
-                    if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, target);
-                    }
-                    return;
-                }
-            }
-            // Energy reserved for spawning OR no energy in spawn/extensions
-            // Help bootstrap economy: harvest from sources or pickup dropped energy
-            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
-                filter: resource => resource.resourceType === RESOURCE_ENERGY
-            });
-            if (droppedEnergy) {
-                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, droppedEnergy);
-                }
-            }
-            else {
-                // CRISIS MODE: Harvest directly from source
-                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-                if (source) {
-                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, source);
-                    }
-                }
-            }
-        }
-    }
-}
-
 /**
  * RCL 1 Configuration
  * Defines behaviors, body compositions, and strategic guidelines for RCL 1
@@ -5403,6 +5249,18 @@ class ProgressionManager {
         return converted;
     }
     /**
+     * Check if every source in the room has at least one harvester assigned to it
+     * This ensures we have coverage before activating the hauler logistics chain
+     */
+    static hasHarvesterCoverage(room) {
+        const sources = room.find(FIND_SOURCES);
+        const harvesters = Object.values(Game.creeps).filter(c => c.memory.role === "harvester" && c.room.name === room.name && c.memory.assignedSource);
+        // Get unique source IDs that have assigned harvesters
+        const coveredSources = new Set(harvesters.map(h => h.memory.assignedSource).filter(Boolean));
+        // Return true only if every source has at least one harvester
+        return coveredSources.size >= sources.length;
+    }
+    /**
      * Detect current progression state for RCL 2
      */
     static detectRCL2State(room) {
@@ -5450,6 +5308,8 @@ class ProgressionManager {
         state.roadsComplete = roadSites.length === 0 && roads.length > 0;
         // Determine if containers are operational (at least 1 source container built)
         state.containersOperational = state.sourceContainersBuilt > 0;
+        // Check if we have harvester coverage (at least one harvester per source)
+        const hasHarvesterCoverage = this.hasHarvesterCoverage(room);
         // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
         if (state.sourceContainersBuilt < sources.length) {
             // Phase 1: Building source containers
@@ -5465,14 +5325,12 @@ class ProgressionManager {
         }
         else if (!state.extensionsComplete) {
             // Phase 2: Building extensions
-            // - Source containers complete → spawn haulers
-            // - Haulers bring energy from containers → spawn
-            // - Builders withdraw from spawn (no walking to sources)
-            // - Keep stationary drop-mining harvesters until extensions complete
-            // - Upgraders/builders still use RCL1 bodies (cheap)
+            // - Source containers complete → FORCE ECONOMIC HANDOVER
+            // - If we have harvester coverage, immediately activate hauler logistics
+            // - Don't wait for perfect harvester bodies - pivot to drop mining NOW
             state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
-            state.useStationaryHarvesters = true; // Still drop mining (can't afford [WORK×5, MOVE] yet)
-            state.useHaulers = true; // Containers operational
+            state.useStationaryHarvesters = true; // All harvesters become stationary drop miners
+            state.useHaulers = hasHarvesterCoverage; // Activate haulers as soon as coverage is met
             state.allowRCL1Bodies = true; // Keep cheap bodies during extension construction
         }
         else if (!state.roadsComplete) {
@@ -5904,6 +5762,186 @@ RoomStateManager.roomConfigs = new Map();
 // Cache progression states for each room
 RoomStateManager.progressionStates = new Map();
 
+class RoleHarvester {
+    static run(creep, config) {
+        // Get role config for this role
+        const roleConfig = config.roles.harvester;
+        if (!roleConfig) {
+            console.log(`⚠️ No harvester config found for ${creep.name}`);
+            return;
+        }
+        // Get progression state to determine behavior
+        const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+        const useDropMining = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.useHaulers) || false;
+        // Toggle working state
+        if (creep.store.getFreeCapacity() === 0) {
+            creep.memory.working = true;
+        }
+        if (creep.store.getUsedCapacity() === 0) {
+            creep.memory.working = false;
+        }
+        if (!creep.memory.working) {
+            // Harvest energy from assigned source
+            if (creep.memory.assignedSource) {
+                const source = Game.getObjectById(creep.memory.assignedSource);
+                if (source) {
+                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, source);
+                    }
+                }
+            }
+            else {
+                // Fallback: find any source if no assignment
+                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+                if (source) {
+                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, source);
+                    }
+                }
+            }
+        }
+        else {
+            // ECONOMIC HANDOVER: If haulers are active, switch to drop mining
+            if (useDropMining) {
+                // Find the container for our assigned source
+                let targetContainer = null;
+                if (creep.memory.assignedSource) {
+                    const source = Game.getObjectById(creep.memory.assignedSource);
+                    if (source) {
+                        const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
+                            filter: s => s.structureType === STRUCTURE_CONTAINER
+                        });
+                        if (containers.length > 0) {
+                            targetContainer = containers[0];
+                        }
+                    }
+                }
+                // If container exists, park on top of it and drop energy
+                if (targetContainer) {
+                    if (creep.pos.isEqualTo(targetContainer.pos)) {
+                        // On container - drop energy for haulers to pick up
+                        creep.drop(RESOURCE_ENERGY);
+                    }
+                    else {
+                        // Move to container
+                        Traveler.travelTo(creep, targetContainer, { range: 0 });
+                    }
+                    return;
+                }
+                // No container yet - find construction site and drop there
+                if (creep.memory.assignedSource) {
+                    const source = Game.getObjectById(creep.memory.assignedSource);
+                    if (source) {
+                        const containerSites = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, {
+                            filter: s => s.structureType === STRUCTURE_CONTAINER
+                        });
+                        if (containerSites.length > 0) {
+                            const site = containerSites[0];
+                            if (creep.pos.isEqualTo(site.pos)) {
+                                creep.drop(RESOURCE_ENERGY);
+                            }
+                            else {
+                                Traveler.travelTo(creep, site, { range: 0 });
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+            // LEGACY BEHAVIOR: No haulers yet - deliver energy to spawn/extensions
+            // Transfer energy to spawn or extensions
+            const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                filter: (structure) => {
+                    return ((structure.structureType === STRUCTURE_EXTENSION ||
+                        structure.structureType === STRUCTURE_SPAWN ||
+                        structure.structureType === STRUCTURE_TOWER) &&
+                        structure.store && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+                }
+            });
+            if (target) {
+                if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, target);
+                }
+            }
+        }
+    }
+}
+
+class RoleUpgrader {
+    static run(creep, config) {
+        // Get role config for this role
+        const roleConfig = config.roles.upgrader;
+        if (!roleConfig) {
+            console.log(`⚠️ No upgrader config found for ${creep.name}`);
+            return;
+        }
+        // Toggle working state
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = false;
+        }
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = true;
+        }
+        if (creep.memory.working) {
+            // Upgrade controller
+            if (creep.room.controller) {
+                if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, creep.room.controller);
+                }
+            }
+        }
+        else {
+            // PHASE 1 & 2 LOCKDOWN: NEVER withdraw during container + extension construction
+            // During Phase 1-2, all energy must be reserved for spawning emergency harvesters
+            // Upgraders must harvest directly or pick up drops only
+            const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+            const isConstructionPhase = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.phase) === RCL2Phase.PHASE_1_CONTAINERS ||
+                (progressionState === null || progressionState === void 0 ? void 0 : progressionState.phase) === RCL2Phase.PHASE_2_EXTENSIONS;
+            if (!isConstructionPhase) {
+                // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
+                // Reserve energy for spawn if we're below minimum viable energy (200)
+                const shouldReserveEnergy = creep.room.energyAvailable < 200;
+                if (!shouldReserveEnergy) {
+                    // Safe to withdraw - room has enough energy for spawning
+                    const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                        filter: (structure) => {
+                            return ((structure.structureType === STRUCTURE_EXTENSION ||
+                                structure.structureType === STRUCTURE_SPAWN) &&
+                                structure.store &&
+                                structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+                        }
+                    });
+                    if (target) {
+                        if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                            Traveler.travelTo(creep, target);
+                        }
+                        return;
+                    }
+                }
+            }
+            // Energy reserved for spawning OR Phase 1-2 OR no energy in spawn/extensions
+            // Help bootstrap economy: harvest from sources or pickup dropped energy
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: resource => resource.resourceType === RESOURCE_ENERGY
+            });
+            if (droppedEnergy) {
+                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, droppedEnergy);
+                }
+            }
+            else {
+                // CRISIS MODE: Harvest directly from source
+                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+                if (source) {
+                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, source);
+                    }
+                }
+            }
+        }
+    }
+}
+
 class RoleBuilder {
     static run(creep, config) {
         // Get role config for this role
@@ -6048,30 +6086,38 @@ class RoleBuilder {
                 return;
             }
             // THIRD PRIORITY: Withdraw from spawn/extensions
-            // SMART LOGIC: Check if there are pending spawn requests
-            // CRITICAL: Never withdraw if emergency harvesters are queued (priority 0)
-            const pendingRequests = SpawnRequestGenerator.generateRequests(creep.room);
-            const hasEmergencySpawns = pendingRequests && pendingRequests.some(req => req.priority === 0);
-            // Allow withdrawal ONLY if:
-            // 1. No emergency spawn requests (priority 0), AND
-            // 2. Either no pending requests OR room has surplus energy (>=200)
-            // 3. ONLY from extensions (NEVER from spawn to reserve spawn energy for creeps)
-            const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
-            const canWithdrawFromExtensions = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
-            if (canWithdrawFromExtensions) {
-                const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                    filter: (structure) => {
-                        return (structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NEVER spawn
-                            structure.store &&
-                            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+            // PHASE 1 & 2 LOCKDOWN: NEVER withdraw during container + extension construction
+            // During Phase 1-2, all energy must be reserved for spawning emergency harvesters
+            // Builders must harvest directly or pick up drops only
+            const isConstructionPhase = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.phase) === RCL2Phase.PHASE_1_CONTAINERS ||
+                (progressionState === null || progressionState === void 0 ? void 0 : progressionState.phase) === RCL2Phase.PHASE_2_EXTENSIONS;
+            if (!isConstructionPhase) {
+                // SMART LOGIC: Check if there are pending spawn requests
+                // CRITICAL: Never withdraw if emergency harvesters are queued (priority 0)
+                const pendingRequests = SpawnRequestGenerator.generateRequests(creep.room);
+                const hasEmergencySpawns = pendingRequests && pendingRequests.some(req => req.priority === 0);
+                // Allow withdrawal ONLY if:
+                // 1. NOT in Phase 1 or 2 (checked above), AND
+                // 2. No emergency spawn requests (priority 0), AND
+                // 3. Either no pending requests OR room has surplus energy (>=200)
+                // 4. ONLY from extensions (NEVER from spawn to reserve spawn energy for creeps)
+                const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
+                const canWithdrawFromExtensions = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
+                if (canWithdrawFromExtensions) {
+                    const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                        filter: (structure) => {
+                            return (structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NEVER spawn
+                                structure.store &&
+                                structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+                        }
+                    });
+                    if (target) {
+                        creep.memory.energySourceId = target.id; // LOCK IT
+                        if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                            Traveler.travelTo(creep, target);
+                        }
+                        return;
                     }
-                });
-                if (target) {
-                    creep.memory.energySourceId = target.id; // LOCK IT
-                    if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, target);
-                    }
-                    return;
                 }
             }
             // Energy reserved for spawning OR no energy in spawn/extensions
@@ -6933,6 +6979,18 @@ class ConsoleCommands {
 Note: Simulation rooms can only be reset through the UI.
 Current room: ${room.name}`;
     }
+    /**
+     * Display current git commit hash
+     * Usage: version() or hash()
+     */
+    static version() {
+        const hash = global.__GIT_HASH__ || "unknown";
+        const gameTime = Game.time;
+        return `📋 Code Version
+Git Hash: ${hash}
+Game Time: ${gameTime}
+Deploy verified: ${hash !== "unknown" ? "✅" : "❌"}`;
+    }
     // Helper methods
     static calculateCost(body) {
         return body.reduce((total, part) => total + BODYPART_COST[part], 0);
@@ -6964,8 +7022,12 @@ global.stats = ConsoleCommands.showStats.bind(ConsoleCommands);
 global.clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
 global.testDistanceTransform = ConsoleCommands.testDistanceTransform.bind(ConsoleCommands);
 global.resetSim = ConsoleCommands.resetSim.bind(ConsoleCommands);
+global.version = ConsoleCommands.version.bind(ConsoleCommands);
+global.hash = ConsoleCommands.version.bind(ConsoleCommands); // Alias for version
 
 /// <reference types="screeps" />
+global.__GIT_HASH__ = "e2d4610";
+// This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 const loop = ErrorMapper.wrapLoop(() => {

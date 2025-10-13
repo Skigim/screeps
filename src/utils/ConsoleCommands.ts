@@ -220,6 +220,19 @@ Note: Simulation rooms can only be reset through the UI.
 Current room: ${room.name}`;
   }
 
+  /**
+   * Display current git commit hash
+   * Usage: version() or hash()
+   */
+  public static version(): string {
+    const hash = (global as any).__GIT_HASH__ || "unknown";
+    const gameTime = Game.time;
+    return `📋 Code Version
+Git Hash: ${hash}
+Game Time: ${gameTime}
+Deploy verified: ${hash !== "unknown" ? "✅" : "❌"}`;
+  }
+
   // Helper methods
   private static calculateCost(body: BodyPartConstant[]): number {
     return body.reduce((total, part) => total + BODYPART_COST[part], 0);
@@ -253,3 +266,5 @@ Current room: ${room.name}`;
 (global as any).clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
 (global as any).testDistanceTransform = ConsoleCommands.testDistanceTransform.bind(ConsoleCommands);
 (global as any).resetSim = ConsoleCommands.resetSim.bind(ConsoleCommands);
+(global as any).version = ConsoleCommands.version.bind(ConsoleCommands);
+(global as any).hash = ConsoleCommands.version.bind(ConsoleCommands); // Alias for version

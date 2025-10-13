@@ -49,9 +49,13 @@ declare global {
       log: any;
       StatsTracker: typeof StatsTracker; // Export stats tracker to console
       Architect: typeof Architect; // Export Architect for manual commands
+      __GIT_HASH__: string; // Injected git commit hash
     }
   }
 }
+
+// @GIT_HASH@
+// This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
