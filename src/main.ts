@@ -23,6 +23,7 @@ declare global {
   interface Memory {
     uuid: number;
     log: any;
+    stats?: any; // Reserved for stats collection system
   }
 
   interface CreepMemory {
@@ -55,6 +56,21 @@ export const loop = ErrorMapper.wrapLoop(() => {
       const creep = Memory.creeps[name];
       console.log(`💀 Cleaning up memory for ${name} (${creep.role})`);
       delete Memory.creeps[name];
+    }
+  }
+
+  // Clean up invalid Memory keys (run once every 1000 ticks)
+  if (Game.time % 1000 === 0) {
+    const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats'];
+    let cleaned = 0;
+    for (const key in Memory) {
+      if (!validKeys.includes(key)) {
+        delete (Memory as any)[key];
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`🧹 Cleaned ${cleaned} invalid Memory keys`);
     }
   }
 

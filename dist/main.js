@@ -4630,6 +4630,20 @@ const loop = ErrorMapper.wrapLoop(() => {
             delete Memory.creeps[name];
         }
     }
+    // Clean up invalid Memory keys (run once every 1000 ticks)
+    if (Game.time % 1000 === 0) {
+        const validKeys = ['creeps', 'rooms', 'uuid', 'log', 'stats'];
+        let cleaned = 0;
+        for (const key in Memory) {
+            if (!validKeys.includes(key)) {
+                delete Memory[key];
+                cleaned++;
+            }
+        }
+        if (cleaned > 0) {
+            console.log(`🧹 Cleaned ${cleaned} invalid Memory keys`);
+        }
+    }
     // Run RCL-specific logic for each owned room
     for (const roomName in Game.rooms) {
         const room = Game.rooms[roomName];
