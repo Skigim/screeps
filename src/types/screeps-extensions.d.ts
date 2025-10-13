@@ -72,4 +72,10 @@ interface CreepMemory {
    * Prevents assignment thrashing by making assignments sticky by default
    */
   requestReassignment?: boolean;
+
+  /**
+   * Vacuum mode flag - set when upgrader picks up dropped energy from non-source areas
+   * When true, upgrader will return energy to spawn/dest container before resuming work
+   */
+  vacuuming?: boolean;
 }

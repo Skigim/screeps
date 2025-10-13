@@ -58,57 +58,56 @@ export class RoleUpgrader {
           }
         }
       } else if (energySourceMode === "container") {
-        // RCL2+ behavior: NEVER withdraw from spawn/extensions - use containers only
+        // RCL2+ behavior: EXCLUSIVE controller container usage + vacuum duty
         // Priority:
-        // 1. Source containers (primary energy storage)
-        // 2. Destination container (spawn-adjacent, filled by haulers)
-        // 3. Controller container (self-service)
-        // 4. Dropped energy (harvester overflow)
-        // 5. Harvest directly (crisis mode)
+        // 1. Controller container (primary energy source)
+        // 2. Vacuum dropped energy (non-source areas) and return to base
+        // 
+        // This creates a clean separation of duties:
+        // - Haulers: Source containers → Spawn/Extensions
+        // - Upgraders: Controller container → Controller (+ vacuum cleanup)
 
         const progressionState = RoomStateManager.getProgressionState(creep.room.name);
 
-        // 1. FIRST PRIORITY: Withdraw from source containers
-        const sourceContainers = creep.room.find(FIND_STRUCTURES, {
-          filter: s => {
-            if (s.structureType !== STRUCTURE_CONTAINER) return false;
-            const container = s as StructureContainer;
+        // Check if we're in "return to base" mode (have energy but not at capacity)
+        const isVacuuming = creep.memory.vacuuming === true;
 
-            // Check if this is a source container (near a source)
-            const nearbySources = s.pos.findInRange(FIND_SOURCES, 1);
-            if (nearbySources.length === 0) return false;
+        if (isVacuuming && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+          // Return dropped energy to spawn or destination container
+          const spawn = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_SPAWN &&
+                        s.store &&
+                        s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+          })[0];
 
-            const energy = container.store?.getUsedCapacity(RESOURCE_ENERGY);
-            return energy !== null && energy !== undefined && energy > 0;
-          }
-        }) as StructureContainer[];
-
-        if (sourceContainers.length > 0) {
-          const closest = creep.pos.findClosestByPath(sourceContainers);
-          if (closest) {
-            if (creep.withdraw(closest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, closest);
+          if (spawn) {
+            if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, spawn);
+            } else {
+              // Successfully delivered, clear vacuum flag
+              creep.memory.vacuuming = false;
             }
             return;
           }
-        }
 
-        // 2. SECOND PRIORITY: Withdraw from destination container (spawn-adjacent)
-        if (progressionState?.destContainerId) {
-          const destContainer = Game.getObjectById(progressionState.destContainerId);
-
-          if (destContainer?.store) {
-            const energy = destContainer.store.getUsedCapacity(RESOURCE_ENERGY);
-            if (energy && energy > 0) {
-              if (creep.withdraw(destContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+          // If spawn is full, try destination container
+          if (progressionState?.destContainerId) {
+            const destContainer = Game.getObjectById(progressionState.destContainerId);
+            if (destContainer?.store && destContainer.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+              if (creep.transfer(destContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 Traveler.travelTo(creep, destContainer);
+              } else {
+                creep.memory.vacuuming = false;
               }
               return;
             }
           }
+
+          // If nowhere to deliver, just proceed to work mode
+          creep.memory.vacuuming = false;
         }
 
-        // 3. THIRD PRIORITY: Withdraw from controller container (if exists)
+        // 1. PRIMARY: Withdraw from controller container ONLY
         if (creep.room.controller) {
           const controllerContainer = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: s => {
@@ -127,24 +126,35 @@ export class RoleUpgrader {
           }
         }
 
-        // 4. FOURTH PRIORITY: Pickup dropped energy
+        // 2. VACUUM DUTY: If controller container is empty, clean up dropped energy
+        // EXCLUDE energy near sources (that's harvester overflow, intentional)
+        const sources = creep.room.find(FIND_SOURCES);
         const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
-          filter: resource => resource.resourceType === RESOURCE_ENERGY
+          filter: resource => {
+            if (resource.resourceType !== RESOURCE_ENERGY) return false;
+
+            // Exclude energy near sources (within 2 tiles)
+            const nearSource = sources.some(source => 
+              resource.pos.getRangeTo(source) <= 2
+            );
+
+            return !nearSource;
+          }
         });
 
         if (droppedEnergy) {
           if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
             Traveler.travelTo(creep, droppedEnergy);
+          } else {
+            // Set vacuum flag to return energy to base
+            creep.memory.vacuuming = true;
           }
           return;
         }
 
-        // 5. FIFTH PRIORITY (CRISIS MODE): Harvest directly from source
-        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-        if (source) {
-          if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, source);
-          }
+        // 3. If no work available, idle near controller (ready for energy)
+        if (creep.room.controller && creep.pos.getRangeTo(creep.room.controller) > 3) {
+          Traveler.travelTo(creep, creep.room.controller, { range: 3 });
         }
       } else {
         // Fallback: harvest mode
