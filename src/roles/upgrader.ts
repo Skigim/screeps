@@ -1,5 +1,7 @@
 import { Traveler } from "../Traveler";
 import type { RCLConfig } from "configs/RCL1Config";
+import { RoomStateManager } from "managers/RoomStateManager";
+import { RCL2Phase } from "managers/ProgressionManager";
 
 export class RoleUpgrader {
   public static run(creep: Creep, config: RCLConfig): void {
@@ -26,32 +28,41 @@ export class RoleUpgrader {
         }
       }
     } else {
-      // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
-      // Reserve energy for spawn if we're below minimum viable energy (200)
-      const shouldReserveEnergy = creep.room.energyAvailable < 200;
+      // PHASE 1 & 2 LOCKDOWN: NEVER withdraw during container + extension construction
+      // During Phase 1-2, all energy must be reserved for spawning emergency harvesters
+      // Upgraders must harvest directly or pick up drops only
+      const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+      const isConstructionPhase = progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS ||
+                                   progressionState?.phase === RCL2Phase.PHASE_2_EXTENSIONS;
 
-      if (!shouldReserveEnergy) {
-        // Safe to withdraw - room has enough energy for spawning
-        const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-          filter: (structure: any) => {
-            return (
-              (structure.structureType === STRUCTURE_EXTENSION ||
-                structure.structureType === STRUCTURE_SPAWN) &&
-              structure.store &&
-              structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-            );
-          }
-        });
+      if (!isConstructionPhase) {
+        // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
+        // Reserve energy for spawn if we're below minimum viable energy (200)
+        const shouldReserveEnergy = creep.room.energyAvailable < 200;
 
-        if (target) {
-          if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, target);
+        if (!shouldReserveEnergy) {
+          // Safe to withdraw - room has enough energy for spawning
+          const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+            filter: (structure: any) => {
+              return (
+                (structure.structureType === STRUCTURE_EXTENSION ||
+                  structure.structureType === STRUCTURE_SPAWN) &&
+                structure.store &&
+                structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+              );
+            }
+          });
+
+          if (target) {
+            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, target);
+            }
+            return;
           }
-          return;
         }
       }
 
-      // Energy reserved for spawning OR no energy in spawn/extensions
+      // Energy reserved for spawning OR Phase 1-2 OR no energy in spawn/extensions
       // Help bootstrap economy: harvest from sources or pickup dropped energy
       const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
         filter: resource => resource.resourceType === RESOURCE_ENERGY

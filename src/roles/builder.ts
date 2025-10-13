@@ -160,35 +160,44 @@ export class RoleBuilder {
       }
 
       // THIRD PRIORITY: Withdraw from spawn/extensions
-      // SMART LOGIC: Check if there are pending spawn requests
-      // CRITICAL: Never withdraw if emergency harvesters are queued (priority 0)
-      const pendingRequests = SpawnRequestGenerator.generateRequests(creep.room);
-      const hasEmergencySpawns = pendingRequests && pendingRequests.some(req => req.priority === 0);
+      // PHASE 1 & 2 LOCKDOWN: NEVER withdraw during container + extension construction
+      // During Phase 1-2, all energy must be reserved for spawning emergency harvesters
+      // Builders must harvest directly or pick up drops only
+      const isConstructionPhase = progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS ||
+                                   progressionState?.phase === RCL2Phase.PHASE_2_EXTENSIONS;
 
-      // Allow withdrawal ONLY if:
-      // 1. No emergency spawn requests (priority 0), AND
-      // 2. Either no pending requests OR room has surplus energy (>=200)
-      // 3. ONLY from extensions (NEVER from spawn to reserve spawn energy for creeps)
-      const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
-      const canWithdrawFromExtensions = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
+      if (!isConstructionPhase) {
+        // SMART LOGIC: Check if there are pending spawn requests
+        // CRITICAL: Never withdraw if emergency harvesters are queued (priority 0)
+        const pendingRequests = SpawnRequestGenerator.generateRequests(creep.room);
+        const hasEmergencySpawns = pendingRequests && pendingRequests.some(req => req.priority === 0);
 
-      if (canWithdrawFromExtensions) {
-        const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-          filter: (structure: any) => {
-            return (
-              structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NEVER spawn
-              structure.store &&
-              structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-            );
+        // Allow withdrawal ONLY if:
+        // 1. NOT in Phase 1 or 2 (checked above), AND
+        // 2. No emergency spawn requests (priority 0), AND
+        // 3. Either no pending requests OR room has surplus energy (>=200)
+        // 4. ONLY from extensions (NEVER from spawn to reserve spawn energy for creeps)
+        const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
+        const canWithdrawFromExtensions = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
+
+        if (canWithdrawFromExtensions) {
+          const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+            filter: (structure: any) => {
+              return (
+                structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NEVER spawn
+                structure.store &&
+                structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+              );
+            }
+          });
+
+          if (target) {
+            creep.memory.energySourceId = target.id; // LOCK IT
+            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, target);
+            }
+            return;
           }
-        });
-
-        if (target) {
-          creep.memory.energySourceId = target.id; // LOCK IT
-          if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, target);
-          }
-          return;
         }
       }
 

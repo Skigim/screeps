@@ -1,5 +1,6 @@
 import { Traveler } from "../Traveler";
 import type { RCLConfig } from "configs/RCL1Config";
+import { RoomStateManager } from "managers/RoomStateManager";
 
 export class RoleHarvester {
   public static run(creep: Creep, config: RCLConfig): void {
@@ -9,6 +10,10 @@ export class RoleHarvester {
       console.log(`⚠️ No harvester config found for ${creep.name}`);
       return;
     }
+
+    // Get progression state to determine behavior
+    const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+    const useDropMining = progressionState?.useHaulers || false;
 
     // Toggle working state
     if (creep.store.getFreeCapacity() === 0) {
@@ -37,40 +42,58 @@ export class RoleHarvester {
         }
       }
     } else {
-      // Check if source containers exist (for drop mining strategy)
-      const sourceContainers = creep.room.find(FIND_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_CONTAINER
-      });
-      const hasSourceContainers = sourceContainers.some(container => {
-        const sources = creep.room.find(FIND_SOURCES);
-        return sources.some(source => container.pos.inRangeTo(source, 1));
-      });
+      // ECONOMIC HANDOVER: If haulers are active, switch to drop mining
+      if (useDropMining) {
+        // Find the container for our assigned source
+        let targetContainer: StructureContainer | null = null;
 
-      // Phase 1 (no source containers): DROP MINING STRATEGY
-      // Drop energy near container sites for builders to pick up
-      if (!hasSourceContainers) {
-        // Find container construction sites near sources
-        const containerSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
-          filter: site => {
-            if (site.structureType !== STRUCTURE_CONTAINER) return false;
-            const sources = creep.room.find(FIND_SOURCES);
-            return sources.some(source => site.pos.inRangeTo(source, 1));
+        if (creep.memory.assignedSource) {
+          const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
+          if (source) {
+            const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
+              filter: s => s.structureType === STRUCTURE_CONTAINER
+            }) as StructureContainer[];
+
+            if (containers.length > 0) {
+              targetContainer = containers[0];
+            }
           }
-        });
+        }
 
-        if (containerSite) {
-          // Move to container site and drop energy
-          if (creep.pos.inRangeTo(containerSite, 0)) {
-            // At container site - drop energy for builders
+        // If container exists, park on top of it and drop energy
+        if (targetContainer) {
+          if (creep.pos.isEqualTo(targetContainer.pos)) {
+            // On container - drop energy for haulers to pick up
             creep.drop(RESOURCE_ENERGY);
           } else {
-            Traveler.travelTo(creep, containerSite, { range: 0 });
+            // Move to container
+            Traveler.travelTo(creep, targetContainer, { range: 0 });
           }
           return;
         }
+
+        // No container yet - find construction site and drop there
+        if (creep.memory.assignedSource) {
+          const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
+          if (source) {
+            const containerSites = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, {
+              filter: s => s.structureType === STRUCTURE_CONTAINER
+            });
+
+            if (containerSites.length > 0) {
+              const site = containerSites[0];
+              if (creep.pos.isEqualTo(site.pos)) {
+                creep.drop(RESOURCE_ENERGY);
+              } else {
+                Traveler.travelTo(creep, site, { range: 0 });
+              }
+              return;
+            }
+          }
+        }
       }
 
-      // Phase 2+: Normal delivery to spawn/extensions
+      // LEGACY BEHAVIOR: No haulers yet - deliver energy to spawn/extensions
       // Transfer energy to spawn or extensions
       const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
         filter: (structure: any) => {

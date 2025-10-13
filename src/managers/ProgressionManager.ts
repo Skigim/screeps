@@ -107,6 +107,23 @@ export class ProgressionManager {
   }
 
   /**
+   * Check if every source in the room has at least one harvester assigned to it
+   * This ensures we have coverage before activating the hauler logistics chain
+   */
+  private static hasHarvesterCoverage(room: Room): boolean {
+    const sources = room.find(FIND_SOURCES);
+    const harvesters = Object.values(Game.creeps).filter(
+      c => c.memory.role === "harvester" && c.room.name === room.name && c.memory.assignedSource
+    );
+
+    // Get unique source IDs that have assigned harvesters
+    const coveredSources = new Set(harvesters.map(h => h.memory.assignedSource).filter(Boolean));
+
+    // Return true only if every source has at least one harvester
+    return coveredSources.size >= sources.length;
+  }
+
+  /**
    * Detect current progression state for RCL 2
    */
   public static detectRCL2State(room: Room): ProgressionState {
@@ -165,6 +182,9 @@ export class ProgressionManager {
     // Determine if containers are operational (at least 1 source container built)
     state.containersOperational = state.sourceContainersBuilt > 0;
 
+    // Check if we have harvester coverage (at least one harvester per source)
+    const hasHarvesterCoverage = this.hasHarvesterCoverage(room);
+
     // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
     if (state.sourceContainersBuilt < sources.length) {
       // Phase 1: Building source containers
@@ -179,14 +199,12 @@ export class ProgressionManager {
       state.allowRCL1Bodies = true; // Upgraders/builders use cheap RCL1 bodies
     } else if (!state.extensionsComplete) {
       // Phase 2: Building extensions
-      // - Source containers complete → spawn haulers
-      // - Haulers bring energy from containers → spawn
-      // - Builders withdraw from spawn (no walking to sources)
-      // - Keep stationary drop-mining harvesters until extensions complete
-      // - Upgraders/builders still use RCL1 bodies (cheap)
+      // - Source containers complete → FORCE ECONOMIC HANDOVER
+      // - If we have harvester coverage, immediately activate hauler logistics
+      // - Don't wait for perfect harvester bodies - pivot to drop mining NOW
       state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
-      state.useStationaryHarvesters = true; // Still drop mining (can't afford [WORK×5, MOVE] yet)
-      state.useHaulers = true; // Containers operational
+      state.useStationaryHarvesters = true; // All harvesters become stationary drop miners
+      state.useHaulers = hasHarvesterCoverage; // Activate haulers as soon as coverage is met
       state.allowRCL1Bodies = true; // Keep cheap bodies during extension construction
     } else if (!state.roadsComplete) {
       // Phase 3: Building road network
