@@ -109,15 +109,17 @@ export class SpawnRequestGenerator {
       const idealCount = sources.length;
 
       if (harvesterCount < idealCount) {
-        // Build powerful stationary harvester: [WORK×5, MOVE]
-        const body = this.buildStationaryHarvesterBody(room);
+        // Stationary harvester: [WORK×5, MOVE] = 550 energy
+        // Note: buildStationaryHarvesterBody() has scaling logic for future RCL3+,
+        // but during RCL2 phased progression we use fixed bodies from config
+        const stationaryBody = [WORK, WORK, WORK, WORK, WORK, MOVE];
 
         requests.push({
           role: "harvester",
           priority: 1,
           reason: `Stationary harvesters: ${harvesterCount}/${idealCount}`,
-          body: body,
-          minEnergy: this.calculateBodyCost(body)
+          body: stationaryBody,
+          minEnergy: 550
         });
       }
     } else {

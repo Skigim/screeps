@@ -4187,14 +4187,16 @@ class SpawnRequestGenerator {
             // Phase 2+: One stationary harvester per source
             const idealCount = sources.length;
             if (harvesterCount < idealCount) {
-                // Build powerful stationary harvester: [WORK×5, MOVE]
-                const body = this.buildStationaryHarvesterBody(room);
+                // Stationary harvester: [WORK×5, MOVE] = 550 energy
+                // Note: buildStationaryHarvesterBody() has scaling logic for future RCL3+,
+                // but during RCL2 phased progression we use fixed bodies from config
+                const stationaryBody = [WORK, WORK, WORK, WORK, WORK, MOVE];
                 requests.push({
                     role: "harvester",
                     priority: 1,
                     reason: `Stationary harvesters: ${harvesterCount}/${idealCount}`,
-                    body: body,
-                    minEnergy: this.calculateBodyCost(body)
+                    body: stationaryBody,
+                    minEnergy: 550
                 });
             }
         }
@@ -5255,11 +5257,12 @@ class ProgressionManager {
         }
         else if (state.sourceContainersBuilt < sources.length) {
             // Phase 2: Building source containers
-            // - First container triggers stationary harvesters
-            // - RCL1 bodies die off naturally, replaced with RCL2 bodies
+            // - Extensions complete (550 energy available for stationary harvesters)
+            // - Stationary harvesters: [WORK×5, MOVE] = 550 energy
+            // - RCL1 bodies die off naturally, replaced with stationary harvesters
             // - Haulers spawn when first container is done
             state.phase = RCL2Phase.PHASE_2_CONTAINERS;
-            state.useStationaryHarvesters = state.sourceContainersBuilt > 0;
+            state.useStationaryHarvesters = true; // All 5 extensions complete = 550 energy available
             state.useHaulers = state.sourceContainersBuilt > 0;
             state.allowRCL1Bodies = false; // Stop spawning RCL1 bodies
         }
@@ -6001,11 +6004,14 @@ class RoleHauler {
                 }
                 return;
             }
-            // 3. Fallback: Harvest directly (emergency)
-            const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-            if (source) {
-                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, source);
+            // 3. No energy available - idle off road network
+            // Haulers have no WORK parts, so they can't harvest
+            // Track idle time for spawn management metrics
+            const controller = creep.room.controller;
+            if (controller) {
+                // Move to controller area (typically off main roads)
+                if (creep.pos.getRangeTo(controller) > 3) {
+                    Traveler.travelTo(creep, controller, { range: 3 });
                 }
             }
         }

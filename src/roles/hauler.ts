@@ -75,11 +75,14 @@ export class RoleHauler {
         return;
       }
 
-      // 3. Fallback: Harvest directly (emergency)
-      const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-      if (source) {
-        if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, source);
+      // 3. No energy available - idle off road network
+      // Haulers have no WORK parts, so they can't harvest
+      // Track idle time for spawn management metrics
+      const controller = creep.room.controller;
+      if (controller) {
+        // Move to controller area (typically off main roads)
+        if (creep.pos.getRangeTo(controller) > 3) {
+          Traveler.travelTo(creep, controller, { range: 3 });
         }
       }
     }

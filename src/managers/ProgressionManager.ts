@@ -176,11 +176,12 @@ export class ProgressionManager {
       state.allowRCL1Bodies = true;
     } else if (state.sourceContainersBuilt < sources.length) {
       // Phase 2: Building source containers
-      // - First container triggers stationary harvesters
-      // - RCL1 bodies die off naturally, replaced with RCL2 bodies
+      // - Extensions complete (550 energy available for stationary harvesters)
+      // - Stationary harvesters: [WORK×5, MOVE] = 550 energy
+      // - RCL1 bodies die off naturally, replaced with stationary harvesters
       // - Haulers spawn when first container is done
       state.phase = RCL2Phase.PHASE_2_CONTAINERS;
-      state.useStationaryHarvesters = state.sourceContainersBuilt > 0;
+      state.useStationaryHarvesters = true; // All 5 extensions complete = 550 energy available
       state.useHaulers = state.sourceContainersBuilt > 0;
       state.allowRCL1Bodies = false; // Stop spawning RCL1 bodies
     } else if (!state.roadsComplete) {
