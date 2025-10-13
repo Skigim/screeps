@@ -272,8 +272,12 @@ Current room: ${room.name}`;
       return "❌ Room not found!";
     }
 
-    // Import Architect dynamically to avoid circular dependencies
-    const { Architect } = require("../managers/Architect");
+    // Use Architect from global scope (exposed in main.ts)
+    const Architect = (global as any).Architect;
+    if (!Architect) {
+      return "❌ Architect not available. Make sure code is deployed correctly.";
+    }
+
     const plan = Architect.planRoom(room);
 
     const visual = room.visual;
