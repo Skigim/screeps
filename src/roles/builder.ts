@@ -12,12 +12,15 @@ export class RoleBuilder {
       return;
     }
 
-    // Toggle working state
+    // CRITICAL: State transitions only happen when COMPLETELY full or COMPLETELY empty
+    // This prevents builders from wandering around half-full
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = false;
+      delete creep.memory.energySourceId; // Clear locked source when empty
     }
     if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = true;
+      delete creep.memory.energySourceId; // Clear locked source when full
     }
 
     if (creep.memory.working) {
@@ -92,7 +95,33 @@ export class RoleBuilder {
         }
       } else {
         // CRISIS MODE: Harvest directly from source
-        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+        // CRITICAL: Lock onto ONE source and don't switch until COMPLETELY FULL
+        // This prevents builders from wandering around half-empty
+
+        let source: Source | null = null;
+
+        // If we have a locked source, use it (prevents random wandering)
+        if (creep.memory.energySourceId) {
+          source = Game.getObjectById(creep.memory.energySourceId) as Source | null;
+
+          // If locked source is gone or depleted, clear the lock
+          if (!source || source.energy === 0) {
+            delete creep.memory.energySourceId;
+            source = null;
+          }
+        }
+
+        // If no locked source, find closest active source and LOCK IT
+        if (!source) {
+          source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+
+          if (source) {
+            // LOCK onto this source - we won't switch until completely full
+            creep.memory.energySourceId = source.id;
+          }
+        }
+
+        // Harvest from locked source
         if (source) {
           if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
             Traveler.travelTo(creep, source);

@@ -116,3 +116,11 @@ interface Memory {
   progressionStats?: { [roomName: string]: ProgressionStats };
 }
 
+// Extend CreepMemory interface
+interface CreepMemory {
+  /**
+   * Locked energy source ID - prevents builders from wandering between sources
+   * Cleared when creep becomes full or empty
+   */
+  energySourceId?: string;
+}
