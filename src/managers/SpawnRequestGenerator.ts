@@ -202,21 +202,21 @@ export class SpawnRequestGenerator {
    */
   private static buildStationaryHarvesterBody(room: Room): BodyPartConstant[] {
     const energy = room.energyCapacityAvailable;
-    
+
     // Ideal: [WORK×5, MOVE] = 550 energy (5 work parts mine full source capacity)
     if (energy >= 550) {
       return [WORK, WORK, WORK, WORK, WORK, MOVE];
     }
-    
+
     // Fallback: Scale down based on available energy
     const workParts = Math.min(5, Math.floor((energy - 50) / 100)); // Reserve 50 for MOVE
     const body: BodyPartConstant[] = [];
-    
+
     for (let i = 0; i < workParts; i++) {
       body.push(WORK);
     }
     body.push(MOVE);
-    
+
     return body.length > 0 ? body : [WORK, MOVE]; // Minimum viable
   }
 
@@ -226,16 +226,16 @@ export class SpawnRequestGenerator {
    */
   private static buildHaulerBody(room: Room): BodyPartConstant[] {
     const energy = room.energyCapacityAvailable;
-    
+
     // Build balanced CARRY/MOVE pairs (50 + 50 = 100 per pair)
     const pairs = Math.floor(energy / 100);
     const maxPairs = Math.min(pairs, 6); // Cap at 6 pairs (600 energy)
-    
+
     const body: BodyPartConstant[] = [];
     for (let i = 0; i < maxPairs; i++) {
       body.push(CARRY, MOVE);
     }
-    
+
     return body.length > 0 ? body : [CARRY, MOVE]; // Minimum viable
   }
 

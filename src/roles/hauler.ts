@@ -64,7 +64,7 @@ export class RoleHauler {
       }
     } else {
       // Collect energy - prioritize dropped energy, then containers
-      
+
       // 1. Dropped energy (from stationary harvesters during Phase 2)
       const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
         filter: resource => resource.resourceType === RESOURCE_ENERGY && resource.amount >= 50
