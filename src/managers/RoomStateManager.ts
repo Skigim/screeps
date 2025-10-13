@@ -177,6 +177,22 @@ export class RoomStateManager {
   }
 
   /**
+   * Force Architect to replan (useful for manual fixes or after destroying structures)
+   */
+  public static forceReplan(roomName: string): void {
+    const room = Game.rooms[roomName];
+    if (!room || !room.controller || !room.controller.my) {
+      console.log(`❌ Cannot replan ${roomName}: Invalid room or not owned`);
+      return;
+    }
+
+    console.log(`🔄 Forcing Architect replan for ${roomName}...`);
+    this.roomPlansExecuted.delete(roomName);
+    this.runArchitect(room);
+    console.log(`✅ Replan complete for ${roomName}`);
+  }
+
+  /**
    * Display consolidated room status
    */
   private static displayRoomStatus(room: Room, config: RCLConfig): void {

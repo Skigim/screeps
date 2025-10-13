@@ -74,7 +74,10 @@ export class Architect {
       plan.roads = this.planRoadNetwork(room, spawn, sources, controller, plan);
 
       // Clean up faulty construction sites that don't match the plan
-      this.cleanupFaultySites(room, plan);
+      const removed = this.cleanupFaultySites(room, plan);
+
+      // If we removed sites, they need to be replaced with correct ones
+      // This will be handled by executePlan in the same tick
     }
 
     return plan;
@@ -409,8 +412,9 @@ export class Architect {
   /**
    * Clean up faulty construction sites that don't match the current plan
    * Removes misplaced sites so they can be rebuilt correctly
+   * Returns number of sites removed
    */
-  private static cleanupFaultySites(room: Room, plan: ArchitectPlan): void {
+  private static cleanupFaultySites(room: Room, plan: ArchitectPlan): number {
     const allSites = room.find(FIND_CONSTRUCTION_SITES);
     let removed = 0;
 
@@ -459,6 +463,8 @@ export class Architect {
     if (removed > 0) {
       console.log(`🧹 Architect: Cleaned up ${removed} faulty construction site(s) in ${room.name}`);
     }
+
+    return removed;
   }
 
   /**

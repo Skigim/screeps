@@ -4632,6 +4632,8 @@ class Architect {
             plan.roads = this.planRoadNetwork(room, spawn, sources, controller, plan);
             // Clean up faulty construction sites that don't match the plan
             this.cleanupFaultySites(room, plan);
+            // If we removed sites, they need to be replaced with correct ones
+            // This will be handled by executePlan in the same tick
         }
         return plan;
     }
@@ -4906,6 +4908,7 @@ class Architect {
     /**
      * Clean up faulty construction sites that don't match the current plan
      * Removes misplaced sites so they can be rebuilt correctly
+     * Returns number of sites removed
      */
     static cleanupFaultySites(room, plan) {
         const allSites = room.find(FIND_CONSTRUCTION_SITES);
@@ -4949,6 +4952,7 @@ class Architect {
         if (removed > 0) {
             console.log(`🧹 Architect: Cleaned up ${removed} faulty construction site(s) in ${room.name}`);
         }
+        return removed;
     }
     /**
      * Display plan in room visual (for debugging)
@@ -5545,6 +5549,20 @@ class RoomStateManager {
                 Architect.visualizePlan(room, plan);
             }
         }
+    }
+    /**
+     * Force Architect to replan (useful for manual fixes or after destroying structures)
+     */
+    static forceReplan(roomName) {
+        const room = Game.rooms[roomName];
+        if (!room || !room.controller || !room.controller.my) {
+            console.log(`❌ Cannot replan ${roomName}: Invalid room or not owned`);
+            return;
+        }
+        console.log(`🔄 Forcing Architect replan for ${roomName}...`);
+        this.roomPlansExecuted.delete(roomName);
+        this.runArchitect(room);
+        console.log(`✅ Replan complete for ${roomName}`);
     }
     /**
      * Display consolidated room status
@@ -6198,8 +6216,9 @@ global.clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 const loop = ErrorMapper.wrapLoop(() => {
-    // Export StatsTracker to global for console access
+    // Export to global for console access
     global.StatsTracker = StatsTracker;
+    global.RoomStateManager = RoomStateManager;
     // Clean up memory of dead creeps
     for (const name in Memory.creeps) {
         if (!(name in Game.creeps)) {

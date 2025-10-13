@@ -47,6 +47,7 @@ declare global {
     interface Global {
       log: any;
       StatsTracker: typeof StatsTracker; // Export stats tracker to console
+      RoomStateManager: typeof RoomStateManager; // Export for manual replan commands
     }
   }
 }
@@ -54,8 +55,9 @@ declare global {
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 export const loop = ErrorMapper.wrapLoop(() => {
-  // Export StatsTracker to global for console access
+  // Export to global for console access
   global.StatsTracker = StatsTracker;
+  global.RoomStateManager = RoomStateManager;
 
   // Clean up memory of dead creeps
   for (const name in Memory.creeps) {
