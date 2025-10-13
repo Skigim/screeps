@@ -168,24 +168,26 @@ export class ProgressionManager {
     // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
     if (state.sourceContainersBuilt < sources.length) {
       // Phase 1: Building source containers
-      // - Mobile harvesters: [WORK, WORK, MOVE] = 250 energy (drop mining)
+      // - Harvesters: [WORK, WORK, MOVE] = 250 energy (drop mining)
+      // - Upgraders/Builders: Keep RCL1 bodies [WORK, CARRY, MOVE] (cheap 200 energy)
       // - Drop energy near container sites for builders
-      // - NO upgraders (prevent source congestion)
+      // - NO regular upgraders (prevent source congestion, only fallback)
       // - NO haulers yet (nothing to haul from)
       state.phase = RCL2Phase.PHASE_1_CONTAINERS;
       state.useStationaryHarvesters = false;
       state.useHaulers = false;
-      state.allowRCL1Bodies = false; // Use [WORK, WORK, MOVE] not [WORK, CARRY, MOVE]
+      state.allowRCL1Bodies = true; // Upgraders/builders use cheap RCL1 bodies
     } else if (!state.extensionsComplete) {
       // Phase 2: Building extensions
       // - Source containers complete → spawn haulers
       // - Haulers bring energy from containers → spawn
       // - Builders withdraw from spawn (no walking to sources)
       // - Keep mobile harvesters until extensions complete
+      // - Upgraders/builders still use RCL1 bodies (cheap)
       state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
       state.useStationaryHarvesters = false; // Can't afford [WORK×5, MOVE] yet (need 550 energy)
       state.useHaulers = true; // Containers operational
-      state.allowRCL1Bodies = false;
+      state.allowRCL1Bodies = true; // Keep cheap bodies during extension construction
     } else if (!state.roadsComplete) {
       // Phase 3: Building road network
       // - All 5 extensions complete → 550 energy available

@@ -4167,7 +4167,7 @@ class SpawnRequestGenerator {
         if (upgraderCount === 0) {
             requests.push({
                 role: "upgrader",
-                priority: 0,
+                priority: 1,
                 reason: `FALLBACK: No upgraders! Controller downgrade imminent`,
                 body: [WORK, CARRY, MOVE],
                 minEnergy: 200 // Cheap to spawn
@@ -4183,11 +4183,11 @@ class SpawnRequestGenerator {
                 progressionState.phase === "complete" ||
                 ((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1; // RCL1 always gets upgraders
             if (allowUpgraders) {
-                requests.push(...this.requestUpgraders(room, config));
+                requests.push(...this.requestUpgraders(room, config, progressionState));
             }
             // Only request builders if enabled in config
             if (config.spawning.enableBuilders) {
-                requests.push(...this.requestBuilders(room, config));
+                requests.push(...this.requestBuilders(room, config, progressionState));
             }
             // Request haulers if progression state indicates they're needed
             if (progressionState === null || progressionState === void 0 ? void 0 : progressionState.useHaulers) {
@@ -4207,13 +4207,14 @@ class SpawnRequestGenerator {
         const harvesterCount = this.getCreepCount(room, "harvester");
         // CRITICAL: If only 1 harvester left, request emergency backup immediately
         if (harvesterCount === 1) {
-            const body = this.buildScaledBody(room, "harvester");
+            // Emergency harvester uses basic [WORK, CARRY, MOVE] body to deliver energy
+            // Can't use drop mining body - need to actually deliver to spawn!
             requests.push({
                 role: "harvester",
                 priority: 0,
-                reason: `EMERGENCY: Only 1 harvester remaining! (${room.energyCapacityAvailable} energy)`,
-                body: body,
-                minEnergy: this.calculateBodyCost(body)
+                reason: `EMERGENCY: Only 1 harvester remaining!`,
+                body: [WORK, CARRY, MOVE],
+                minEnergy: 200
             });
         }
         // Determine if we need stationary harvesters
@@ -4236,15 +4237,15 @@ class SpawnRequestGenerator {
             }
         }
         else {
-            // Phase 1: Mobile harvesters (1 per source + 1 spare)
-            // Scale body based on available energy capacity
+            // Phase 1-2: Mobile harvesters (1 per source + 1 spare)
+            // Use RCL2 config body [WORK, WORK, MOVE] for drop mining
             const idealCount = sources.length + 1;
             if (harvesterCount < idealCount) {
-                const body = this.buildScaledBody(room, "harvester");
+                const body = config.roles.harvester.body; // [WORK, WORK, MOVE] from RCL2Config
                 requests.push({
                     role: "harvester",
                     priority: config.roles.harvester.priority,
-                    reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (${room.energyCapacityAvailable} energy)`,
+                    reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (drop mining)`,
                     body: body,
                     minEnergy: this.calculateBodyCost(body)
                 });
@@ -4256,7 +4257,7 @@ class SpawnRequestGenerator {
      * Request upgraders based on available energy and controller needs
      * Uses RCL config for body composition
      */
-    static requestUpgraders(room, config) {
+    static requestUpgraders(room, config, progressionState) {
         var _a;
         const requests = [];
         const upgraderCount = this.getCreepCount(room, "upgrader");
@@ -4282,11 +4283,13 @@ class SpawnRequestGenerator {
             idealCount = Math.min(5, Math.floor(room.energyCapacityAvailable / 200));
         }
         if (upgraderCount < idealCount) {
-            const body = this.buildScaledBody(room, "upgrader");
+            // Use RCL1 bodies during Phase 1-2, scaled bodies after
+            const useRCL1Bodies = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.allowRCL1Bodies) || false;
+            const body = useRCL1Bodies ? config.roles.upgrader.body : this.buildScaledBody(room, "upgrader");
             requests.push({
                 role: "upgrader",
                 priority: config.roles.upgrader.priority,
-                reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders (${room.energyCapacityAvailable} energy)`,
+                reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
                 body: body,
                 minEnergy: this.calculateBodyCost(body)
             });
@@ -4297,7 +4300,7 @@ class SpawnRequestGenerator {
      * Request builders only when construction sites exist
      * Uses RCL config for body composition
      */
-    static requestBuilders(room, config) {
+    static requestBuilders(room, config, progressionState) {
         const requests = [];
         const builderCount = this.getCreepCount(room, "builder");
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
@@ -4312,11 +4315,13 @@ class SpawnRequestGenerator {
         // 1 builder per 10,000 progress needed, min 1, max 3
         const idealCount = Math.min(3, Math.max(1, Math.ceil(progressNeeded / 10000)));
         if (builderCount < idealCount) {
-            const body = this.buildScaledBody(room, "builder");
+            // Use RCL1 bodies during Phase 1-2, scaled bodies after
+            const useRCL1Bodies = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.allowRCL1Bodies) || false;
+            const body = useRCL1Bodies ? config.roles.builder.body : this.buildScaledBody(room, "builder");
             requests.push({
                 role: "builder",
                 priority: config.roles.builder.priority,
-                reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed (${room.energyCapacityAvailable} energy)`,
+                reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
                 body: body,
                 minEnergy: this.calculateBodyCost(body)
             });
@@ -5328,14 +5333,15 @@ class ProgressionManager {
         // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
         if (state.sourceContainersBuilt < sources.length) {
             // Phase 1: Building source containers
-            // - Mobile harvesters: [WORK, WORK, MOVE] = 250 energy (drop mining)
+            // - Harvesters: [WORK, WORK, MOVE] = 250 energy (drop mining)
+            // - Upgraders/Builders: Keep RCL1 bodies [WORK, CARRY, MOVE] (cheap 200 energy)
             // - Drop energy near container sites for builders
-            // - NO upgraders (prevent source congestion)
+            // - NO regular upgraders (prevent source congestion, only fallback)
             // - NO haulers yet (nothing to haul from)
             state.phase = RCL2Phase.PHASE_1_CONTAINERS;
             state.useStationaryHarvesters = false;
             state.useHaulers = false;
-            state.allowRCL1Bodies = false; // Use [WORK, WORK, MOVE] not [WORK, CARRY, MOVE]
+            state.allowRCL1Bodies = true; // Upgraders/builders use cheap RCL1 bodies
         }
         else if (!state.extensionsComplete) {
             // Phase 2: Building extensions
@@ -5343,10 +5349,11 @@ class ProgressionManager {
             // - Haulers bring energy from containers → spawn
             // - Builders withdraw from spawn (no walking to sources)
             // - Keep mobile harvesters until extensions complete
+            // - Upgraders/builders still use RCL1 bodies (cheap)
             state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
             state.useStationaryHarvesters = false; // Can't afford [WORK×5, MOVE] yet (need 550 energy)
             state.useHaulers = true; // Containers operational
-            state.allowRCL1Bodies = false;
+            state.allowRCL1Bodies = true; // Keep cheap bodies during extension construction
         }
         else if (!state.roadsComplete) {
             // Phase 3: Building road network

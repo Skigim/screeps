@@ -43,7 +43,7 @@ export class SpawnRequestGenerator {
     if (upgraderCount === 0) {
       requests.push({
         role: "upgrader",
-        priority: 0, // HIGHEST PRIORITY - prevent downgrade!
+        priority: 1, // High priority, but harvesters are more critical (priority 0)
         reason: `FALLBACK: No upgraders! Controller downgrade imminent`,
         body: [WORK, CARRY, MOVE], // Minimal upgrader: can harvest, carry, and upgrade
         minEnergy: 200 // Cheap to spawn
@@ -62,12 +62,12 @@ export class SpawnRequestGenerator {
                             room.controller?.level === 1; // RCL1 always gets upgraders
 
       if (allowUpgraders) {
-        requests.push(...this.requestUpgraders(room, config));
+        requests.push(...this.requestUpgraders(room, config, progressionState));
       }
 
       // Only request builders if enabled in config
       if (config.spawning.enableBuilders) {
-        requests.push(...this.requestBuilders(room, config));
+        requests.push(...this.requestBuilders(room, config, progressionState));
       }
 
       // Request haulers if progression state indicates they're needed
@@ -91,13 +91,14 @@ export class SpawnRequestGenerator {
 
     // CRITICAL: If only 1 harvester left, request emergency backup immediately
     if (harvesterCount === 1) {
-      const body = this.buildScaledBody(room, "harvester");
+      // Emergency harvester uses basic [WORK, CARRY, MOVE] body to deliver energy
+      // Can't use drop mining body - need to actually deliver to spawn!
       requests.push({
         role: "harvester",
         priority: 0, // HIGHEST PRIORITY - single point of failure!
-        reason: `EMERGENCY: Only 1 harvester remaining! (${room.energyCapacityAvailable} energy)`,
-        body: body,
-        minEnergy: this.calculateBodyCost(body)
+        reason: `EMERGENCY: Only 1 harvester remaining!`,
+        body: [WORK, CARRY, MOVE], // Basic body that can harvest AND deliver
+        minEnergy: 200
       });
     }
 
@@ -123,17 +124,17 @@ export class SpawnRequestGenerator {
         });
       }
     } else {
-      // Phase 1: Mobile harvesters (1 per source + 1 spare)
-      // Scale body based on available energy capacity
+      // Phase 1-2: Mobile harvesters (1 per source + 1 spare)
+      // Use RCL2 config body [WORK, WORK, MOVE] for drop mining
       const idealCount = sources.length + 1;
 
       if (harvesterCount < idealCount) {
-        const body = this.buildScaledBody(room, "harvester");
+        const body = config.roles.harvester.body; // [WORK, WORK, MOVE] from RCL2Config
 
         requests.push({
           role: "harvester",
           priority: config.roles.harvester.priority,
-          reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (${room.energyCapacityAvailable} energy)`,
+          reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (drop mining)`,
           body: body,
           minEnergy: this.calculateBodyCost(body)
         });
@@ -147,7 +148,7 @@ export class SpawnRequestGenerator {
    * Request upgraders based on available energy and controller needs
    * Uses RCL config for body composition
    */
-  private static requestUpgraders(room: Room, config: RCLConfig): SpawnRequest[] {
+  private static requestUpgraders(room: Room, config: RCLConfig, progressionState: any): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
     const upgraderCount = this.getCreepCount(room, "upgrader");
     const harvesterCount = this.getCreepCount(room, "harvester");
@@ -174,12 +175,14 @@ export class SpawnRequestGenerator {
     }
 
     if (upgraderCount < idealCount) {
-      const body = this.buildScaledBody(room, "upgrader");
+      // Use RCL1 bodies during Phase 1-2, scaled bodies after
+      const useRCL1Bodies = progressionState?.allowRCL1Bodies || false;
+      const body = useRCL1Bodies ? config.roles.upgrader.body : this.buildScaledBody(room, "upgrader");
 
       requests.push({
         role: "upgrader",
         priority: config.roles.upgrader.priority,
-        reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders (${room.energyCapacityAvailable} energy)`,
+        reason: `Controller upgrading: ${upgraderCount}/${idealCount} upgraders`,
         body: body,
         minEnergy: this.calculateBodyCost(body)
       });
@@ -192,7 +195,7 @@ export class SpawnRequestGenerator {
    * Request builders only when construction sites exist
    * Uses RCL config for body composition
    */
-  private static requestBuilders(room: Room, config: RCLConfig): SpawnRequest[] {
+  private static requestBuilders(room: Room, config: RCLConfig, progressionState: any): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
     const builderCount = this.getCreepCount(room, "builder");
     const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
@@ -211,12 +214,14 @@ export class SpawnRequestGenerator {
     const idealCount = Math.min(3, Math.max(1, Math.ceil(progressNeeded / 10000)));
 
     if (builderCount < idealCount) {
-      const body = this.buildScaledBody(room, "builder");
+      // Use RCL1 bodies during Phase 1-2, scaled bodies after
+      const useRCL1Bodies = progressionState?.allowRCL1Bodies || false;
+      const body = useRCL1Bodies ? config.roles.builder.body : this.buildScaledBody(room, "builder");
 
       requests.push({
         role: "builder",
         priority: config.roles.builder.priority,
-        reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed (${room.energyCapacityAvailable} energy)`,
+        reason: `Construction: ${constructionSites.length} sites, ${progressNeeded} progress needed`,
         body: body,
         minEnergy: this.calculateBodyCost(body)
       });
