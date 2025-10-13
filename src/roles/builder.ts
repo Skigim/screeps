@@ -168,15 +168,15 @@ export class RoleBuilder {
       // Allow withdrawal ONLY if:
       // 1. No emergency spawn requests (priority 0), AND
       // 2. Either no pending requests OR room has surplus energy (>=200)
+      // 3. ONLY from extensions (NEVER from spawn to reserve spawn energy for creeps)
       const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
-      const canWithdrawFromSpawn = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
+      const canWithdrawFromExtensions = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
 
-      if (canWithdrawFromSpawn) {
+      if (canWithdrawFromExtensions) {
         const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
           filter: (structure: any) => {
             return (
-              (structure.structureType === STRUCTURE_EXTENSION ||
-                structure.structureType === STRUCTURE_SPAWN) &&
+              structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NEVER spawn
               structure.store &&
               structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
             );
