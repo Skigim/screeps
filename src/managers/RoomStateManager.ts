@@ -63,10 +63,16 @@ export class RoomStateManager {
       StatsTracker.recordMilestones(room, progressionState);
       StatsTracker.takeSnapshot(room, progressionState);
 
-      // Convert upgraders to builders during active construction (Phase 1 & 2)
+      // Convert upgraders to builders during Phase 1-3 (prevent source congestion)
       if (progressionState.phase === RCL2Phase.PHASE_1_EXTENSIONS ||
-          progressionState.phase === RCL2Phase.PHASE_2_CONTAINERS) {
+          progressionState.phase === RCL2Phase.PHASE_2_CONTAINERS ||
+          progressionState.phase === RCL2Phase.PHASE_3_ROADS) {
         ProgressionManager.convertUpgradersToBuilders(room);
+      }
+
+      // Convert builders back to upgraders in Phase 4+ (infrastructure complete)
+      if (progressionState.phase === RCL2Phase.COMPLETE) {
+        ProgressionManager.convertBuildersToUpgraders(room);
       }
     }
 

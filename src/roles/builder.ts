@@ -111,9 +111,11 @@ export class RoleBuilder {
         case RCL2Phase.PHASE_2_CONTAINERS:
           phasePriorityType = STRUCTURE_CONTAINER;
           break;
-        case RCL2Phase.PHASE_3_HAULER_LOGISTICS:
-          // Phase 3: Roads for efficiency
+        case RCL2Phase.PHASE_3_ROADS:
           phasePriorityType = STRUCTURE_ROAD;
+          break;
+        case RCL2Phase.PHASE_4_CONTROLLER:
+          phasePriorityType = STRUCTURE_CONTAINER;
           break;
       }
     }

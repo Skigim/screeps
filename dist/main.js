@@ -4893,25 +4893,28 @@ class Architect {
  * - Structure completion
  * - Container operational status
  * - Creep composition readiness
+ *
+ * RCL 2 Progression Plan:
+ * Phase 1: Build 5 extensions (RCL1 mobile harvesters, no upgraders)
+ * Phase 2: Build source containers (transition to stationary harvesters, RCL1 bodies die off)
+ * Phase 3: Build road network (haulers active, finish roads)
+ * Phase 4: Build controller container (convert builders back to upgraders)
  */
 var RCL2Phase;
 (function (RCL2Phase) {
     RCL2Phase["PHASE_1_EXTENSIONS"] = "phase1_extensions";
     RCL2Phase["PHASE_2_CONTAINERS"] = "phase2_containers";
-    RCL2Phase["PHASE_3_HAULER_LOGISTICS"] = "phase3_logistics";
+    RCL2Phase["PHASE_3_ROADS"] = "phase3_roads";
+    RCL2Phase["PHASE_4_CONTROLLER"] = "phase4_controller";
     RCL2Phase["COMPLETE"] = "complete"; // RCL 2 progression complete
 })(RCL2Phase || (RCL2Phase = {}));
 class ProgressionManager {
     /**
      * Convert upgraders to builders when construction is needed
+     * NO UPGRADERS during Phase 1-3 to prevent source traffic congestion
      * Returns number of creeps converted
      */
     static convertUpgradersToBuilders(room) {
-        // Check if there are construction sites
-        const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
-        if (constructionSites.length === 0) {
-            return 0; // No construction needed
-        }
         // Find all upgraders in the room
         const upgraders = room.find(FIND_MY_CREEPS, {
             filter: c => c.memory.role === "upgrader"
@@ -4926,7 +4929,35 @@ class ProgressionManager {
             converted++;
         }
         if (converted > 0) {
-            console.log(`🔄 Converted ${converted} upgrader(s) to builders for RCL 2 construction`);
+            console.log(`🔄 Converted ${converted} upgrader(s) to builders (preventing source congestion)`);
+        }
+        return converted;
+    }
+    /**
+     * Convert builders back to upgraders when infrastructure is complete (Phase 4)
+     * Returns number of creeps converted
+     */
+    static convertBuildersToUpgraders(room) {
+        // Only convert if there are no construction sites
+        const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+        if (constructionSites.length > 0) {
+            return 0; // Still building
+        }
+        // Find all builders in the room
+        const builders = room.find(FIND_MY_CREEPS, {
+            filter: c => c.memory.role === "builder"
+        });
+        if (builders.length === 0) {
+            return 0; // No builders to convert
+        }
+        // Convert all builders to upgraders
+        let converted = 0;
+        for (const creep of builders) {
+            creep.memory.role = "upgrader";
+            converted++;
+        }
+        if (converted > 0) {
+            console.log(`🔄 Converted ${converted} builder(s) to upgraders (infrastructure complete)`);
         }
         return converted;
     }
@@ -4940,8 +4971,10 @@ class ProgressionManager {
             extensionsComplete: false,
             sourceContainersBuilt: 0,
             controllerContainerBuilt: false,
+            roadsComplete: false,
             useStationaryHarvesters: false,
-            useHaulers: false
+            useHaulers: false,
+            allowRCL1Bodies: true
         };
         // Count infrastructure
         const extensions = room.find(FIND_MY_STRUCTURES, {
@@ -4949,6 +4982,12 @@ class ProgressionManager {
         });
         const containers = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+        const roads = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_ROAD
+        });
+        const roadSites = room.find(FIND_CONSTRUCTION_SITES, {
+            filter: s => s.structureType === STRUCTURE_ROAD
         });
         const sources = room.find(FIND_SOURCES);
         const controller = room.controller;
@@ -4966,33 +5005,56 @@ class ProgressionManager {
             const nearbyContainers = controller.pos.findInRange(containers, 3);
             state.controllerContainerBuilt = nearbyContainers.length > 0;
         }
+        // Check if roads are complete (no road construction sites remaining)
+        state.roadsComplete = roadSites.length === 0 && roads.length > 0;
         // Determine if containers are operational (at least 1 source container built)
         state.containersOperational = state.sourceContainersBuilt > 0;
         // Phase detection logic
         if (!state.extensionsComplete) {
             // Phase 1: Building extensions
+            // - Mobile harvesters (RCL1 bodies)
+            // - NO upgraders (prevent source congestion)
             state.phase = RCL2Phase.PHASE_1_EXTENSIONS;
             state.useStationaryHarvesters = false;
             state.useHaulers = false;
+            state.allowRCL1Bodies = true;
         }
         else if (state.sourceContainersBuilt < sources.length) {
-            // Phase 2: Building containers with first stationary harvester
+            // Phase 2: Building source containers
+            // - First container triggers stationary harvesters
+            // - RCL1 bodies die off naturally, replaced with RCL2 bodies
+            // - Haulers spawn when first container is done
             state.phase = RCL2Phase.PHASE_2_CONTAINERS;
-            state.useStationaryHarvesters = true; // Enable stationary harvesters
-            state.useHaulers = state.sourceContainersBuilt > 0; // Enable haulers once first container done
+            state.useStationaryHarvesters = state.sourceContainersBuilt > 0;
+            state.useHaulers = state.sourceContainersBuilt > 0;
+            state.allowRCL1Bodies = false; // Stop spawning RCL1 bodies
         }
-        else if (!state.controllerContainerBuilt) {
-            // Phase 2 (continued): Still building controller container
-            state.phase = RCL2Phase.PHASE_2_CONTAINERS;
+        else if (!state.roadsComplete) {
+            // Phase 3: Building road network
+            // - All source containers operational
+            // - Full hauler logistics
+            // - Finish road network
+            state.phase = RCL2Phase.PHASE_3_ROADS;
             state.useStationaryHarvesters = true;
             state.useHaulers = true;
+            state.allowRCL1Bodies = false;
+        }
+        else if (!state.controllerContainerBuilt) {
+            // Phase 4: Building controller container
+            // - Road network complete
+            // - Building controller container
+            state.phase = RCL2Phase.PHASE_4_CONTROLLER;
+            state.useStationaryHarvesters = true;
+            state.useHaulers = true;
+            state.allowRCL1Bodies = false;
         }
         else {
-            // Phase 3: Full logistics operational
-            state.phase = RCL2Phase.PHASE_3_HAULER_LOGISTICS;
+            // Complete: All infrastructure built
+            state.phase = RCL2Phase.COMPLETE;
             state.useStationaryHarvesters = true;
             state.useHaulers = true;
             state.containersOperational = true;
+            state.allowRCL1Bodies = false;
         }
         return state;
     }
@@ -5047,11 +5109,13 @@ class ProgressionManager {
         console.log(`║ RCL 2 Progression Status                ║`);
         console.log(`╠═════════════════════════════════════════╣`);
         console.log(`║ Phase: ${state.phase.padEnd(32)} ║`);
-        console.log(`║ Extensions: ${state.extensionsComplete ? '✅ Complete' : '⏳ Building'.padEnd(27)} ║`);
-        console.log(`║ Source Containers: ${state.sourceContainersBuilt}          ║`);
+        console.log(`║ Extensions: ${state.extensionsComplete ? '✅ Complete (5/5)' : '⏳ Building'.padEnd(21)} ║`);
+        console.log(`║ Source Containers: ${state.sourceContainersBuilt}/2 ${state.sourceContainersBuilt === 2 ? '✅' : '⏳'}           ║`);
+        console.log(`║ Roads: ${state.roadsComplete ? '✅ Complete' : '⏳ Building'.padEnd(29)} ║`);
         console.log(`║ Controller Container: ${state.controllerContainerBuilt ? '✅' : '❌'}          ║`);
-        console.log(`║ Stationary Harvesters: ${state.useStationaryHarvesters ? 'Enabled ' : 'Disabled'}        ║`);
-        console.log(`║ Hauler Logistics: ${state.useHaulers ? 'Enabled ' : 'Disabled'}            ║`);
+        console.log(`║ Stationary Harvesters: ${state.useStationaryHarvesters ? '✅ Enabled ' : '❌ Disabled'}       ║`);
+        console.log(`║ Hauler Logistics: ${state.useHaulers ? '✅ Enabled ' : '❌ Disabled'}           ║`);
+        console.log(`║ RCL1 Bodies: ${state.allowRCL1Bodies ? '✅ Allowed ' : '🛑 Die Off'.padEnd(14)}           ║`);
         console.log(`╚═════════════════════════════════════════╝`);
     }
 }
@@ -5168,7 +5232,7 @@ class StatsTracker {
             }
         }
         // RCL 2 Complete
-        if (!stats.milestones.rcl2Complete && progressionState.phase === RCL2Phase.PHASE_3_HAULER_LOGISTICS) {
+        if (!stats.milestones.rcl2Complete && progressionState.phase === RCL2Phase.COMPLETE) {
             stats.milestones.rcl2Complete = Game.time;
             const duration = Game.time - stats.startTime;
             console.log(`🎯 MILESTONE: RCL 2 progression complete at tick ${Game.time} (${duration} ticks total)`);
@@ -5295,10 +5359,15 @@ class RoomStateManager {
             // Record milestones and take snapshots
             StatsTracker.recordMilestones(room, progressionState);
             StatsTracker.takeSnapshot(room, progressionState);
-            // Convert upgraders to builders during active construction (Phase 1 & 2)
+            // Convert upgraders to builders during Phase 1-3 (prevent source congestion)
             if (progressionState.phase === RCL2Phase.PHASE_1_EXTENSIONS ||
-                progressionState.phase === RCL2Phase.PHASE_2_CONTAINERS) {
+                progressionState.phase === RCL2Phase.PHASE_2_CONTAINERS ||
+                progressionState.phase === RCL2Phase.PHASE_3_ROADS) {
                 ProgressionManager.convertUpgradersToBuilders(room);
+            }
+            // Convert builders back to upgraders in Phase 4+ (infrastructure complete)
+            if (progressionState.phase === RCL2Phase.COMPLETE) {
+                ProgressionManager.convertBuildersToUpgraders(room);
             }
         }
         // Get primary spawn
@@ -5510,9 +5579,11 @@ class RoleBuilder {
                 case RCL2Phase.PHASE_2_CONTAINERS:
                     phasePriorityType = STRUCTURE_CONTAINER;
                     break;
-                case RCL2Phase.PHASE_3_HAULER_LOGISTICS:
-                    // Phase 3: Roads for efficiency
+                case RCL2Phase.PHASE_3_ROADS:
                     phasePriorityType = STRUCTURE_ROAD;
+                    break;
+                case RCL2Phase.PHASE_4_CONTROLLER:
+                    phasePriorityType = STRUCTURE_CONTAINER;
                     break;
             }
         }

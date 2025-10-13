@@ -128,7 +128,7 @@ export class StatsTracker {
     }
 
     // RCL 2 Complete
-    if (!stats.milestones.rcl2Complete && progressionState.phase === RCL2Phase.PHASE_3_HAULER_LOGISTICS) {
+    if (!stats.milestones.rcl2Complete && progressionState.phase === RCL2Phase.COMPLETE) {
       stats.milestones.rcl2Complete = Game.time;
       const duration = Game.time - stats.startTime;
       console.log(`🎯 MILESTONE: RCL 2 progression complete at tick ${Game.time} (${duration} ticks total)`);
