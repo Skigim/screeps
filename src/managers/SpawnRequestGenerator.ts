@@ -38,15 +38,15 @@ export class SpawnRequestGenerator {
     requests.push(...this.requestHarvesters(room, config, progressionState));
 
     // CRITICAL: Always maintain 1 fallback upgrader to prevent downgrade
-    // This runs BEFORE other upgrader logic and uses minimal body (MOVE+CARRY)
+    // Minimal body with WORK to actually upgrade controller
     const upgraderCount = this.getCreepCount(room, "upgrader");
     if (upgraderCount === 0) {
       requests.push({
         role: "upgrader",
         priority: 0, // HIGHEST PRIORITY - prevent downgrade!
         reason: `FALLBACK: No upgraders! Controller downgrade imminent`,
-        body: [MOVE, CARRY], // Minimal body to just prevent downgrade
-        minEnergy: 100 // Very cheap to spawn
+        body: [WORK, CARRY, MOVE], // Minimal upgrader: can harvest, carry, and upgrade
+        minEnergy: 200 // Cheap to spawn
       });
     }
 

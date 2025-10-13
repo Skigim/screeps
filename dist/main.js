@@ -4127,15 +4127,15 @@ class SpawnRequestGenerator {
         // Always generate harvester requests first
         requests.push(...this.requestHarvesters(room, config, progressionState));
         // CRITICAL: Always maintain 1 fallback upgrader to prevent downgrade
-        // This runs BEFORE other upgrader logic and uses minimal body (MOVE+CARRY)
+        // Minimal body with WORK to actually upgrade controller
         const upgraderCount = this.getCreepCount(room, "upgrader");
         if (upgraderCount === 0) {
             requests.push({
                 role: "upgrader",
                 priority: 0,
                 reason: `FALLBACK: No upgraders! Controller downgrade imminent`,
-                body: [MOVE, CARRY],
-                minEnergy: 100 // Very cheap to spawn
+                body: [WORK, CARRY, MOVE],
+                minEnergy: 200 // Cheap to spawn
             });
         }
         // Only request other roles if we have minimum harvesters
@@ -5140,14 +5140,19 @@ class ProgressionManager {
         if (upgraders.length === 0) {
             return 0; // No upgraders to convert
         }
-        // Convert all upgraders to builders
+        // CRITICAL: Always keep at least 1 upgrader to prevent controller downgrade!
+        if (upgraders.length === 1) {
+            return 0; // Don't convert the last upgrader
+        }
+        // Convert all upgraders EXCEPT ONE to builders
         let converted = 0;
-        for (const creep of upgraders) {
+        for (let i = 0; i < upgraders.length - 1; i++) {
+            const creep = upgraders[i];
             creep.memory.role = "builder";
             converted++;
         }
         if (converted > 0) {
-            console.log(`🔄 Converted ${converted} upgrader(s) to builders (preventing source congestion)`);
+            console.log(`🔄 Converted ${converted} upgrader(s) to builders (kept 1 to prevent downgrade)`);
         }
         return converted;
     }
