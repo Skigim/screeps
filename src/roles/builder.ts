@@ -159,50 +159,52 @@ export class RoleBuilder {
         return;
       }
 
-      // THIRD PRIORITY: Withdraw from spawn/extensions
-      // PHASE 1 & 2 LOCKDOWN: NEVER withdraw during container + extension construction
-      // During Phase 1-2, all energy must be reserved for spawning emergency harvesters
-      // Builders must harvest directly or pick up drops only
-      const isConstructionPhase = progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS ||
-                                   progressionState?.phase === RCL2Phase.PHASE_2_EXTENSIONS;
+      // THIRD PRIORITY: Withdraw from containers
+      // Priority: Source containers → Destination container (spawn-adjacent)
 
-      if (!isConstructionPhase) {
-        // SMART LOGIC: Check if there are pending spawn requests
-        // CRITICAL: Never withdraw if emergency harvesters are queued (priority 0)
-        const pendingRequests = SpawnRequestGenerator.generateRequests(creep.room);
-        const hasEmergencySpawns = pendingRequests && pendingRequests.some(req => req.priority === 0);
+      // 3A. Source containers (primary energy storage)
+      const sourceContainers = creep.room.find(FIND_STRUCTURES, {
+        filter: s => {
+          if (s.structureType !== STRUCTURE_CONTAINER) return false;
+          const container = s as StructureContainer;
 
-        // Allow withdrawal ONLY if:
-        // 1. NOT in Phase 1 or 2 (checked above), AND
-        // 2. No emergency spawn requests (priority 0), AND
-        // 3. Either no pending requests OR room has surplus energy (>=200)
-        // 4. ONLY from extensions (NEVER from spawn to reserve spawn energy for creeps)
-        const hasPendingSpawns = pendingRequests && pendingRequests.length > 0;
-        const canWithdrawFromExtensions = !hasEmergencySpawns && (!hasPendingSpawns || creep.room.energyAvailable >= 200);
+          // Check if this is a source container (near a source)
+          const nearbySources = s.pos.findInRange(FIND_SOURCES, 1);
+          if (nearbySources.length === 0) return false;
 
-        if (canWithdrawFromExtensions) {
-          const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-            filter: (structure: any) => {
-              return (
-                structure.structureType === STRUCTURE_EXTENSION && // ONLY extensions, NEVER spawn
-                structure.store &&
-                structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-              );
-            }
-          });
+          const energy = container.store?.getUsedCapacity(RESOURCE_ENERGY);
+          return energy !== null && energy !== undefined && energy > 0;
+        }
+      }) as StructureContainer[];
 
-          if (target) {
-            creep.memory.energySourceId = target.id; // LOCK IT
-            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, target);
+      if (sourceContainers.length > 0) {
+        const closest = creep.pos.findClosestByPath(sourceContainers);
+        if (closest) {
+          creep.memory.energySourceId = closest.id; // LOCK IT
+          if (creep.withdraw(closest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, closest);
+          }
+          return;
+        }
+      }
+
+      // 3B. Destination container (spawn-adjacent container filled by haulers)
+      if (progressionState?.destContainerId) {
+        const destContainer = Game.getObjectById(progressionState.destContainerId);
+
+        if (destContainer?.store) {
+          const energy = destContainer.store.getUsedCapacity(RESOURCE_ENERGY);
+          if (energy && energy > 0) {
+            creep.memory.energySourceId = destContainer.id; // LOCK IT
+            if (creep.withdraw(destContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, destContainer);
             }
             return;
           }
         }
       }
 
-      // Energy reserved for spawning OR no energy in spawn/extensions
-      // Help bootstrap economy: pickup dropped energy or harvest from sources
+      // FOURTH PRIORITY: Pickup dropped energy
       const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
         filter: resource => resource.resourceType === RESOURCE_ENERGY
       });
@@ -212,15 +214,16 @@ export class RoleBuilder {
         if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
           Traveler.travelTo(creep, droppedEnergy);
         }
-      } else {
-        // CRISIS MODE: Harvest directly from source
-        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+        return;
+      }
 
-        if (source) {
-          creep.memory.energySourceId = source.id; // LOCK IT
-          if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, source);
-          }
+      // FIFTH PRIORITY (CRISIS MODE): Harvest directly from source
+      const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+
+      if (source) {
+        creep.memory.energySourceId = source.id; // LOCK IT
+        if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, source);
         }
       }
     }

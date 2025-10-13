@@ -30,6 +30,7 @@ export interface ProgressionState {
   extensionsComplete: boolean;
   sourceContainersBuilt: number;
   controllerContainerBuilt: boolean;
+  destContainerId: Id<StructureContainer> | null; // Spawn-adjacent destination container for builders/upgraders
   roadsComplete: boolean;
   useStationaryHarvesters: boolean;
   useHaulers: boolean;
@@ -133,6 +134,7 @@ export class ProgressionManager {
       extensionsComplete: false,
       sourceContainersBuilt: 0,
       controllerContainerBuilt: false,
+      destContainerId: null, // Will be set below if found
       roadsComplete: false,
       useStationaryHarvesters: true, // Default to true (drop mining from Phase 1)
       useHaulers: false,
@@ -174,6 +176,26 @@ export class ProgressionManager {
     if (controller) {
       const nearbyContainers = controller.pos.findInRange(containers, 3);
       state.controllerContainerBuilt = nearbyContainers.length > 0;
+    }
+
+    // Check for destination container (spawn-adjacent container for builders/upgraders)
+    const spawns = room.find(FIND_MY_STRUCTURES, {
+      filter: s => s.structureType === STRUCTURE_SPAWN
+    });
+
+    if (spawns.length > 0) {
+      const spawn = spawns[0];
+      const nearbyContainers = spawn.pos.findInRange(containers, 2) as StructureContainer[];
+
+      if (nearbyContainers.length > 0) {
+        // Prefer container closest to spawn
+        const destContainer = spawn.pos.findClosestByRange(nearbyContainers);
+        state.destContainerId = destContainer ? destContainer.id : null;
+      } else {
+        state.destContainerId = null;
+      }
+    } else {
+      state.destContainerId = null;
     }
 
     // Check if roads are complete (no road construction sites remaining)

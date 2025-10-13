@@ -17,6 +17,8 @@
  * - Minimize walking, maximize working
  */
 
+import type { RCLConfig } from "./RCLConfigTypes";
+
 /**
  * Generate a stationary harvester body dynamically based on available energy
  * Stationary harvesters sit on containers and mine continuously
@@ -78,29 +80,6 @@ function generateGeneralPurposeBody(energyCapacity: number): BodyPartConstant[] 
   return body.length > 0 ? body : [WORK, CARRY, MOVE];
 }
 
-export interface RoleConfig {
-  body: BodyPartConstant[] | ((energyCapacity: number) => BodyPartConstant[]);
-  priority: number;
-  assignToSource?: boolean; // Whether this role should be assigned to sources
-  behavior?: {
-    energySource?: "harvest" | "withdraw"; // How the role gets energy
-    workTarget?: string; // What the role works on
-  };
-}
-
-export interface RCLConfig {
-  roles: {
-    [roleName: string]: RoleConfig;
-  };
-  sourceAssignment: {
-    maxWorkPartsPerSource: number; // Maximum work parts allowed per source
-  };
-  spawning: {
-    enableBuilders: boolean; // Whether builders should spawn at this RCL
-    useContainers: boolean; // Whether to use container-based logistics
-  };
-}
-
 export const RCL2Config: RCLConfig = {
   roles: {
     harvester: {
@@ -121,7 +100,7 @@ export const RCL2Config: RCLConfig = {
       // Scales from [WORK, CARRY, MOVE] at 200 to multiple sets as energy increases
       priority: 2, // Second priority - controller progress
       behavior: {
-        energySource: "withdraw", // Withdraw from spawn/extensions
+        energySource: "container", // Withdraw from containers ONLY (never spawn/extensions)
         workTarget: "controller" // Upgrade controller
       }
     },
@@ -130,7 +109,7 @@ export const RCL2Config: RCLConfig = {
       // Scales from [WORK, CARRY, MOVE] at 200 to multiple sets as energy increases
       priority: 3, // Third priority - construction
       behavior: {
-        energySource: "withdraw", // Withdraw from spawn/extensions
+        energySource: "container", // Withdraw from containers ONLY (never spawn/extensions)
         workTarget: "construction" // Build extensions/containers/roads
         // Builder Intelligence (in builder role):
         // - Prioritizes finishing partially-built structures first

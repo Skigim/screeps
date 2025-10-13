@@ -13,28 +13,9 @@
  * - Simple assembly line: Harvesters -> Spawn -> Upgraders -> Controller
  */
 
-export interface RoleConfig {
-  body: BodyPartConstant[] | ((energyCapacity: number) => BodyPartConstant[]);
-  priority: number;
-  assignToSource?: boolean; // Whether this role should be assigned to sources
-  behavior?: {
-    energySource?: "harvest" | "withdraw"; // How the role gets energy
-    workTarget?: string; // What the role works on
-  };
-}
+import type { RCLConfig, RoleConfig } from "./RCLConfigTypes";
 
-export interface RCLConfig {
-  roles: {
-    [roleName: string]: RoleConfig;
-  };
-  sourceAssignment: {
-    maxWorkPartsPerSource: number; // Maximum work parts allowed per source
-  };
-  spawning: {
-    enableBuilders: boolean; // Whether builders should spawn at this RCL
-    useContainers: boolean; // Whether to use container-based logistics
-  };
-}
+export type { RCLConfig, RoleConfig };
 
 export const RCL1Config: RCLConfig = {
   roles: {
