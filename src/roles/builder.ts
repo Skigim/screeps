@@ -80,8 +80,26 @@ export class RoleBuilder {
           delete creep.memory.energyRequested;
           delete creep.memory.requestTime;
         } else {
-          // Still waiting - move off road and idle
-          this.moveOffRoadIfNeeded(creep);
+          // Find the hauler assigned to us
+          const assignedHauler = creep.room.find(FIND_MY_CREEPS, {
+            filter: (c) => c.memory.role === "hauler" && c.memory.assignedBuilder === creep.name
+          })[0];
+
+          if (assignedHauler) {
+            const distanceToHauler = creep.pos.getRangeTo(assignedHauler);
+
+            if (distanceToHauler > 3) {
+              // Too far - approach the hauler
+              creep.travelTo(assignedHauler, { range: 2 });
+            } else {
+              // Within range - move off road and wait
+              this.moveOffRoadIfNeeded(creep);
+            }
+          } else {
+            // No hauler found (not assigned yet or hauler busy) - just wait off-road
+            this.moveOffRoadIfNeeded(creep);
+          }
+
           return; // Wait for delivery
         }
       }
