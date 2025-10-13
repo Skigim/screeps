@@ -115,8 +115,9 @@ export class SpawnRequestGenerator {
         let body: BodyPartConstant[];
 
         if (typeof roleConfig.body === 'function') {
-          // Dynamic body generation based on room energy capacity
-          body = roleConfig.body(room.energyCapacityAvailable);
+          // Dynamic body generation based on AVAILABLE energy (not capacity)
+          // Scale to what we can spawn NOW, not what we might have later
+          body = roleConfig.body(room.energyAvailable);
         } else {
           // Static body array
           body = roleConfig.body;
@@ -130,7 +131,7 @@ export class SpawnRequestGenerator {
           requests.push({
             role: "harvester",
             priority: 1,
-            reason: `Stationary harvesters: ${harvesterCount}/${idealCount} (need ${bodyCost}, have ${room.energyCapacityAvailable})`,
+            reason: `Stationary harvesters: ${harvesterCount}/${idealCount} (need ${bodyCost}, have ${room.energyAvailable}/${room.energyCapacityAvailable})`,
             body: body,
             minEnergy: bodyCost
           });
@@ -146,8 +147,8 @@ export class SpawnRequestGenerator {
         let body: BodyPartConstant[];
 
         if (typeof roleConfig.body === 'function') {
-          // Dynamic body generation based on room energy capacity
-          body = roleConfig.body(room.energyCapacityAvailable);
+          // Dynamic body generation based on AVAILABLE energy (not capacity)
+          body = roleConfig.body(room.energyAvailable);
         } else {
           // Static body array
           body = roleConfig.body;
@@ -161,7 +162,7 @@ export class SpawnRequestGenerator {
           requests.push({
             role: "harvester",
             priority: roleConfig.priority,
-            reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (need ${bodyCost}, drop mining)`,
+            reason: `Mobile harvesters: ${harvesterCount}/${idealCount} (need ${bodyCost}, have ${room.energyAvailable})`,
             body: body,
             minEnergy: bodyCost
           });
@@ -208,8 +209,8 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (typeof roleConfig.body === 'function') {
-        // Dynamic body generation based on room energy capacity
-        body = roleConfig.body(room.energyCapacityAvailable);
+        // Dynamic body generation based on AVAILABLE energy (not capacity)
+        body = roleConfig.body(room.energyAvailable);
       } else {
         // Static body array
         body = roleConfig.body;
@@ -223,7 +224,7 @@ export class SpawnRequestGenerator {
         requests.push({
           role: "upgrader",
           priority: roleConfig.priority,
-          reason: `Controller upgrading: ${upgraderCount}/${idealCount} (need ${bodyCost})`,
+          reason: `Controller upgrading: ${upgraderCount}/${idealCount} (need ${bodyCost}, have ${room.energyAvailable})`,
           body: body,
           minEnergy: bodyCost
         });
@@ -261,8 +262,8 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (typeof roleConfig.body === 'function') {
-        // Dynamic body generation based on room energy capacity
-        body = roleConfig.body(room.energyCapacityAvailable);
+        // Dynamic body generation based on AVAILABLE energy (not capacity)
+        body = roleConfig.body(room.energyAvailable);
       } else {
         // Static body array
         body = roleConfig.body;
@@ -401,8 +402,8 @@ export class SpawnRequestGenerator {
       let body: BodyPartConstant[];
 
       if (roleConfig && typeof roleConfig.body === 'function') {
-        // Dynamic body generation based on room energy capacity
-        body = roleConfig.body(room.energyCapacityAvailable);
+        // Dynamic body generation based on AVAILABLE energy (not capacity)
+        body = roleConfig.body(room.energyAvailable);
       } else if (roleConfig && Array.isArray(roleConfig.body)) {
         // Static body array
         body = roleConfig.body;
@@ -419,7 +420,7 @@ export class SpawnRequestGenerator {
         requests.push({
           role: "hauler",
           priority: roleConfig?.priority || 1, // High priority - critical for logistics
-          reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (need ${bodyCost} energy, have ${room.energyCapacityAvailable} capacity)`,
+          reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (need ${bodyCost}, have ${room.energyAvailable}/${room.energyCapacityAvailable})`,
           body: body,
           minEnergy: bodyCost
         });
