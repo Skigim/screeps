@@ -4,6 +4,7 @@
  */
 
 import { StatsCollector } from "./StatsCollector";
+import { DistanceTransformTest } from "../managers/DistanceTransformTest";
 
 export class ConsoleCommands {
   /**
@@ -188,6 +189,14 @@ export class ConsoleCommands {
     return "✅ Stats cleared";
   }
 
+  /**
+   * Test Distance Transform algorithm
+   * Usage: testDistanceTransform('W1N1')
+   */
+  public static testDistanceTransform(roomName: string): void {
+    DistanceTransformTest.run(roomName);
+  }
+
   // Helper methods
   private static calculateCost(body: BodyPartConstant[]): number {
     return body.reduce((total, part) => total + BODYPART_COST[part], 0);
@@ -219,3 +228,4 @@ export class ConsoleCommands {
 (global as any).spawns = ConsoleCommands.listSpawns.bind(ConsoleCommands);
 (global as any).stats = ConsoleCommands.showStats.bind(ConsoleCommands);
 (global as any).clearStats = ConsoleCommands.clearStats.bind(ConsoleCommands);
+(global as any).testDistanceTransform = ConsoleCommands.testDistanceTransform.bind(ConsoleCommands);
