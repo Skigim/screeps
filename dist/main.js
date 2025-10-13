@@ -3936,223 +3936,6 @@ class RoleUpgrader {
     }
 }
 
-class RoleBuilder {
-    static run(creep, config) {
-        // Get role config for this role
-        const roleConfig = config.roles.builder;
-        if (!roleConfig) {
-            console.log(`⚠️ No builder config found for ${creep.name}`);
-            return;
-        }
-        // Toggle working state
-        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            creep.memory.working = false;
-        }
-        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
-            creep.memory.working = true;
-        }
-        if (creep.memory.working) {
-            // Intelligent construction prioritization
-            const target = this.findBestConstructionTarget(creep);
-            if (target) {
-                if (creep.build(target) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, target);
-                }
-            }
-            else {
-                // If no construction sites, upgrade controller
-                if (creep.room.controller) {
-                    if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, creep.room.controller);
-                    }
-                }
-            }
-        }
-        else {
-            // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
-            // Reserve energy for spawn if we're below minimum viable energy (200)
-            const shouldReserveEnergy = creep.room.energyAvailable < 200;
-            if (!shouldReserveEnergy) {
-                // Safe to withdraw - room has enough energy for spawning
-                const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                    filter: (structure) => {
-                        return ((structure.structureType === STRUCTURE_EXTENSION ||
-                            structure.structureType === STRUCTURE_SPAWN) &&
-                            structure.store &&
-                            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
-                    }
-                });
-                if (target) {
-                    if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, target);
-                    }
-                    return;
-                }
-            }
-            // Energy reserved for spawning OR no energy in spawn/extensions
-            // Help bootstrap economy: harvest from sources or pickup dropped energy
-            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
-                filter: resource => resource.resourceType === RESOURCE_ENERGY
-            });
-            if (droppedEnergy) {
-                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, droppedEnergy);
-                }
-            }
-            else {
-                // CRISIS MODE: Harvest directly from source
-                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-                if (source) {
-                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                        Traveler.travelTo(creep, source);
-                    }
-                }
-            }
-        }
-    }
-    /**
-     * Find the best construction target using intelligent prioritization
-     *
-     * Priority order:
-     * 1. Continue building partially-built structures (finish what you started)
-     * 2. Extensions (increase energy capacity)
-     * 3. Containers (enable logistics)
-     * 4. Roads (speed boost)
-     * 5. Everything else
-     */
-    static findBestConstructionTarget(creep) {
-        const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
-        if (sites.length === 0)
-            return null;
-        // Define priority order
-        const priorityOrder = [
-            STRUCTURE_EXTENSION,
-            STRUCTURE_CONTAINER,
-            STRUCTURE_ROAD
-        ];
-        // 1. HIGHEST PRIORITY: Continue building partially-built structures
-        // Find any site that has progress > 0 (already started)
-        const partiallyBuilt = sites.filter(site => site.progress > 0);
-        if (partiallyBuilt.length > 0) {
-            // Sort by most progress (closest to completion)
-            partiallyBuilt.sort((a, b) => {
-                const aProgress = a.progress / a.progressTotal;
-                const bProgress = b.progress / b.progressTotal;
-                return bProgress - aProgress; // Most complete first
-            });
-            // Build the most complete structure
-            return partiallyBuilt[0];
-        }
-        // 2. No partially-built structures, use priority order
-        for (const structureType of priorityOrder) {
-            const sitesOfType = sites.filter(site => site.structureType === structureType);
-            if (sitesOfType.length > 0) {
-                // Find closest site of this type
-                return creep.pos.findClosestByPath(sitesOfType) || sitesOfType[0];
-            }
-        }
-        // 3. Fallback: Any remaining construction site
-        return creep.pos.findClosestByPath(sites);
-    }
-}
-
-class RoleHauler {
-    static run(creep, config) {
-        var _a;
-        // Toggle working state
-        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            creep.memory.working = false;
-        }
-        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
-            creep.memory.working = true;
-        }
-        if (creep.memory.working) {
-            // Phase 2 Special: Drop energy on road sites (exactly enough to complete)
-            const roadSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
-                filter: s => s.structureType === STRUCTURE_ROAD && s.progress < s.progressTotal
-            });
-            if (roadSite) {
-                const energyNeeded = roadSite.progressTotal - roadSite.progress;
-                const creepEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0;
-                const energyToDeliver = Math.min(energyNeeded, creepEnergy);
-                if (creep.pos.isNearTo(roadSite)) {
-                    // Drop exactly enough energy to complete the road
-                    creep.drop(RESOURCE_ENERGY, energyToDeliver);
-                }
-                else {
-                    Traveler.travelTo(creep, roadSite.pos);
-                }
-                return;
-            }
-            // Deliver to spawn/extensions
-            const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
-                filter: (structure) => {
-                    return ((structure.structureType === STRUCTURE_EXTENSION ||
-                        structure.structureType === STRUCTURE_SPAWN) &&
-                        structure.store &&
-                        structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-                }
-            });
-            if (target) {
-                if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, target);
-                }
-            }
-            else {
-                // If spawn/extensions full, deliver to controller container
-                const controllerContainer = (_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.pos.findInRange(FIND_STRUCTURES, 3, {
-                    filter: s => s.structureType === STRUCTURE_CONTAINER
-                })[0];
-                if (controllerContainer === null || controllerContainer === void 0 ? void 0 : controllerContainer.store) {
-                    const freeCapacity = controllerContainer.store.getFreeCapacity(RESOURCE_ENERGY);
-                    if (freeCapacity && freeCapacity > 0) {
-                        if (creep.transfer(controllerContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                            Traveler.travelTo(creep, controllerContainer);
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            // Collect energy - prioritize dropped energy, then containers
-            // 1. Dropped energy (from stationary harvesters during Phase 2)
-            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
-                filter: resource => resource.resourceType === RESOURCE_ENERGY && resource.amount >= 50
-            });
-            if (droppedEnergy) {
-                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, droppedEnergy);
-                }
-                return;
-            }
-            // 2. Source containers
-            const sourceContainer = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                filter: s => {
-                    var _a;
-                    if (s.structureType !== STRUCTURE_CONTAINER)
-                        return false;
-                    const container = s;
-                    const energy = (_a = container.store) === null || _a === void 0 ? void 0 : _a.getUsedCapacity(RESOURCE_ENERGY);
-                    return energy !== null && energy !== undefined && energy > 0;
-                }
-            });
-            if (sourceContainer) {
-                if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, sourceContainer);
-                }
-                return;
-            }
-            // 3. Fallback: Harvest directly (emergency)
-            const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-            if (source) {
-                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                    Traveler.travelTo(creep, source);
-                }
-            }
-        }
-    }
-}
-
 /**
  * RCL 1 Configuration
  * Defines behaviors, body compositions, and strategic guidelines for RCL 1
@@ -5380,6 +5163,254 @@ RoomStateManager.roomConfigs = new Map();
 RoomStateManager.roomPlansExecuted = new Map(); // roomName -> RCL when last planned
 // Cache progression states for each room
 RoomStateManager.progressionStates = new Map();
+
+class RoleBuilder {
+    static run(creep, config) {
+        // Get role config for this role
+        const roleConfig = config.roles.builder;
+        if (!roleConfig) {
+            console.log(`⚠️ No builder config found for ${creep.name}`);
+            return;
+        }
+        // Toggle working state
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = false;
+        }
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = true;
+        }
+        if (creep.memory.working) {
+            // Intelligent construction prioritization
+            const target = this.findBestConstructionTarget(creep);
+            if (target) {
+                if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, target);
+                }
+            }
+            else {
+                // If no construction sites, upgrade controller
+                if (creep.room.controller) {
+                    if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, creep.room.controller);
+                    }
+                }
+            }
+        }
+        else {
+            // CRITICAL GUARDRAIL: Don't withdraw if room needs energy for spawning
+            // Reserve energy for spawn if we're below minimum viable energy (200)
+            const shouldReserveEnergy = creep.room.energyAvailable < 200;
+            if (!shouldReserveEnergy) {
+                // Safe to withdraw - room has enough energy for spawning
+                const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                    filter: (structure) => {
+                        return ((structure.structureType === STRUCTURE_EXTENSION ||
+                            structure.structureType === STRUCTURE_SPAWN) &&
+                            structure.store &&
+                            structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+                    }
+                });
+                if (target) {
+                    if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, target);
+                    }
+                    return;
+                }
+            }
+            // Energy reserved for spawning OR no energy in spawn/extensions
+            // Help bootstrap economy: harvest from sources or pickup dropped energy
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: resource => resource.resourceType === RESOURCE_ENERGY
+            });
+            if (droppedEnergy) {
+                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, droppedEnergy);
+                }
+            }
+            else {
+                // CRISIS MODE: Harvest directly from source
+                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+                if (source) {
+                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, source);
+                    }
+                }
+            }
+        }
+    }
+    /**
+     * Find the best construction target using progression-aware intelligent prioritization
+     *
+     * Priority order:
+     * 1. CURRENT PHASE PRIORITY: Build structures needed for current phase progression
+     * 2. FINISH STARTED: Continue building partially-built structures
+     * 3. FALLBACK PRIORITY: Extensions > Containers > Roads
+     */
+    static findBestConstructionTarget(creep) {
+        const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
+        if (sites.length === 0)
+            return null;
+        // Get current progression state
+        const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+        // Determine phase-priority structure type
+        let phasePriorityType = null;
+        if (progressionState) {
+            switch (progressionState.phase) {
+                case RCL2Phase.PHASE_1_EXTENSIONS:
+                    phasePriorityType = STRUCTURE_EXTENSION;
+                    break;
+                case RCL2Phase.PHASE_2_CONTAINERS:
+                    phasePriorityType = STRUCTURE_CONTAINER;
+                    break;
+                case RCL2Phase.PHASE_3_HAULER_LOGISTICS:
+                    // Phase 3: Roads for efficiency
+                    phasePriorityType = STRUCTURE_ROAD;
+                    break;
+            }
+        }
+        // 1. HIGHEST PRIORITY: Build phase-appropriate structures FIRST
+        if (phasePriorityType) {
+            const phaseSites = sites.filter(site => site.structureType === phasePriorityType);
+            if (phaseSites.length > 0) {
+                // If any are partially built, finish those first
+                const partiallyBuilt = phaseSites.filter(site => site.progress > 0);
+                if (partiallyBuilt.length > 0) {
+                    // Sort by most progress (closest to completion)
+                    partiallyBuilt.sort((a, b) => {
+                        const aProgress = a.progress / a.progressTotal;
+                        const bProgress = b.progress / b.progressTotal;
+                        return bProgress - aProgress;
+                    });
+                    return partiallyBuilt[0];
+                }
+                // Otherwise, start building any phase-priority structure
+                return creep.pos.findClosestByPath(phaseSites) || phaseSites[0];
+            }
+        }
+        // 2. SECONDARY PRIORITY: Finish any partially-built structures (even if not phase priority)
+        const partiallyBuilt = sites.filter(site => site.progress > 0);
+        if (partiallyBuilt.length > 0) {
+            // Sort by most progress (closest to completion)
+            partiallyBuilt.sort((a, b) => {
+                const aProgress = a.progress / a.progressTotal;
+                const bProgress = b.progress / b.progressTotal;
+                return bProgress - aProgress;
+            });
+            return partiallyBuilt[0];
+        }
+        // 3. FALLBACK: Use standard priority order for new construction
+        const priorityOrder = [
+            STRUCTURE_EXTENSION,
+            STRUCTURE_CONTAINER,
+            STRUCTURE_ROAD
+        ];
+        for (const structureType of priorityOrder) {
+            const sitesOfType = sites.filter(site => site.structureType === structureType);
+            if (sitesOfType.length > 0) {
+                return creep.pos.findClosestByPath(sitesOfType) || sitesOfType[0];
+            }
+        }
+        // 4. LAST RESORT: Any remaining construction site
+        return creep.pos.findClosestByPath(sites);
+    }
+}
+
+class RoleHauler {
+    static run(creep, config) {
+        var _a;
+        // Toggle working state
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = false;
+        }
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            creep.memory.working = true;
+        }
+        if (creep.memory.working) {
+            // Phase 2 Special: Drop energy on road sites (exactly enough to complete)
+            const roadSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
+                filter: s => s.structureType === STRUCTURE_ROAD && s.progress < s.progressTotal
+            });
+            if (roadSite) {
+                const energyNeeded = roadSite.progressTotal - roadSite.progress;
+                const creepEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) || 0;
+                const energyToDeliver = Math.min(energyNeeded, creepEnergy);
+                if (creep.pos.isNearTo(roadSite)) {
+                    // Drop exactly enough energy to complete the road
+                    creep.drop(RESOURCE_ENERGY, energyToDeliver);
+                }
+                else {
+                    Traveler.travelTo(creep, roadSite.pos);
+                }
+                return;
+            }
+            // Deliver to spawn/extensions
+            const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+                filter: (structure) => {
+                    return ((structure.structureType === STRUCTURE_EXTENSION ||
+                        structure.structureType === STRUCTURE_SPAWN) &&
+                        structure.store &&
+                        structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+                }
+            });
+            if (target) {
+                if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, target);
+                }
+            }
+            else {
+                // If spawn/extensions full, deliver to controller container
+                const controllerContainer = (_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.pos.findInRange(FIND_STRUCTURES, 3, {
+                    filter: s => s.structureType === STRUCTURE_CONTAINER
+                })[0];
+                if (controllerContainer === null || controllerContainer === void 0 ? void 0 : controllerContainer.store) {
+                    const freeCapacity = controllerContainer.store.getFreeCapacity(RESOURCE_ENERGY);
+                    if (freeCapacity && freeCapacity > 0) {
+                        if (creep.transfer(controllerContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                            Traveler.travelTo(creep, controllerContainer);
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // Collect energy - prioritize dropped energy, then containers
+            // 1. Dropped energy (from stationary harvesters during Phase 2)
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: resource => resource.resourceType === RESOURCE_ENERGY && resource.amount >= 50
+            });
+            if (droppedEnergy) {
+                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, droppedEnergy);
+                }
+                return;
+            }
+            // 2. Source containers
+            const sourceContainer = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                filter: s => {
+                    var _a;
+                    if (s.structureType !== STRUCTURE_CONTAINER)
+                        return false;
+                    const container = s;
+                    const energy = (_a = container.store) === null || _a === void 0 ? void 0 : _a.getUsedCapacity(RESOURCE_ENERGY);
+                    return energy !== null && energy !== undefined && energy > 0;
+                }
+            });
+            if (sourceContainer) {
+                if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, sourceContainer);
+                }
+                return;
+            }
+            // 3. Fallback: Harvest directly (emergency)
+            const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+            if (source) {
+                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                    Traveler.travelTo(creep, source);
+                }
+            }
+        }
+    }
+}
 
 /**
  * Stats Collector - Tracks performance and room metrics

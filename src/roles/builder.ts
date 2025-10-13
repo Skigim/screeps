@@ -1,5 +1,7 @@
 import { Traveler } from "../Traveler";
 import type { RCLConfig } from "configs/RCL1Config";
+import { RoomStateManager } from "managers/RoomStateManager";
+import { RCL2Phase } from "managers/ProgressionManager";
 
 export class RoleBuilder {
   public static run(creep: Creep, config: RCLConfig): void {
@@ -83,29 +85,63 @@ export class RoleBuilder {
   }
 
   /**
-   * Find the best construction target using intelligent prioritization
+   * Find the best construction target using progression-aware intelligent prioritization
    *
    * Priority order:
-   * 1. Continue building partially-built structures (finish what you started)
-   * 2. Extensions (increase energy capacity)
-   * 3. Containers (enable logistics)
-   * 4. Roads (speed boost)
-   * 5. Everything else
+   * 1. CURRENT PHASE PRIORITY: Build structures needed for current phase progression
+   * 2. FINISH STARTED: Continue building partially-built structures
+   * 3. FALLBACK PRIORITY: Extensions > Containers > Roads
    */
   private static findBestConstructionTarget(creep: Creep): ConstructionSite | null {
     const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
 
     if (sites.length === 0) return null;
 
-    // Define priority order
-    const priorityOrder: BuildableStructureConstant[] = [
-      STRUCTURE_EXTENSION,
-      STRUCTURE_CONTAINER,
-      STRUCTURE_ROAD
-    ];
+    // Get current progression state
+    const progressionState = RoomStateManager.getProgressionState(creep.room.name);
 
-    // 1. HIGHEST PRIORITY: Continue building partially-built structures
-    // Find any site that has progress > 0 (already started)
+    // Determine phase-priority structure type
+    let phasePriorityType: BuildableStructureConstant | null = null;
+
+    if (progressionState) {
+      switch (progressionState.phase) {
+        case RCL2Phase.PHASE_1_EXTENSIONS:
+          phasePriorityType = STRUCTURE_EXTENSION;
+          break;
+        case RCL2Phase.PHASE_2_CONTAINERS:
+          phasePriorityType = STRUCTURE_CONTAINER;
+          break;
+        case RCL2Phase.PHASE_3_HAULER_LOGISTICS:
+          // Phase 3: Roads for efficiency
+          phasePriorityType = STRUCTURE_ROAD;
+          break;
+      }
+    }
+
+    // 1. HIGHEST PRIORITY: Build phase-appropriate structures FIRST
+    if (phasePriorityType) {
+      const phaseSites = sites.filter(site => site.structureType === phasePriorityType);
+
+      if (phaseSites.length > 0) {
+        // If any are partially built, finish those first
+        const partiallyBuilt = phaseSites.filter(site => site.progress > 0);
+
+        if (partiallyBuilt.length > 0) {
+          // Sort by most progress (closest to completion)
+          partiallyBuilt.sort((a, b) => {
+            const aProgress = a.progress / a.progressTotal;
+            const bProgress = b.progress / b.progressTotal;
+            return bProgress - aProgress;
+          });
+          return partiallyBuilt[0];
+        }
+
+        // Otherwise, start building any phase-priority structure
+        return creep.pos.findClosestByPath(phaseSites) || phaseSites[0];
+      }
+    }
+
+    // 2. SECONDARY PRIORITY: Finish any partially-built structures (even if not phase priority)
     const partiallyBuilt = sites.filter(site => site.progress > 0);
 
     if (partiallyBuilt.length > 0) {
@@ -113,24 +149,27 @@ export class RoleBuilder {
       partiallyBuilt.sort((a, b) => {
         const aProgress = a.progress / a.progressTotal;
         const bProgress = b.progress / b.progressTotal;
-        return bProgress - aProgress; // Most complete first
+        return bProgress - aProgress;
       });
-
-      // Build the most complete structure
       return partiallyBuilt[0];
     }
 
-    // 2. No partially-built structures, use priority order
+    // 3. FALLBACK: Use standard priority order for new construction
+    const priorityOrder: BuildableStructureConstant[] = [
+      STRUCTURE_EXTENSION,
+      STRUCTURE_CONTAINER,
+      STRUCTURE_ROAD
+    ];
+
     for (const structureType of priorityOrder) {
       const sitesOfType = sites.filter(site => site.structureType === structureType);
 
       if (sitesOfType.length > 0) {
-        // Find closest site of this type
         return creep.pos.findClosestByPath(sitesOfType) || sitesOfType[0];
       }
     }
 
-    // 3. Fallback: Any remaining construction site
+    // 4. LAST RESORT: Any remaining construction site
     return creep.pos.findClosestByPath(sites);
   }
 }
