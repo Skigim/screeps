@@ -83,9 +83,34 @@ export class RoleBuilder {
       }
 
       // No locked target - find and LOCK onto new energy source
-      // Priority: 1. Ruins, 2. Spawn/Extensions (if surplus), 3. Dropped energy, 4. Harvest source
+      // Priority:
+      // 1. Dropped energy near construction site (free energy at the worksite!)
+      // 2. Ruins (free energy from dead structures)
+      // 3. Spawn/Extensions (if surplus)
+      // 4. Dropped energy anywhere
+      // 5. Harvest source (crisis mode)
 
-      // HIGHEST PRIORITY: Loot ruins (common with captured rooms)
+      // FIRST: Check for dropped energy near our construction target (super efficient!)
+      const constructionTarget = this.findBestConstructionTarget(creep);
+      if (constructionTarget) {
+        const nearbyDropped = constructionTarget.pos.findInRange(FIND_DROPPED_RESOURCES, 3, {
+          filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
+        });
+
+        if (nearbyDropped.length > 0) {
+          // Sort by amount (grab biggest pile first)
+          nearbyDropped.sort((a, b) => b.amount - a.amount);
+          const dropped = nearbyDropped[0];
+
+          creep.memory.energySourceId = dropped.id; // LOCK IT
+          if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, dropped);
+          }
+          return;
+        }
+      }
+
+      // SECOND PRIORITY: Loot ruins (common with captured rooms)
       const ruins = creep.room.find(FIND_RUINS);
       const ruinWithEnergy = ruins.find(r => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
 
