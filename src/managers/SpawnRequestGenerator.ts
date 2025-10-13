@@ -5,7 +5,8 @@
  * Calculates counts dynamically based on room state
  */
 
-import { RCLConfig } from "../configs/RCL1Config";
+import type { RCLConfig } from "configs/RCL1Config";
+import { AssignmentManager } from "./AssignmentManager";
 import { RoomStateManager } from "./RoomStateManager";
 import { ProgressionManager } from "./ProgressionManager";
 
@@ -88,6 +89,9 @@ export class SpawnRequestGenerator {
     const requests: SpawnRequest[] = [];
     const sources = room.find(FIND_SOURCES);
     const harvesterCount = this.getCreepCount(room, "harvester");
+    
+    // Get per-source coverage information
+    const coverage = AssignmentManager.getSourceCoverage(room);
 
     // CRITICAL: If only 1 harvester left, request emergency backup immediately
     if (harvesterCount === 1) {
@@ -100,6 +104,30 @@ export class SpawnRequestGenerator {
         body: [WORK, CARRY, MOVE], // Basic body that can harvest AND deliver
         minEnergy: 200
       });
+    }
+
+    // CRITICAL: If any source lacks harvester coverage, prioritize that
+    if (coverage.uncoveredByHarvesters.length > 0) {
+      const roleConfig = config.roles.harvester;
+      let body: BodyPartConstant[];
+
+      if (typeof roleConfig.body === 'function') {
+        body = roleConfig.body(room.energyAvailable);
+      } else {
+        body = roleConfig.body;
+      }
+
+      const bodyCost = this.calculateBodyCost(body);
+
+      if (body.length > 0) {
+        requests.push({
+          role: "harvester",
+          priority: 0, // HIGHEST PRIORITY - uncovered source is critical!
+          reason: `PRIORITY: ${coverage.uncoveredByHarvesters.length} source(s) without harvester (${coverage.sourcesWithHarvesters}/${coverage.totalSources} covered)`,
+          body: body,
+          minEnergy: bodyCost
+        });
+      }
     }
 
     // Determine if we need stationary harvesters
@@ -387,11 +415,41 @@ export class SpawnRequestGenerator {
   /**
    * Request haulers based on progression state
    * Haulers transport energy from containers to spawn/extensions
+   * CRITICAL: Ensure each source container has at least one hauler
    */
   private static requestHaulers(room: Room, config: RCLConfig): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
     const haulerCount = this.getCreepCount(room, "hauler");
     const sources = room.find(FIND_SOURCES);
+
+    // Get per-source coverage information
+    const coverage = AssignmentManager.getSourceCoverage(room);
+
+    // CRITICAL: If any source lacks hauler coverage, prioritize that
+    if (coverage.uncoveredByHaulers.length > 0) {
+      const roleConfig = config.roles.hauler;
+      let body: BodyPartConstant[];
+
+      if (roleConfig && typeof roleConfig.body === 'function') {
+        body = roleConfig.body(room.energyAvailable);
+      } else if (roleConfig && Array.isArray(roleConfig.body)) {
+        body = roleConfig.body;
+      } else {
+        body = this.buildHaulerBody(room);
+      }
+
+      const bodyCost = this.calculateBodyCost(body);
+
+      if (body.length > 0) {
+        requests.push({
+          role: "hauler",
+          priority: 0, // HIGHEST PRIORITY - uncovered source means energy won't flow!
+          reason: `PRIORITY: ${coverage.uncoveredByHaulers.length} source(s) without hauler (${coverage.sourcesWithHaulers}/${coverage.totalSources} covered)`,
+          body: body,
+          minEnergy: bodyCost
+        });
+      }
+    }
 
     // Ideal: 1 hauler per source container
     const idealCount = sources.length;

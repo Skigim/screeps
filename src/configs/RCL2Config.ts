@@ -121,6 +121,7 @@ export const RCL2Config: RCLConfig = {
       body: generateHaulerBody, // Dynamic body based on energy capacity
       // Scales from [CARRY, MOVE] at 100 to [CARRY×6, MOVE×6] at 600 energy
       priority: 1, // High priority - critical for logistics
+      assignToSource: true, // Each hauler is assigned to a specific source container
       behavior: {
         energySource: "withdraw", // Withdraw from containers
         workTarget: "logistics" // Transport to spawn/extensions

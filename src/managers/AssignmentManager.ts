@@ -124,6 +124,71 @@ export class AssignmentManager {
   }
 
   /**
+   * Check if each source has at least one harvester assigned
+   * Returns sources that lack harvester coverage
+   */
+  public static getUncoveredSources(room: Room, role: string = "harvester"): Source[] {
+    const sources = this.getRoomSources(room);
+    const uncovered: Source[] = [];
+
+    for (const source of sources) {
+      const assignments = this.getSourceAssignments(source.id);
+      const hasRole = assignments.some(creep => creep.memory.role === role);
+
+      if (!hasRole) {
+        uncovered.push(source);
+      }
+    }
+
+    return uncovered;
+  }
+
+  /**
+   * Get source coverage statistics for spawn request prioritization
+   * Returns info about which sources need harvesters/haulers
+   */
+  public static getSourceCoverage(room: Room): {
+    totalSources: number;
+    sourcesWithHarvesters: number;
+    sourcesWithHaulers: number;
+    uncoveredByHarvesters: Source[];
+    uncoveredByHaulers: Source[];
+  } {
+    const sources = this.getRoomSources(room);
+    const uncoveredByHarvesters: Source[] = [];
+    const uncoveredByHaulers: Source[] = [];
+    let sourcesWithHarvesters = 0;
+    let sourcesWithHaulers = 0;
+
+    for (const source of sources) {
+      const assignments = this.getSourceAssignments(source.id);
+
+      const hasHarvester = assignments.some(creep => creep.memory.role === "harvester");
+      const hasHauler = assignments.some(creep => creep.memory.role === "hauler");
+
+      if (hasHarvester) {
+        sourcesWithHarvesters++;
+      } else {
+        uncoveredByHarvesters.push(source);
+      }
+
+      if (hasHauler) {
+        sourcesWithHaulers++;
+      } else {
+        uncoveredByHaulers.push(source);
+      }
+    }
+
+    return {
+      totalSources: sources.length,
+      sourcesWithHarvesters,
+      sourcesWithHaulers,
+      uncoveredByHarvesters,
+      uncoveredByHaulers
+    };
+  }
+
+  /**
    * Display assignment info for debugging
    */
   public static displayAssignments(room: Room, config: RCLConfig): void {
