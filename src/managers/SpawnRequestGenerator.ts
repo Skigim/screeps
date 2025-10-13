@@ -89,7 +89,7 @@ export class SpawnRequestGenerator {
     const requests: SpawnRequest[] = [];
     const sources = room.find(FIND_SOURCES);
     const harvesterCount = this.getCreepCount(room, "harvester");
-    
+
     // Get per-source coverage information
     const coverage = AssignmentManager.getSourceCoverage(room);
 

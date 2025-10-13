@@ -76,46 +76,67 @@ export class RoleHauler {
         Traveler.travelTo(creep, controller, { range: 3 });
       }
     } else {
-      // Collect energy - prioritize dropped energy, then containers
+      // Collect energy from assigned source ONLY
+      // CRITICAL: Each hauler is permanently assigned to ONE source
+      // This prevents haulers from all clustering on the same container
+      // Haulers should NEVER roam - they stay loyal to their assigned source
 
-      // 1. Dropped energy (from stationary harvesters during Phase 2)
-      const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
-        filter: resource => resource.resourceType === RESOURCE_ENERGY && resource.amount >= 50
-      });
-
-      if (droppedEnergy) {
-        if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, droppedEnergy);
+      // If no assignment, idle and wait for assignment
+      if (!creep.memory.assignedSource) {
+        const controller = creep.room.controller;
+        if (controller && creep.pos.getRangeTo(controller) > 3) {
+          Traveler.travelTo(creep, controller, { range: 3 });
         }
         return;
       }
 
-      // 2. Source containers
-      const sourceContainer = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+      // Get assigned source
+      const assignedSource = Game.getObjectById(creep.memory.assignedSource as Id<Source>);
+
+      // If assigned source no longer exists, request reassignment
+      if (!assignedSource) {
+        creep.memory.requestReassignment = true;
+        const controller = creep.room.controller;
+        if (controller && creep.pos.getRangeTo(controller) > 3) {
+          Traveler.travelTo(creep, controller, { range: 3 });
+        }
+        return;
+      }
+
+      // 1. Check for dropped energy AT the assigned source (harvester overflow)
+      const droppedAtSource = assignedSource.pos.findInRange(FIND_DROPPED_RESOURCES, 1, {
+        filter: resource => resource.resourceType === RESOURCE_ENERGY && resource.amount >= 50
+      });
+
+      if (droppedAtSource.length > 0) {
+        const dropped = droppedAtSource[0];
+        if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, dropped);
+        }
+        return;
+      }
+
+      // 2. Withdraw from assigned source's container
+      const assignedContainer = assignedSource.pos.findInRange(FIND_STRUCTURES, 1, {
         filter: s => {
           if (s.structureType !== STRUCTURE_CONTAINER) return false;
           const container = s as StructureContainer;
           const energy = container.store?.getUsedCapacity(RESOURCE_ENERGY);
           return energy !== null && energy !== undefined && energy > 0;
         }
-      }) as StructureContainer | null;
+      })[0] as StructureContainer | undefined;
 
-      if (sourceContainer) {
-        if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, sourceContainer);
+      if (assignedContainer) {
+        if (creep.withdraw(assignedContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+          Traveler.travelTo(creep, assignedContainer);
         }
         return;
       }
 
-      // 3. No energy available - idle off road network
-      // Haulers have no WORK parts, so they can't harvest
-      // Track idle time for spawn management metrics
-      const controller = creep.room.controller;
-      if (controller) {
-        // Move to controller area (typically off main roads)
-        if (creep.pos.getRangeTo(controller) > 3) {
-          Traveler.travelTo(creep, controller, { range: 3 });
-        }
+      // 3. Container empty - wait near the assigned source for energy
+      // Stay loyal - don't roam to other sources!
+      if (creep.pos.getRangeTo(assignedSource) > 2) {
+        Traveler.travelTo(creep, assignedSource, { range: 2 });
       }
     }
   }

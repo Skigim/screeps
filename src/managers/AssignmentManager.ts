@@ -115,12 +115,30 @@ export class AssignmentManager {
 
   /**
    * Check if a creep needs reassignment (e.g., if source no longer exists)
+   * STICKY ASSIGNMENTS: Once assigned, creeps stay assigned to prevent thrashing
+   * Only reassign if:
+   * 1. No assignment exists
+   * 2. Assigned source no longer exists
+   * 3. Creep explicitly requests reassignment (memory flag)
    */
   public static needsReassignment(creep: Creep): boolean {
+    // No assignment - needs one
     if (!creep.memory.assignedSource) return true;
 
+    // Check if creep is explicitly requesting reassignment
+    if (creep.memory.requestReassignment) {
+      delete creep.memory.requestReassignment;
+      return true;
+    }
+
+    // Check if assigned source still exists
     const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
-    return !source; // Reassign if source no longer exists
+    if (!source) {
+      return true; // Source gone, need new assignment
+    }
+
+    // Assignment is valid and sticky - keep it
+    return false;
   }
 
   /**

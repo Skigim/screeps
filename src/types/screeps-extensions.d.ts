@@ -66,4 +66,10 @@ interface CreepMemory {
    * Cleared when construction site is complete or removed
    */
   lockedConstructionSiteId?: string;
+
+  /**
+   * Request reassignment flag - set by creep role when it wants a new source assignment
+   * Prevents assignment thrashing by making assignments sticky by default
+   */
+  requestReassignment?: boolean;
 }
