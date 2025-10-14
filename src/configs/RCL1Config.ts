@@ -5,8 +5,8 @@
  *
  * Strategy:
  * 1. Spawn [WORK, WORK, MOVE] stationary harvester (250 cost) - parks on source nearest controller
- * 2. Spawn [CARRY, CARRY, MOVE] hauler (150 cost) - delivers to controller at RCL1
- * 3. Hauler makes trips: Pickup from harvester → Deliver to controller
+ * 2. Spawn [WORK, CARRY, MOVE] hauler (200 cost) - upgrades controller at RCL1
+ * 3. Hauler makes trips: Pickup from harvester → Upgrade controller
  * 4. At 200 controller energy → RCL2 achieved
  * 5. RCL2 transition: Hauler automatically switches to spawn/extensions delivery
  *
@@ -16,7 +16,7 @@
  * - Container system ready from tick 1
  * - RCL2 transition is automatic (just change hauler's workTarget)
  * - Higher harvest rate (4 energy/tick vs 2)
- * - Double capacity hauler (100 vs 50)
+ * - Balanced hauler can both transport and upgrade
  */
 
 import type { RCLConfig, RoleConfig } from "./RCLConfigTypes";
@@ -35,11 +35,11 @@ export const RCL1Config: RCLConfig = {
       }
     },
     hauler: {
-      body: [CARRY, CARRY, MOVE], // Cost: 150 energy - double capacity
+      body: [WORK, CARRY, MOVE], // Cost: 200 energy - can upgrade controller
       priority: 2, // Second priority - spawn after harvester
       behavior: {
         energySource: "container", // Pickup from harvester's container
-        workTarget: "controller" // Deliver directly to controller at RCL1
+        workTarget: "controller" // Upgrade controller at RCL1 (needs WORK part)
       }
     }
   },

@@ -3906,11 +3906,11 @@ const RCL1Config = {
             }
         },
         hauler: {
-            body: [CARRY, CARRY, MOVE],
+            body: [WORK, CARRY, MOVE],
             priority: 2,
             behavior: {
                 energySource: "container",
-                workTarget: "controller" // Deliver directly to controller at RCL1
+                workTarget: "controller" // Upgrade controller at RCL1 (needs WORK part)
             }
         }
     },
@@ -8588,7 +8588,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "e3cdbf3";
+global.__GIT_HASH__ = "cdfb09f";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
