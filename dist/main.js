@@ -1012,8 +1012,8 @@ const getRoomRuntimeFrame = (roomName) => {
 
 const RCL1Config = {
     worker: {
-        min: 3,
-        max: 4,
+        min: 2,
+        max: 2,
         bodyPlan: "worker-basic"
     },
     spawn: {
@@ -1078,7 +1078,7 @@ const pickHarvestTarget = (snapshot) => {
     const active = snapshot.sources.find(source => source.energy > 0);
     return active !== null && active !== void 0 ? active : snapshot.sources[0];
 };
-const assignTask = (creep, room, snapshot) => {
+const assignTask = (creep, room, snapshot, workerCount) => {
     var _a;
     ensureHeapMaps();
     const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
@@ -1088,13 +1088,14 @@ const assignTask = (creep, room, snapshot) => {
     const controller = room.controller;
     const refillTarget = findRefillTarget(snapshot);
     const harvestTarget = pickHarvestTarget(snapshot);
+    const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
     let task = null;
     let signature = "IDLE";
     if (isEmpty && harvestTarget) {
         task = Tasks.harvest(harvestTarget);
         signature = `HARVEST:${harvestTarget.id}`;
     }
-    else if (!isEmpty && refillTarget) {
+    else if (shouldRefillSpawn) {
         task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
         signature = `TRANSFER:${refillTarget.id}`;
     }
@@ -1191,7 +1192,7 @@ class WorkerSquad {
         let idleCount = 0;
         for (const creep of workerCreeps) {
             const before = cpuNow();
-            const assignment = assignTask(creep, context.room, context.snapshot);
+            const assignment = assignTask(creep, context.room, context.snapshot, workerCreeps.length);
             const after = cpuNow();
             const delta = after - before;
             ensureHeapMaps();
@@ -1753,7 +1754,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "812ca3a";
+global.__GIT_HASH__ = "ade7260";
 const loop = () => {
     cleanupCreepMemory();
     runTick();

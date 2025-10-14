@@ -1,7 +1,7 @@
 export const RCL1Config = {
   worker: {
-    min: 3,
-    max: 4,
+    min: 2,
+    max: 2,
     bodyPlan: "worker-basic"
   },
   spawn: {
