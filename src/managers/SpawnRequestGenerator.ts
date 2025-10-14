@@ -454,9 +454,36 @@ export class SpawnRequestGenerator {
   }
 
   /**
+   * Check if source containers are overflowing (>80% full or energy on ground)
+   * Returns true if additional haulers are needed
+   */
+  private static isSourceOverflowing(source: Source): boolean {
+    // Check for dropped energy near source (harvester overflow)
+    const droppedEnergy = source.pos.findInRange(FIND_DROPPED_RESOURCES, 2, {
+      filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+    });
+
+    if (droppedEnergy.length > 0) {
+      return true; // Significant dropped energy = overflow
+    }
+
+    // Check container fill level
+    const container = source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    })[0] as StructureContainer | undefined;
+
+    if (container && container.store) {
+      const fillPercent = container.store.getUsedCapacity(RESOURCE_ENERGY) / container.store.getCapacity(RESOURCE_ENERGY);
+      return fillPercent > 0.8; // Container >80% full = overflow
+    }
+
+    return false;
+  }
+
+  /**
    * Request haulers based on progression state
    * Haulers transport energy from containers to spawn/extensions
-   * SEQUENTIAL ACTIVATION: Only spawn haulers for sources that have BOTH container + harvester
+   * DEMAND-BASED: Spawns additional haulers when containers overflow
    */
   private static requestHaulers(room: Room, config: RCLConfig): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
@@ -473,6 +500,8 @@ export class SpawnRequestGenerator {
 
     // Check which sources are "ready" for a hauler (have container + harvester)
     const readySources: Source[] = [];
+    const overflowingSources: Source[] = [];
+
     for (const source of sources) {
       // Check if source has a container
       const nearbyContainer = source.pos.findInRange(containers, 1);
@@ -485,6 +514,11 @@ export class SpawnRequestGenerator {
       // Source is ready if it has BOTH
       if (hasContainer && hasHarvester) {
         readySources.push(source);
+
+        // Check if this source is overflowing
+        if (this.isSourceOverflowing(source)) {
+          overflowingSources.push(source);
+        }
       }
     }
 
@@ -521,10 +555,41 @@ export class SpawnRequestGenerator {
       }
     }
 
-    // Secondary: Request haulers up to the number of ready sources
-    const idealCount = readySources.length;
+    // OVERFLOW DETECTION: Spawn additional haulers if sources are overflowing
+    // Target: 2 haulers per overflowing source (one picking up, one delivering)
+    if (overflowingSources.length > 0) {
+      const targetHaulerCount = readySources.length + overflowingSources.length;
 
-    if (haulerCount < idealCount) {
+      if (haulerCount < targetHaulerCount) {
+        const roleConfig = config.roles.hauler;
+        let body: BodyPartConstant[];
+
+        if (roleConfig && typeof roleConfig.body === 'function') {
+          body = roleConfig.body(this.getEnergyForBodyGeneration(room));
+        } else if (roleConfig && Array.isArray(roleConfig.body)) {
+          body = roleConfig.body;
+        } else {
+          body = this.buildHaulerBody(room);
+        }
+
+        const bodyCost = this.calculateBodyCost(body);
+
+        if (body.length > 0) {
+          requests.push({
+            role: "hauler",
+            priority: 0, // HIGH PRIORITY - overflow means wasted production
+            reason: `OVERFLOW: ${overflowingSources.length} source(s) overflowing! Need ${targetHaulerCount - haulerCount} more haulers`,
+            body: body,
+            minEnergy: bodyCost
+          });
+        }
+      }
+    }
+
+    // Baseline: Ensure at least 1 hauler per ready source
+    const baselineCount = readySources.length;
+
+    if (haulerCount < baselineCount && overflowingSources.length === 0) {
       // Get body from config - check if dynamic
       const roleConfig = config.roles.hauler;
       let body: BodyPartConstant[];
@@ -548,7 +613,7 @@ export class SpawnRequestGenerator {
         requests.push({
           role: "hauler",
           priority: roleConfig?.priority || 1, // High priority - critical for logistics
-          reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${readySources.length} sources ready)`,
+          reason: `Hauler logistics: ${haulerCount}/${baselineCount} haulers (${readySources.length} sources ready)`,
           body: body,
           minEnergy: bodyCost
         });

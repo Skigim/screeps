@@ -3966,33 +3966,14 @@ function generateHarvesterBody(energyCapacity) {
  * Haulers transport energy from containers to spawn/extensions
  * Pattern: Balanced CARRY/MOVE pairs
  *
- * PRIORITY-AWARE: Hauler CARRY capacity should not exceed harvester production
- * Each WORK part produces 2 energy/tick, each CARRY part holds 50 energy
- * Ratio: 1 WORK = 25 ticks to fill 1 CARRY (50 energy / 2 energy per tick)
- * Safe ratio: 1 CARRY per 1 WORK part (conservative, accounts for travel time)
+ * Always spawns max-size haulers (up to 6 CARRY/MOVE pairs = 600 energy)
+ * Demand-based spawning system handles hauler count based on overflow
  */
 function generateHaulerBody(energyCapacity, room) {
-    // Calculate max safe CARRY parts based on harvester work parts
-    let maxCarryParts = Math.floor(energyCapacity / 100); // Default: based on energy
-    if (room) {
-        // Priority check: Don't create haulers that outwork their harvesters
-        const harvesters = room.find(FIND_MY_CREEPS, {
-            filter: c => c.memory.role === "harvester"
-        });
-        if (harvesters.length > 0) {
-            // Calculate total WORK parts across all harvesters
-            const totalWorkParts = harvesters.reduce((sum, creep) => {
-                return sum + creep.body.filter(part => part.type === WORK).length;
-            }, 0);
-            // Limit CARRY parts to match WORK parts (1:1 ratio)
-            // This ensures haulers can transport what harvesters produce
-            maxCarryParts = Math.min(maxCarryParts, totalWorkParts);
-        }
-    }
     // Build balanced CARRY/MOVE pairs
-    const pairs = Math.min(maxCarryParts, 6); // Cap at 6 pairs (600 energy)
+    const maxPairs = Math.min(Math.floor(energyCapacity / 100), 6); // Cap at 6 pairs (600 energy)
     const body = [];
-    for (let i = 0; i < pairs; i++) {
+    for (let i = 0; i < maxPairs; i++) {
         body.push(CARRY, MOVE);
     }
     // Minimum viable: at least 1 pair
@@ -4887,9 +4868,31 @@ class SpawnRequestGenerator {
         return body.length > 0 ? body : [CARRY, MOVE]; // Minimum viable
     }
     /**
+     * Check if source containers are overflowing (>80% full or energy on ground)
+     * Returns true if additional haulers are needed
+     */
+    static isSourceOverflowing(source) {
+        // Check for dropped energy near source (harvester overflow)
+        const droppedEnergy = source.pos.findInRange(FIND_DROPPED_RESOURCES, 2, {
+            filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+        });
+        if (droppedEnergy.length > 0) {
+            return true; // Significant dropped energy = overflow
+        }
+        // Check container fill level
+        const container = source.pos.findInRange(FIND_STRUCTURES, 1, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        })[0];
+        if (container && container.store) {
+            const fillPercent = container.store.getUsedCapacity(RESOURCE_ENERGY) / container.store.getCapacity(RESOURCE_ENERGY);
+            return fillPercent > 0.8; // Container >80% full = overflow
+        }
+        return false;
+    }
+    /**
      * Request haulers based on progression state
      * Haulers transport energy from containers to spawn/extensions
-     * SEQUENTIAL ACTIVATION: Only spawn haulers for sources that have BOTH container + harvester
+     * DEMAND-BASED: Spawns additional haulers when containers overflow
      */
     static requestHaulers(room, config) {
         const requests = [];
@@ -4903,6 +4906,7 @@ class SpawnRequestGenerator {
         });
         // Check which sources are "ready" for a hauler (have container + harvester)
         const readySources = [];
+        const overflowingSources = [];
         for (const source of sources) {
             // Check if source has a container
             const nearbyContainer = source.pos.findInRange(containers, 1);
@@ -4913,6 +4917,10 @@ class SpawnRequestGenerator {
             // Source is ready if it has BOTH
             if (hasContainer && hasHarvester) {
                 readySources.push(source);
+                // Check if this source is overflowing
+                if (this.isSourceOverflowing(source)) {
+                    overflowingSources.push(source);
+                }
             }
         }
         // Count ready sources that still need haulers
@@ -4945,9 +4953,37 @@ class SpawnRequestGenerator {
                 });
             }
         }
-        // Secondary: Request haulers up to the number of ready sources
-        const idealCount = readySources.length;
-        if (haulerCount < idealCount) {
+        // OVERFLOW DETECTION: Spawn additional haulers if sources are overflowing
+        // Target: 2 haulers per overflowing source (one picking up, one delivering)
+        if (overflowingSources.length > 0) {
+            const targetHaulerCount = readySources.length + overflowingSources.length;
+            if (haulerCount < targetHaulerCount) {
+                const roleConfig = config.roles.hauler;
+                let body;
+                if (roleConfig && typeof roleConfig.body === 'function') {
+                    body = roleConfig.body(this.getEnergyForBodyGeneration(room));
+                }
+                else if (roleConfig && Array.isArray(roleConfig.body)) {
+                    body = roleConfig.body;
+                }
+                else {
+                    body = this.buildHaulerBody(room);
+                }
+                const bodyCost = this.calculateBodyCost(body);
+                if (body.length > 0) {
+                    requests.push({
+                        role: "hauler",
+                        priority: 0,
+                        reason: `OVERFLOW: ${overflowingSources.length} source(s) overflowing! Need ${targetHaulerCount - haulerCount} more haulers`,
+                        body: body,
+                        minEnergy: bodyCost
+                    });
+                }
+            }
+        }
+        // Baseline: Ensure at least 1 hauler per ready source
+        const baselineCount = readySources.length;
+        if (haulerCount < baselineCount && overflowingSources.length === 0) {
             // Get body from config - check if dynamic
             const roleConfig = config.roles.hauler;
             let body;
@@ -4970,7 +5006,7 @@ class SpawnRequestGenerator {
                 requests.push({
                     role: "hauler",
                     priority: (roleConfig === null || roleConfig === void 0 ? void 0 : roleConfig.priority) || 1,
-                    reason: `Hauler logistics: ${haulerCount}/${idealCount} haulers (${readySources.length} sources ready)`,
+                    reason: `Hauler logistics: ${haulerCount}/${baselineCount} haulers (${readySources.length} sources ready)`,
                     body: body,
                     minEnergy: bodyCost
                 });
@@ -8260,7 +8296,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "30fc125";
+global.__GIT_HASH__ = "914768d";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
