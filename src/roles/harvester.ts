@@ -13,7 +13,12 @@ export class RoleHarvester {
 
     // Get progression state to determine behavior
     const progressionState = RoomStateManager.getProgressionState(creep.room.name);
-    const useDropMining = progressionState?.useHaulers || false;
+
+    // Enable drop mining if:
+    // 1. RCL1 with useContainers enabled (stationary harvester + hauler system)
+    // 2. RCL2+ with haulers enabled
+    const isRCL1WithContainers = creep.room.controller?.level === 1 && config.spawning.useContainers;
+    const useDropMining = isRCL1WithContainers || progressionState?.useHaulers || false;
 
     // Check if this is a stationary harvester (no CARRY parts)
     const hasCarryParts = creep.getActiveBodyparts(CARRY) > 0;

@@ -3875,45 +3875,51 @@ Creep.prototype.travelTo = function (destination, options) {
 };
 
 /**
- * RCL 1 Configuration
- * Defines behaviors, body compositions, and strategic guidelines for RCL 1
+ * RCL 1 Configuration - Ultra-Minimal Rush Strategy
  *
- * Strategy (from documentation):
- * Phase 1 (Bootstrap): Spawn first generalist [WORK, CARRY, MOVE]
- * Phase 2 (Stabilization): Build assembly line with 2-3 harvesters, 1-2 upgraders
- * Phase 3 (The Push): Maintain economy and upgrade to RCL 2
+ * Goal: Get to RCL2 as fast as possible with minimal complexity
  *
- * Key Principles:
- * - DO NOT BUILD (no structures available at RCL 1)
- * - Specialists only (harvesters harvest, upgraders upgrade)
- * - Simple assembly line: Harvesters -> Spawn -> Upgraders -> Controller
+ * Strategy:
+ * 1. Spawn [WORK, WORK, MOVE] stationary harvester (250 cost) - parks on source nearest controller
+ * 2. Spawn [CARRY, CARRY, MOVE] hauler (150 cost) - delivers to controller at RCL1
+ * 3. Hauler makes trips: Pickup from harvester → Deliver to controller
+ * 4. At 200 controller energy → RCL2 achieved
+ * 5. RCL2 transition: Hauler automatically switches to spawn/extensions delivery
+ *
+ * Key Advantages:
+ * - No role transitions needed (both spawn into final roles)
+ * - Stationary harvester from start (more efficient)
+ * - Container system ready from tick 1
+ * - RCL2 transition is automatic (just change hauler's workTarget)
+ * - Higher harvest rate (4 energy/tick vs 2)
+ * - Double capacity hauler (100 vs 50)
  */
 const RCL1Config = {
     roles: {
         harvester: {
-            body: [WORK, CARRY, MOVE],
+            body: [WORK, WORK, MOVE],
             priority: 1,
             assignToSource: true,
             behavior: {
                 energySource: "harvest",
-                workTarget: "spawn/extensions" // Deliver to spawn
+                workTarget: "container" // Stationary - stays on container
             }
         },
-        upgrader: {
-            body: [WORK, CARRY, MOVE],
+        hauler: {
+            body: [CARRY, CARRY, MOVE],
             priority: 2,
             behavior: {
-                energySource: "withdraw",
-                workTarget: "controller" // Upgrade controller
+                energySource: "container",
+                workTarget: "controller" // Deliver directly to controller at RCL1
             }
         }
     },
     sourceAssignment: {
-        maxWorkPartsPerSource: 5 // RCL1: 5 work parts = 10 energy/tick (source max)
+        maxWorkPartsPerSource: 2 // RCL1: 1 harvester with 2 WORK = 4 energy/tick
     },
     spawning: {
         enableBuilders: false,
-        useContainers: false // No containers available yet
+        useContainers: true // Enable containers from start (harvester needs parking spot)
     }
 };
 
@@ -4575,7 +4581,34 @@ class SpawnRequestGenerator {
                 }
             }
         }
-        // Get progression state for RCL 2+
+        // RCL1: Ultra-simple logic - spawn WWM harvester, then CCM hauler
+        if (((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1) {
+            const harvesterCount = this.getCreepCount(room, "harvester");
+            const haulerCount = this.getCreepCount(room, "hauler");
+            // First: Spawn stationary harvester [WORK, WORK, MOVE] = 250 cost
+            if (harvesterCount === 0 && room.energyAvailable >= 250) {
+                requests.push({
+                    role: "harvester",
+                    priority: 1,
+                    reason: "RCL1: Spawn stationary harvester (WWM)",
+                    body: [WORK, WORK, MOVE],
+                    minEnergy: 250
+                });
+            }
+            // Second: Spawn hauler [CARRY, CARRY, MOVE] = 150 cost
+            // Hauler delivers directly to controller at RCL1
+            if (harvesterCount > 0 && haulerCount === 0 && room.energyAvailable >= 150) {
+                requests.push({
+                    role: "hauler",
+                    priority: 2,
+                    reason: "RCL1: Spawn hauler to controller (CCM)",
+                    body: [CARRY, CARRY, MOVE],
+                    minEnergy: 150
+                });
+            }
+            return requests; // RCL1 only needs these 2 creeps
+        }
+        // RCL2+: Full spawn request system
         const progressionState = RoomStateManager.getProgressionState(room.name);
         // Always generate harvester requests first
         requests.push(...this.requestHarvesters(room, config, progressionState));
@@ -4595,14 +4628,6 @@ class SpawnRequestGenerator {
         const harvesterCount = this.getCreepCount(room, "harvester");
         const minHarvesters = this.getMinimumHarvesters(room);
         if (harvesterCount >= minHarvesters) {
-            // NO UPGRADERS during Phase 1-3 (prevent source traffic congestion)
-            // Only spawn upgraders when infrastructure is complete
-            const allowUpgraders = !progressionState ||
-                progressionState.phase === "complete" ||
-                ((_a = room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1; // RCL1 always gets upgraders
-            if (allowUpgraders) {
-                requests.push(...this.requestUpgraders(room, config, progressionState));
-            }
             // Only request builders if enabled in config
             if (config.spawning.enableBuilders) {
                 requests.push(...this.requestBuilders(room, config, progressionState));
@@ -6254,6 +6279,7 @@ RoomStateManager.progressionStates = new Map();
 
 class RoleHarvester {
     static run(creep, config) {
+        var _a;
         // Get role config for this role
         const roleConfig = config.roles.harvester;
         if (!roleConfig) {
@@ -6262,7 +6288,11 @@ class RoleHarvester {
         }
         // Get progression state to determine behavior
         const progressionState = RoomStateManager.getProgressionState(creep.room.name);
-        const useDropMining = (progressionState === null || progressionState === void 0 ? void 0 : progressionState.useHaulers) || false;
+        // Enable drop mining if:
+        // 1. RCL1 with useContainers enabled (stationary harvester + hauler system)
+        // 2. RCL2+ with haulers enabled
+        const isRCL1WithContainers = ((_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1 && config.spawning.useContainers;
+        const useDropMining = isRCL1WithContainers || (progressionState === null || progressionState === void 0 ? void 0 : progressionState.useHaulers) || false;
         // Check if this is a stationary harvester (no CARRY parts)
         const hasCarryParts = creep.getActiveBodyparts(CARRY) > 0;
         const isStationaryHarvester = !hasCarryParts;
@@ -7188,7 +7218,50 @@ class RoleHauler {
         return true;
     }
     static run(creep, config) {
-        var _a;
+        var _a, _b;
+        // RCL1: Simple direct delivery to controller
+        if (((_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1) {
+            // Toggle working state
+            if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+                creep.memory.working = false;
+            }
+            if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                creep.memory.working = true;
+            }
+            if (creep.memory.working) {
+                // Deliver directly to controller
+                const controller = creep.room.controller;
+                if (controller) {
+                    if (creep.upgradeController(controller) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, controller);
+                    }
+                }
+            }
+            else {
+                // Pickup from harvester's container
+                const container = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                    filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+                });
+                if (container) {
+                    if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        Traveler.travelTo(creep, container);
+                    }
+                }
+                else {
+                    // No container yet - pickup dropped energy from harvester
+                    const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                        filter: r => r.resourceType === RESOURCE_ENERGY
+                    });
+                    if (droppedEnergy) {
+                        if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                            Traveler.travelTo(creep, droppedEnergy);
+                        }
+                    }
+                }
+            }
+            return; // RCL1 logic complete
+        }
+        // RCL2+: Full hauler logic
         // Check if assigned to help a builder
         if (creep.memory.assignedBuilder) {
             const builder = Game.creeps[creep.memory.assignedBuilder];
@@ -7271,7 +7344,7 @@ class RoleHauler {
                 }
             }
             // 4. FOURTH PRIORITY: Fill controller container
-            const controllerContainer = (_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.pos.findInRange(FIND_STRUCTURES, 3, {
+            const controllerContainer = (_b = creep.room.controller) === null || _b === void 0 ? void 0 : _b.pos.findInRange(FIND_STRUCTURES, 3, {
                 filter: s => s.structureType === STRUCTURE_CONTAINER
             })[0];
             if (controllerContainer === null || controllerContainer === void 0 ? void 0 : controllerContainer.store) {
@@ -8187,7 +8260,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "8c93161";
+global.__GIT_HASH__ = "30fc125";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code

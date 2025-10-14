@@ -99,7 +99,38 @@ export class SpawnRequestGenerator {
       }
     }
 
-    // Get progression state for RCL 2+
+    // RCL1: Ultra-simple logic - spawn WWM harvester, then CCM hauler
+    if (room.controller?.level === 1) {
+      const harvesterCount = this.getCreepCount(room, "harvester");
+      const haulerCount = this.getCreepCount(room, "hauler");
+
+      // First: Spawn stationary harvester [WORK, WORK, MOVE] = 250 cost
+      if (harvesterCount === 0 && room.energyAvailable >= 250) {
+        requests.push({
+          role: "harvester",
+          priority: 1,
+          reason: "RCL1: Spawn stationary harvester (WWM)",
+          body: [WORK, WORK, MOVE],
+          minEnergy: 250
+        });
+      }
+
+      // Second: Spawn hauler [CARRY, CARRY, MOVE] = 150 cost
+      // Hauler delivers directly to controller at RCL1
+      if (harvesterCount > 0 && haulerCount === 0 && room.energyAvailable >= 150) {
+        requests.push({
+          role: "hauler",
+          priority: 2,
+          reason: "RCL1: Spawn hauler to controller (CCM)",
+          body: [CARRY, CARRY, MOVE],
+          minEnergy: 150
+        });
+      }
+
+      return requests; // RCL1 only needs these 2 creeps
+    }
+
+    // RCL2+: Full spawn request system
     const progressionState = RoomStateManager.getProgressionState(room.name);
 
     // Always generate harvester requests first
@@ -123,16 +154,6 @@ export class SpawnRequestGenerator {
     const minHarvesters = this.getMinimumHarvesters(room);
 
     if (harvesterCount >= minHarvesters) {
-      // NO UPGRADERS during Phase 1-3 (prevent source traffic congestion)
-      // Only spawn upgraders when infrastructure is complete
-      const allowUpgraders = !progressionState ||
-                            progressionState.phase === "complete" ||
-                            room.controller?.level === 1; // RCL1 always gets upgraders
-
-      if (allowUpgraders) {
-        requests.push(...this.requestUpgraders(room, config, progressionState));
-      }
-
       // Only request builders if enabled in config
       if (config.spawning.enableBuilders) {
         requests.push(...this.requestBuilders(room, config, progressionState));

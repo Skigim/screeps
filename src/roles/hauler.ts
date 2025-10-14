@@ -43,6 +43,52 @@ export class RoleHauler {
   }
 
   public static run(creep: Creep, config: RCLConfig): void {
+    // RCL1: Simple direct delivery to controller
+    if (creep.room.controller?.level === 1) {
+      // Toggle working state
+      if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        creep.memory.working = false;
+      }
+      if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+        creep.memory.working = true;
+      }
+
+      if (creep.memory.working) {
+        // Deliver directly to controller
+        const controller = creep.room.controller;
+        if (controller) {
+          if (creep.upgradeController(controller) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, controller);
+          }
+        }
+      } else {
+        // Pickup from harvester's container
+        const container = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+          filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+        }) as StructureContainer | null;
+
+        if (container) {
+          if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+            Traveler.travelTo(creep, container);
+          }
+        } else {
+          // No container yet - pickup dropped energy from harvester
+          const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+            filter: r => r.resourceType === RESOURCE_ENERGY
+          });
+
+          if (droppedEnergy) {
+            if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+              Traveler.travelTo(creep, droppedEnergy);
+            }
+          }
+        }
+      }
+
+      return; // RCL1 logic complete
+    }
+
+    // RCL2+: Full hauler logic
     // Check if assigned to help a builder
     if (creep.memory.assignedBuilder) {
       const builder = Game.creeps[creep.memory.assignedBuilder];
