@@ -19,12 +19,15 @@ export class RoleBuilder {
   public static run(creep: Creep, config: RCLConfig): void {
     // Execute current task if exists
     if (creep.task) {
+      console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
       // While working, move off road if needed
       if (creep.memory.working) {
         this.moveOffRoadIfNeeded(creep);
       }
       return;
     }
+
+    console.log(`[${creep.name}] Idle - store: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}/${creep.store.getCapacity()}, working: ${creep.memory.working}`);
 
     // State transitions when COMPLETELY full or empty
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
@@ -41,8 +44,10 @@ export class RoleBuilder {
     }
 
     if (creep.memory.working) {
+      console.log(`[${creep.name}] Assigning work task`);
       this.assignWorkTask(creep);
     } else {
+      console.log(`[${creep.name}] Assigning gather task`);
       this.assignGatherTask(creep);
     }
   }

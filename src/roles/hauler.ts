@@ -50,11 +50,15 @@ export class RoleHauler {
   public static run(creep: Creep, config: RCLConfig): void {
     // Execute current task if exists
     if (creep.task) {
+      console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
       return;
     }
 
+    console.log(`[${creep.name}] Idle - store: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}/${creep.store.getCapacity()}`);
+
     // RCL1: Simple direct delivery to controller
     if (creep.room.controller?.level === 1) {
+      console.log(`[${creep.name}] Running RCL1 logic`);
       this.runRCL1(creep);
       return;
     }
@@ -76,8 +80,10 @@ export class RoleHauler {
 
     // Decide: gather or deliver
     if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+      console.log(`[${creep.name}] Full - assigning delivery task`);
       this.assignDeliveryTask(creep);
     } else if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+      console.log(`[${creep.name}] Empty - assigning gather task`);
       this.assignGatherTask(creep);
     }
   }

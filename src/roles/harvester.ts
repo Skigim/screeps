@@ -19,8 +19,11 @@ export class RoleHarvester {
 
     // Execute current task if exists
     if (creep.task) {
+      console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
       return;
     }
+
+    console.log(`[${creep.name}] Idle - assigned source: ${creep.memory.assignedSource}`);
 
     const progressionState = RoomStateManager.getProgressionState(creep.room.name);
     const isRCL1WithContainers =

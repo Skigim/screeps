@@ -145,6 +145,8 @@ export const loop = ErrorMapper.wrapLoop(() => {
   for (const name in Game.creeps) {
     const creep = Game.creeps[name];
 
+    console.log(`\n--- Processing ${creep.name} (${creep.memory.role}) ---`);
+
     // Get config for this creep's room
     const config = RoomStateManager.getConfigForCreep(creep);
     if (!config) {
@@ -161,6 +163,20 @@ export const loop = ErrorMapper.wrapLoop(() => {
       RoleBuilder.run(creep, config);
     } else if (creep.memory.role === "hauler") {
       RoleHauler.run(creep, config);
+    }
+
+    // CRITICAL: Execute the task if one is assigned
+    // The role assigns tasks, but we need to run them!
+    if (creep.task) {
+      console.log(`[${creep.name}] Running task: ${creep.task.name}`);
+      (creep as any).run(); // Execute the task
+    }
+
+    // Log task state after role execution
+    if (creep.task) {
+      console.log(`[${creep.name}] Task after execution: ${creep.task.name} (valid: ${creep.task.isValid()})`);
+    } else {
+      console.log(`[${creep.name}] ⚠️ No task assigned after role execution!`);
     }
   }
 

@@ -39,11 +39,16 @@ export class RoleUpgrader {
 
     // Execute current task if it exists
     if (creep.task) {
+      console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
       return; // Task system handles movement and work automatically
     }
 
+    console.log(`[${creep.name}] Idle - assigning new task`);
+
     // Creep is idle - assign a new task based on current state
     const energySourceMode = roleConfig.behavior?.energySource || "withdraw";
+
+    console.log(`[${creep.name}] Energy source mode: ${energySourceMode}, store: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}/${creep.store.getCapacity()}`);
 
     if (energySourceMode === "withdraw") {
       // RCL1 behavior: Simple withdraw from spawn then upgrade
@@ -65,6 +70,7 @@ export class RoleUpgrader {
     // If already full, just upgrade
     if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
       if (creep.room.controller) {
+        console.log(`[${creep.name}] Assigning upgrade task (already full)`);
         creep.task = Tasks.upgrade(creep.room.controller);
       }
       return;
@@ -83,6 +89,7 @@ export class RoleUpgrader {
 
     if (spawn && creep.room.controller) {
       // Chain: withdraw from spawn, then upgrade controller
+      console.log(`[${creep.name}] Assigning chain: withdraw from spawn -> upgrade`);
       creep.task = Tasks.chain([
         Tasks.withdraw(spawn, RESOURCE_ENERGY),
         Tasks.upgrade(creep.room.controller)
@@ -93,10 +100,13 @@ export class RoleUpgrader {
     // Spawn empty - harvest directly as fallback
     const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
     if (source && creep.room.controller) {
+      console.log(`[${creep.name}] Spawn empty, assigning chain: harvest -> upgrade`);
       creep.task = Tasks.chain([
         Tasks.harvest(source),
         Tasks.upgrade(creep.room.controller)
       ]);
+    } else {
+      console.log(`[${creep.name}] ⚠️ No energy source found!`);
     }
   }
 

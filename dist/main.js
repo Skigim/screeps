@@ -7396,8 +7396,10 @@ class RoleHarvester {
         }
         // Execute current task if exists
         if (creep.task) {
+            console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
             return;
         }
+        console.log(`[${creep.name}] Idle - assigned source: ${creep.memory.assignedSource}`);
         const progressionState = RoomStateManager.getProgressionState(creep.room.name);
         const isRCL1WithContainers = ((_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1 && config.spawning.useContainers;
         const useDropMining = isRCL1WithContainers || (progressionState === null || progressionState === void 0 ? void 0 : progressionState.useHaulers) || false;
@@ -7584,10 +7586,13 @@ class RoleUpgrader {
         }
         // Execute current task if it exists
         if (creep.task) {
+            console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
             return; // Task system handles movement and work automatically
         }
+        console.log(`[${creep.name}] Idle - assigning new task`);
         // Creep is idle - assign a new task based on current state
         const energySourceMode = ((_a = roleConfig.behavior) === null || _a === void 0 ? void 0 : _a.energySource) || "withdraw";
+        console.log(`[${creep.name}] Energy source mode: ${energySourceMode}, store: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}/${creep.store.getCapacity()}`);
         if (energySourceMode === "withdraw") {
             // RCL1 behavior: Simple withdraw from spawn then upgrade
             this.assignWithdrawTask(creep);
@@ -7609,6 +7614,7 @@ class RoleUpgrader {
         // If already full, just upgrade
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
             if (creep.room.controller) {
+                console.log(`[${creep.name}] Assigning upgrade task (already full)`);
                 creep.task = _default.upgrade(creep.room.controller);
             }
             return;
@@ -7623,6 +7629,7 @@ class RoleUpgrader {
         });
         if (spawn && creep.room.controller) {
             // Chain: withdraw from spawn, then upgrade controller
+            console.log(`[${creep.name}] Assigning chain: withdraw from spawn -> upgrade`);
             creep.task = _default.chain([
                 _default.withdraw(spawn, RESOURCE_ENERGY),
                 _default.upgrade(creep.room.controller)
@@ -7632,10 +7639,14 @@ class RoleUpgrader {
         // Spawn empty - harvest directly as fallback
         const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
         if (source && creep.room.controller) {
+            console.log(`[${creep.name}] Spawn empty, assigning chain: harvest -> upgrade`);
             creep.task = _default.chain([
                 _default.harvest(source),
                 _default.upgrade(creep.room.controller)
             ]);
+        }
+        else {
+            console.log(`[${creep.name}] ⚠️ No energy source found!`);
         }
     }
     /**
@@ -8448,12 +8459,14 @@ class RoleBuilder {
     static run(creep, config) {
         // Execute current task if exists
         if (creep.task) {
+            console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
             // While working, move off road if needed
             if (creep.memory.working) {
                 this.moveOffRoadIfNeeded(creep);
             }
             return;
         }
+        console.log(`[${creep.name}] Idle - store: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}/${creep.store.getCapacity()}, working: ${creep.memory.working}`);
         // State transitions when COMPLETELY full or empty
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
             creep.memory.working = false;
@@ -8468,9 +8481,11 @@ class RoleBuilder {
             delete creep.memory.requestTime;
         }
         if (creep.memory.working) {
+            console.log(`[${creep.name}] Assigning work task`);
             this.assignWorkTask(creep);
         }
         else {
+            console.log(`[${creep.name}] Assigning gather task`);
             this.assignGatherTask(creep);
         }
     }
@@ -8835,10 +8850,13 @@ class RoleHauler {
         var _a;
         // Execute current task if exists
         if (creep.task) {
+            console.log(`[${creep.name}] Executing task: ${creep.task.name}`);
             return;
         }
+        console.log(`[${creep.name}] Idle - store: ${creep.store.getUsedCapacity(RESOURCE_ENERGY)}/${creep.store.getCapacity()}`);
         // RCL1: Simple direct delivery to controller
         if (((_a = creep.room.controller) === null || _a === void 0 ? void 0 : _a.level) === 1) {
+            console.log(`[${creep.name}] Running RCL1 logic`);
             this.runRCL1(creep);
             return;
         }
@@ -8859,9 +8877,11 @@ class RoleHauler {
         }
         // Decide: gather or deliver
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            console.log(`[${creep.name}] Full - assigning delivery task`);
             this.assignDeliveryTask(creep);
         }
         else if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            console.log(`[${creep.name}] Empty - assigning gather task`);
             this.assignGatherTask(creep);
         }
     }
@@ -10001,7 +10021,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "4f9d625";
+global.__GIT_HASH__ = "c1480e1";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
@@ -10069,6 +10089,7 @@ const loop = ErrorMapper.wrapLoop(() => {
     // Run creep roles
     for (const name in Game.creeps) {
         const creep = Game.creeps[name];
+        console.log(`\n--- Processing ${creep.name} (${creep.memory.role}) ---`);
         // Get config for this creep's room
         const config = RoomStateManager.getConfigForCreep(creep);
         if (!config) {
@@ -10087,6 +10108,19 @@ const loop = ErrorMapper.wrapLoop(() => {
         }
         else if (creep.memory.role === "hauler") {
             RoleHauler.run(creep, config);
+        }
+        // CRITICAL: Execute the task if one is assigned
+        // The role assigns tasks, but we need to run them!
+        if (creep.task) {
+            console.log(`[${creep.name}] Running task: ${creep.task.name}`);
+            creep.run(); // Execute the task
+        }
+        // Log task state after role execution
+        if (creep.task) {
+            console.log(`[${creep.name}] Task after execution: ${creep.task.name} (valid: ${creep.task.isValid()})`);
+        }
+        else {
+            console.log(`[${creep.name}] ⚠️ No task assigned after role execution!`);
         }
     }
     // Collect stats at the end of each tick
