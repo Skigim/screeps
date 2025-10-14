@@ -12,6 +12,16 @@ export type WorkerSquadContext = {
   snapshot: RoomSenseSnapshot;
 };
 
+export type WorkerSquadReport = {
+  workers: number;
+  queued: number;
+  targetMin: number;
+  targetMax: number;
+  ordersIssued: number;
+  ordersChanged: number;
+  idlePct: number;
+};
+
 const orderSignature = (order: { type: string; targetId?: Id<any> }): string =>
   `${order.type}:${order.targetId ?? "none"}`;
 
@@ -35,24 +45,73 @@ const ensureHeapMaps = (): void => {
 
 const cpuNow = (): number => (typeof Game !== "undefined" && Game.cpu ? Game.cpu.getUsed() : 0);
 
-const recordMetrics = (room: Room, idlePct: number, ordersIssued: number, ordersChanged: number): void => {
+const hasEnergyFreeCapacity = (structure: StructureSpawn | StructureExtension): boolean => {
+  const store = structure.store as Store<ResourceConstant, false> | undefined;
+  if (store && typeof store.getFreeCapacity === "function") {
+    const free = store.getFreeCapacity(RESOURCE_ENERGY);
+    return typeof free === "number" && free > 0;
+  }
+
+  const legacy = structure as StructureSpawn | (StructureExtension & { energy?: number; energyCapacity?: number });
+  if (typeof legacy.energy === "number" && typeof legacy.energyCapacity === "number") {
+    return legacy.energy < legacy.energyCapacity;
+  }
+
+  return false;
+};
+
+const findRefillTarget = (snapshot: RoomSenseSnapshot): StructureSpawn | StructureExtension | undefined => {
+  const spawn = snapshot.structures.find((structure): structure is StructureSpawn => {
+    if (structure.structureType !== STRUCTURE_SPAWN) {
+      return false;
+    }
+
+    return hasEnergyFreeCapacity(structure as StructureSpawn);
+  });
+  if (spawn) {
+    return spawn;
+  }
+
+  return snapshot.structures.find((structure): structure is StructureExtension => {
+    if (structure.structureType !== STRUCTURE_EXTENSION) {
+      return false;
+    }
+
+    return hasEnergyFreeCapacity(structure as StructureExtension);
+  });
+};
+
+const recordMetrics = (
+  room: Room,
+  headcount: number,
+  queued: number,
+  idlePct: number,
+  ordersIssued: number,
+  ordersChanged: number
+): void => {
   const squadName = "worker";
   ensureHeapMaps();
-  const entries = Heap.snap!.squads.get(squadName) ?? [];
+  const snap = Heap.snap;
+  if (!snap) {
+    return;
+  }
+  const entries = snap.squads.get(squadName) ?? [];
   const metrics: SquadMetrics = {
     tick: Game.time,
     room: room.name,
     squad: squadName,
     idlePct,
     ordersIssued,
-    ordersChanged
+    ordersChanged,
+    headcount,
+    queued
   };
 
   entries.push(metrics);
   if (entries.length > 50) {
     entries.splice(0, entries.length - 50);
   }
-  Heap.snap!.squads.set(squadName, entries);
+  snap.squads.set(squadName, entries);
 };
 
 const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { changed: boolean; idle: boolean } => {
@@ -61,6 +120,7 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
   const controller = room.controller;
   let orderType = "IDLE";
   let targetId: Id<any> | undefined;
+  const refillTarget = findRefillTarget(snapshot);
 
   if (isEmpty) {
     const source = snapshot.sources[0];
@@ -68,6 +128,9 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
       orderType = "HARVEST";
       targetId = source.id;
     }
+  } else if (refillTarget) {
+    orderType = "TRANSFER";
+    targetId = refillTarget.id as Id<any>;
   } else if (controller) {
     orderType = "UPGRADE";
     targetId = controller.id as Id<any>;
@@ -78,13 +141,30 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
   const previousSignature = memory.orderId ?? "";
   const changed = signature !== previousSignature;
 
-  const order = {
+  const order: {
+    id: string;
+    type: string;
+    targetId?: Id<any>;
+    res?: ResourceConstant;
+    amount?: number;
+    params?: Record<string, unknown>;
+  } = {
     id: `${creep.name}:${Game.time}`,
     type: orderType,
-    payload: { targetId }
+    params: { persisted: !changed }
   };
 
-  Heap.orders!.set(creep.name, order);
+  if (targetId) {
+    order.targetId = targetId;
+  }
+  if (orderType === "TRANSFER") {
+    order.res = RESOURCE_ENERGY;
+    order.amount = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+  }
+
+  if (Heap.orders) {
+    Heap.orders.set(creep.name, order);
+  }
   memory.orderId = signature;
   memory.role = "worker";
   memory.squad = "worker";
@@ -131,7 +211,7 @@ const maintainPopulation = (context: WorkerSquadContext): void => {
 };
 
 export class WorkerSquad {
-  public run(context: WorkerSquadContext): void {
+  public run(context: WorkerSquadContext): WorkerSquadReport {
     maintainPopulation(context);
 
     const workerCreeps = context.snapshot.myCreeps.filter(
@@ -163,6 +243,25 @@ export class WorkerSquad {
     }
 
     const idlePct = workerCreeps.length === 0 ? 0 : idleCount / workerCreeps.length;
-    recordMetrics(context.room, idlePct, ordersIssued, ordersChanged);
+    const queued = context.snapshot.structures.reduce((count, structure) => {
+      if (structure.structureType !== STRUCTURE_SPAWN) {
+        return count;
+      }
+
+      const spawn = structure as StructureSpawn;
+      return spawn.spawning ? count + 1 : count;
+    }, 0);
+
+    recordMetrics(context.room, workerCreeps.length, queued, idlePct, ordersIssued, ordersChanged);
+
+    return {
+      workers: workerCreeps.length,
+      queued,
+      targetMin: RCL1Config.worker.min,
+      targetMax: RCL1Config.worker.max,
+      ordersIssued,
+      ordersChanged,
+      idlePct
+    };
   }
 }

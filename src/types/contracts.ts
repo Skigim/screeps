@@ -29,6 +29,8 @@ export type SquadMetrics = {
   slaBreaches?: number;
   ordersIssued?: number;
   ordersChanged?: number;
+  headcount?: number;
+  queued?: number;
 };
 
 export type HealthAlert = { tick: number; type: "WARN" | "FAIL"; msg: string };
@@ -40,11 +42,14 @@ export type Order<T = unknown> = {
 };
 
 export type RoomMetricsMemory = {
-  upgradeContinuity: number[];
-  spawnStarvation: number[];
+  upgradeContinuityPct?: number;
+  spawnStarvationTicks?: number;
   lastControllerProgress?: number;
   lastSpawnTick?: number;
   creepCpuMedian?: number;
+  cpuP95?: number;
+  refillSlaMedian?: number;
+  workerCount?: number;
 };
 
 export type RoomTestsMemory = {

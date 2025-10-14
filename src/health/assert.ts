@@ -51,6 +51,14 @@ export const runRoomAssertions = (room: Room, context: TickContext): void => {
     `hint=${context.policy.nav.moveRatioHint}`
   );
 
+  const expectedUpgrade = context.state.energy.bank < 200 ? "conserve" : "steady";
+  recordAssertion(
+    memory,
+    "policy-upgrade-bank",
+    context.policy.upgrade === expectedUpgrade,
+    `bank=${context.state.energy.bank} mode=${context.policy.upgrade}`
+  );
+
   const body = compileBody("worker", RCL1Config.worker.bodyPlan, room.energyCapacityAvailable, context.policy);
   const spawnTime = estimateSpawnTime(body);
   recordAssertion(memory, "worker-spawn-time", spawnTime <= 300, `spawnTime=${spawnTime}`);

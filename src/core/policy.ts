@@ -15,11 +15,7 @@ export const derivePolicy = (room: Room, state: RoomState): Policy => {
     nav: { moveRatioHint: 0.5 }
   };
 
-  if (!room.memory.policy) {
-    room.memory.policy = nextPolicy as any;
-  } else {
-    room.memory.policy = Object.assign({}, room.memory.policy, nextPolicy) as any;
-  }
+  room.memory.policy = nextPolicy as any;
 
-  return room.memory.policy as Policy;
+  return nextPolicy;
 };
