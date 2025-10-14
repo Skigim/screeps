@@ -642,50 +642,737 @@ if (typeof Creep !== 'undefined') {
 }
 
 /* eslint-disable @typescript-eslint/no-var-requires */
+const createFallback = () => {
+    const fallback = class StubTasks {
+        static chain(tasks = []) {
+            return tasks.length > 0 ? tasks[0] : null;
+        }
+    };
+    const taskMethods = [
+        'attack',
+        'build',
+        'claim',
+        'dismantle',
+        'drop',
+        'fortify',
+        'getBoosted',
+        'getRenewed',
+        'goTo',
+        'goToRoom',
+        'harvest',
+        'heal',
+        'meleeAttack',
+        'pickup',
+        'rangedAttack',
+        'repair',
+        'reserve',
+        'signController',
+        'transfer',
+        'transferAll',
+        'upgrade',
+        'withdraw',
+        'withdrawAll'
+    ];
+    for (const method of taskMethods) {
+        fallback[method] = (..._args) => {
+            throw new Error(`Tasks.${method} is unavailable`);
+        };
+    }
+    return fallback;
+};
 const loadTasks = () => {
     if (typeof Game === 'undefined') {
-        const fallback = class StubTasks {
-            static chain(tasks = []) {
-                return tasks.length > 0 ? tasks[0] : null;
-            }
-        };
-        const taskMethods = [
-            'attack',
-            'build',
-            'claim',
-            'dismantle',
-            'drop',
-            'fortify',
-            'getBoosted',
-            'getRenewed',
-            'goTo',
-            'goToRoom',
-            'harvest',
-            'heal',
-            'meleeAttack',
-            'pickup',
-            'rangedAttack',
-            'repair',
-            'reserve',
-            'signController',
-            'transfer',
-            'transferAll',
-            'upgrade',
-            'withdraw',
-            'withdrawAll'
-        ];
-        for (const method of taskMethods) {
-            fallback[method] = (..._args) => {
-                throw new Error(`Tasks.${method} is unavailable outside the Screeps runtime`);
-            };
-        }
-        return fallback;
+        return createFallback();
     }
-    require('./runtime/prototypes');
-    const tasksModule = require('./runtime/Tasks');
-    return tasksModule.Tasks || tasksModule.default;
+    try {
+        require('./runtime/prototypes');
+        const tasksModule = require('./runtime/Tasks');
+        return tasksModule.Tasks || tasksModule.default;
+    }
+    catch (error) {
+        const globalScope = global;
+        if (!globalScope.__creepTasksWarned) {
+            console.log(`[Vendor] creep-tasks offline (${error.message})`);
+            globalScope.__creepTasksWarned = true;
+        }
+        return createFallback();
+    }
 };
 const Tasks = loadTasks();
+
+const MIN_ENERGY_LOW = 200;
+const DEFAULT_HIGH_ENERGY = 10000;
+const derivePolicy = (room, state) => {
+    const nextPolicy = {
+        threatLevel: state.hostiles.count > 0 ? "poke" : "none",
+        upgrade: state.energy.bank < MIN_ENERGY_LOW ? "conserve" : "steady",
+        energy: {
+            low: MIN_ENERGY_LOW,
+            high: Math.max(DEFAULT_HIGH_ENERGY, state.energy.bank)
+        },
+        cpu: { minBucket: 3000 },
+        nav: { moveRatioHint: 0.5 }
+    };
+    room.memory.policy = nextPolicy;
+    return nextPolicy;
+};
+
+const energyFromStructure = (structure) => {
+    var _a, _b;
+    if ("store" in structure && structure.store) {
+        const store = structure.store;
+        if (typeof store.getUsedCapacity === "function") {
+            const capacity = store.getUsedCapacity(RESOURCE_ENERGY);
+            return typeof capacity === "number" ? capacity : 0;
+        }
+        return (_a = store[RESOURCE_ENERGY]) !== null && _a !== void 0 ? _a : 0;
+    }
+    if ("energy" in structure) {
+        return (_b = structure.energy) !== null && _b !== void 0 ? _b : 0;
+    }
+    return 0;
+};
+const calculateRoadCoverage = (structures) => {
+    const roadCount = structures.filter(structure => structure.structureType === STRUCTURE_ROAD).length;
+    if (roadCount === 0) {
+        return 0;
+    }
+    return Math.min(1, roadCount / 100);
+};
+const buildRoomState = (_room, snapshot) => {
+    var _a, _b;
+    const energyBank = snapshot.structures.reduce((total, structure) => {
+        if (structure.structureType === STRUCTURE_SPAWN ||
+            structure.structureType === STRUCTURE_EXTENSION ||
+            structure.structureType === STRUCTURE_CONTAINER) {
+            return total + energyFromStructure(structure);
+        }
+        return total;
+    }, 0);
+    const state = {
+        hostiles: { count: snapshot.hostiles.length },
+        energy: { bank: energyBank },
+        infra: { roadsPct: calculateRoadCoverage(snapshot.structures) },
+        flags: { linksOnline: Boolean((_b = (_a = _room.memory) === null || _a === void 0 ? void 0 : _a.flags) === null || _b === void 0 ? void 0 : _b.linksOnline) }
+    };
+    return state;
+};
+
+const Heap = global;
+if (!Heap.orders) {
+    Heap.orders = new Map();
+}
+if (!Heap.snap) {
+    Heap.snap = { rooms: new Map(), squads: new Map() };
+}
+if (!Heap.runtime) {
+    Heap.runtime = { rooms: new Map() };
+}
+if (!Heap.debug) {
+    Heap.debug = {};
+}
+const ensureRoomFrame = (roomName) => {
+    if (!Heap.snap) {
+        Heap.snap = { rooms: new Map(), squads: new Map() };
+    }
+    let frame = Heap.snap.rooms.get(roomName);
+    if (!frame) {
+        frame = {};
+        Heap.snap.rooms.set(roomName, frame);
+    }
+    return frame;
+};
+const getRoomRuntimeFrame = (roomName) => {
+    if (!Heap.runtime) {
+        Heap.runtime = { rooms: new Map() };
+    }
+    let runtime = Heap.runtime.rooms.get(roomName);
+    if (!runtime) {
+        runtime = {
+            upgradeSuccess: [],
+            spawnStarved: [],
+            cpuMedians: [],
+            workerCounts: [],
+            refillDurations: []
+        };
+        Heap.runtime.rooms.set(roomName, runtime);
+    }
+    return runtime;
+};
+
+const RCL1Config = {
+    worker: {
+        min: 3,
+        max: 4,
+        bodyPlan: "worker-basic"
+    },
+    spawn: {
+        energyBuffer: 200
+    }
+};
+
+const compileBody = (_plan, _profile, _energyCap, _policy) => {
+    return [WORK, CARRY, MOVE];
+};
+const estimateSpawnTime = (body) => body.length * 3;
+const calculateBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
+
+const orderSignature = (order) => { var _a; return `${order.type}:${(_a = order.targetId) !== null && _a !== void 0 ? _a : "none"}`; };
+const ensureHeapMaps = () => {
+    if (!Heap.snap) {
+        Heap.snap = { rooms: new Map(), squads: new Map() };
+    }
+    if (!Heap.snap.squads) {
+        Heap.snap.squads = new Map();
+    }
+    if (!Heap.orders) {
+        Heap.orders = new Map();
+    }
+    if (!Heap.debug) {
+        Heap.debug = {};
+    }
+    if (!Heap.debug.creepCpuSamples) {
+        Heap.debug.creepCpuSamples = [];
+    }
+};
+const cpuNow = () => (typeof Game !== "undefined" && Game.cpu ? Game.cpu.getUsed() : 0);
+const hasEnergyFreeCapacity = (structure) => {
+    const store = structure.store;
+    if (store && typeof store.getFreeCapacity === "function") {
+        const free = store.getFreeCapacity(RESOURCE_ENERGY);
+        return typeof free === "number" && free > 0;
+    }
+    const legacy = structure;
+    if (typeof legacy.energy === "number" && typeof legacy.energyCapacity === "number") {
+        return legacy.energy < legacy.energyCapacity;
+    }
+    return false;
+};
+const findRefillTarget = (snapshot) => {
+    const spawn = snapshot.structures.find((structure) => {
+        if (structure.structureType !== STRUCTURE_SPAWN) {
+            return false;
+        }
+        return hasEnergyFreeCapacity(structure);
+    });
+    if (spawn) {
+        return spawn;
+    }
+    return snapshot.structures.find((structure) => {
+        if (structure.structureType !== STRUCTURE_EXTENSION) {
+            return false;
+        }
+        return hasEnergyFreeCapacity(structure);
+    });
+};
+const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersChanged) => {
+    var _a;
+    const squadName = "worker";
+    ensureHeapMaps();
+    const snap = Heap.snap;
+    if (!snap) {
+        return;
+    }
+    const entries = (_a = snap.squads.get(squadName)) !== null && _a !== void 0 ? _a : [];
+    const metrics = {
+        tick: Game.time,
+        room: room.name,
+        squad: squadName,
+        idlePct,
+        ordersIssued,
+        ordersChanged,
+        headcount,
+        queued
+    };
+    entries.push(metrics);
+    if (entries.length > 50) {
+        entries.splice(0, entries.length - 50);
+    }
+    snap.squads.set(squadName, entries);
+};
+const assignOrder = (creep, room, snapshot) => {
+    var _a;
+    ensureHeapMaps();
+    const isEmpty = creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0;
+    const controller = room.controller;
+    let orderType = "IDLE";
+    let targetId;
+    const refillTarget = findRefillTarget(snapshot);
+    if (isEmpty) {
+        const source = snapshot.sources[0];
+        if (source) {
+            orderType = "HARVEST";
+            targetId = source.id;
+        }
+    }
+    else if (refillTarget) {
+        orderType = "TRANSFER";
+        targetId = refillTarget.id;
+    }
+    else if (controller) {
+        orderType = "UPGRADE";
+        targetId = controller.id;
+    }
+    const signature = orderSignature({ type: orderType, targetId });
+    const memory = creep.memory;
+    const previousSignature = (_a = memory.orderId) !== null && _a !== void 0 ? _a : "";
+    const changed = signature !== previousSignature;
+    const order = {
+        id: `${creep.name}:${Game.time}`,
+        type: orderType,
+        params: { persisted: !changed }
+    };
+    if (targetId) {
+        order.targetId = targetId;
+    }
+    if (orderType === "TRANSFER") {
+        order.res = RESOURCE_ENERGY;
+        order.amount = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+    }
+    if (Heap.orders) {
+        Heap.orders.set(creep.name, order);
+    }
+    memory.orderId = signature;
+    memory.role = "worker";
+    memory.squad = "worker";
+    return { changed, idle: orderType === "IDLE" };
+};
+const maintainPopulation = (context) => {
+    const { policy, snapshot } = context;
+    const workerCreeps = snapshot.myCreeps.filter(creep => { var _a; return ((_a = creep.memory.role) !== null && _a !== void 0 ? _a : "") === "worker"; });
+    if (workerCreeps.length >= RCL1Config.worker.max) {
+        return;
+    }
+    const idleSpawn = snapshot.structures.find((structure) => {
+        if (structure.structureType !== STRUCTURE_SPAWN) {
+            return false;
+        }
+        const spawn = structure;
+        return !spawn.spawning;
+    });
+    if (!idleSpawn) {
+        return;
+    }
+    const body = compileBody("worker", RCL1Config.worker.bodyPlan, snapshot.energyCapacityAvailable);
+    const cost = calculateBodyCost(body);
+    if (snapshot.energyAvailable < cost) {
+        return;
+    }
+    const name = `wrk-${Game.time}-${Math.floor(Math.random() * 1000)}`;
+    idleSpawn.spawnCreep(body, name, {
+        memory: {
+            role: "worker",
+            squad: "worker"
+        }
+    });
+};
+class WorkerSquad {
+    run(context) {
+        maintainPopulation(context);
+        const workerCreeps = context.snapshot.myCreeps.filter(creep => { var _a; return ((_a = creep.memory.role) !== null && _a !== void 0 ? _a : "") === "worker"; });
+        let ordersIssued = 0;
+        let ordersChanged = 0;
+        let idleCount = 0;
+        for (const creep of workerCreeps) {
+            const before = cpuNow();
+            const { changed, idle } = assignOrder(creep, context.room, context.snapshot);
+            const after = cpuNow();
+            const delta = after - before;
+            if (!Heap.debug) {
+                Heap.debug = {};
+            }
+            if (!Heap.debug.creepCpuSamples) {
+                Heap.debug.creepCpuSamples = [];
+            }
+            Heap.debug.creepCpuSamples.push(delta);
+            ordersIssued += 1;
+            if (changed) {
+                ordersChanged += 1;
+            }
+            if (idle) {
+                idleCount += 1;
+            }
+        }
+        const idlePct = workerCreeps.length === 0 ? 0 : idleCount / workerCreeps.length;
+        const queued = context.snapshot.structures.reduce((count, structure) => {
+            if (structure.structureType !== STRUCTURE_SPAWN) {
+                return count;
+            }
+            const spawn = structure;
+            return spawn.spawning ? count + 1 : count;
+        }, 0);
+        recordMetrics(context.room, workerCreeps.length, queued, idlePct, ordersIssued, ordersChanged);
+        return {
+            workers: workerCreeps.length,
+            queued,
+            targetMin: RCL1Config.worker.min,
+            targetMax: RCL1Config.worker.max,
+            ordersIssued,
+            ordersChanged,
+            idlePct
+        };
+    }
+}
+
+const ALERT_LIMIT = 20;
+const ROLLING_WINDOW = 50;
+const getAugmentedMemory = (room) => room.memory;
+const ensureRoomMetrics = (room) => {
+    var _a;
+    const memory = getAugmentedMemory(room);
+    const existing = (_a = memory.metrics) !== null && _a !== void 0 ? _a : {};
+    const sanitized = {};
+    if (typeof existing.upgradeContinuityPct === "number") {
+        sanitized.upgradeContinuityPct = existing.upgradeContinuityPct;
+    }
+    if (typeof existing.spawnStarvationTicks === "number") {
+        sanitized.spawnStarvationTicks = existing.spawnStarvationTicks;
+    }
+    if (typeof existing.lastControllerProgress === "number") {
+        sanitized.lastControllerProgress = existing.lastControllerProgress;
+    }
+    if (typeof existing.lastSpawnTick === "number") {
+        sanitized.lastSpawnTick = existing.lastSpawnTick;
+    }
+    if (typeof existing.creepCpuMedian === "number") {
+        sanitized.creepCpuMedian = existing.creepCpuMedian;
+    }
+    if (typeof existing.cpuP95 === "number") {
+        sanitized.cpuP95 = existing.cpuP95;
+    }
+    if (typeof existing.refillSlaMedian === "number") {
+        sanitized.refillSlaMedian = existing.refillSlaMedian;
+    }
+    if (typeof existing.workerCount === "number") {
+        sanitized.workerCount = existing.workerCount;
+    }
+    memory.metrics = sanitized;
+    return memory.metrics;
+};
+const pushAlert = (room, type, msg) => {
+    const memory = getAugmentedMemory(room);
+    if (!memory.alerts) {
+        memory.alerts = [];
+    }
+    memory.alerts.push({ tick: Game.time, type, msg });
+    if (memory.alerts.length > ALERT_LIMIT) {
+        memory.alerts.splice(0, memory.alerts.length - ALERT_LIMIT);
+    }
+};
+const median = (values) => {
+    if (values.length === 0) {
+        return 0;
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    return sorted[mid];
+};
+const percentile = (values, fraction) => {
+    if (values.length === 0) {
+        return 0;
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    const index = Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1);
+    return sorted[Math.max(0, index)];
+};
+const runTickMonitors = (room, context) => {
+    var _a, _b, _c, _d;
+    const memory = getAugmentedMemory(room);
+    const metrics = ensureRoomMetrics(room);
+    const runtime = getRoomRuntimeFrame(room.name);
+    if (!memory.policy) {
+        pushAlert(room, "FAIL", "policy missing");
+    }
+    const workerCreeps = context.snapshot.myCreeps.filter(creep => creep.memory.role === "worker");
+    if (workerCreeps.length < RCL1Config.worker.min) {
+        pushAlert(room, "WARN", `worker count below target (${workerCreeps.length}/${RCL1Config.worker.min})`);
+    }
+    runtime.workerCounts.push(workerCreeps.length);
+    if (runtime.workerCounts.length > ROLLING_WINDOW) {
+        runtime.workerCounts.shift();
+    }
+    metrics.workerCount = workerCreeps.length;
+    const controller = room.controller;
+    if (controller && controller.ticksToDowngrade !== undefined && controller.ticksToDowngrade <= 4000) {
+        pushAlert(room, "WARN", "controller downgrade risk");
+    }
+    const progress = (_a = controller === null || controller === void 0 ? void 0 : controller.progress) !== null && _a !== void 0 ? _a : 0;
+    const previousProgress = (_b = metrics.lastControllerProgress) !== null && _b !== void 0 ? _b : progress;
+    const upgraded = progress > previousProgress ? 1 : 0;
+    runtime.upgradeSuccess.push(upgraded);
+    if (runtime.upgradeSuccess.length > ROLLING_WINDOW) {
+        runtime.upgradeSuccess.shift();
+    }
+    metrics.lastControllerProgress = progress;
+    const desiredWorkers = RCL1Config.worker.min;
+    const starved = workerCreeps.length < desiredWorkers && room.energyAvailable < RCL1Config.spawn.energyBuffer;
+    runtime.spawnStarved.push(starved ? 1 : 0);
+    if (runtime.spawnStarved.length > ROLLING_WINDOW) {
+        runtime.spawnStarved.shift();
+    }
+    const spawns = context.snapshot.structures.filter((structure) => structure.structureType === STRUCTURE_SPAWN);
+    if (spawns.some(spawn => spawn.spawning)) {
+        metrics.lastSpawnTick = Game.time;
+    }
+    const creepSamples = (_d = (_c = Heap.debug) === null || _c === void 0 ? void 0 : _c.creepCpuSamples) !== null && _d !== void 0 ? _d : [];
+    if (creepSamples.length > 0) {
+        const medianCpu = median(creepSamples);
+        metrics.creepCpuMedian = Number(medianCpu.toFixed(3));
+        runtime.cpuMedians.push(medianCpu);
+        if (runtime.cpuMedians.length > 100) {
+            runtime.cpuMedians.shift();
+        }
+        if (medianCpu > 0.3) {
+            pushAlert(room, "WARN", `median creep CPU ${medianCpu.toFixed(3)}ms`);
+        }
+    }
+    if (runtime.cpuMedians.length > 0) {
+        const cpuP95 = percentile(runtime.cpuMedians, 0.95);
+        metrics.cpuP95 = Number(cpuP95.toFixed(3));
+    }
+    const { energyAvailable, energyCapacityAvailable } = context.snapshot;
+    if (energyAvailable < energyCapacityAvailable) {
+        if (runtime.refillActiveSince === undefined) {
+            runtime.refillActiveSince = Game.time;
+        }
+    }
+    else if (runtime.refillActiveSince !== undefined) {
+        const duration = Game.time - runtime.refillActiveSince;
+        runtime.refillActiveSince = undefined;
+        if (duration > 0) {
+            runtime.refillDurations.push(duration);
+            if (runtime.refillDurations.length > ROLLING_WINDOW) {
+                runtime.refillDurations.shift();
+            }
+        }
+    }
+    if (runtime.refillDurations.length > 0) {
+        const refillMedian = median(runtime.refillDurations);
+        metrics.refillSlaMedian = Number(refillMedian.toFixed(1));
+    }
+};
+
+const AUDIT_WINDOW = 50;
+const toPercent = (value) => `${Math.round(value * 100)}%`;
+const runRoomAudit = (room, _context) => {
+    const memory = room.memory;
+    if (!memory.metrics) {
+        memory.metrics = {};
+    }
+    const metrics = memory.metrics;
+    const runtime = getRoomRuntimeFrame(room.name);
+    const continuityWindow = runtime.upgradeSuccess.slice(-AUDIT_WINDOW);
+    if (continuityWindow.length === AUDIT_WINDOW) {
+        const continuity = continuityWindow.reduce((sum, value) => sum + value, 0) / AUDIT_WINDOW;
+        metrics.upgradeContinuityPct = Math.round(continuity * 100);
+        if (continuity < 0.9) {
+            pushAlert(room, "WARN", `upgrade continuity ${toPercent(continuity)} below SLA`);
+        }
+    }
+    const starvedWindow = runtime.spawnStarved.slice(-AUDIT_WINDOW);
+    if (starvedWindow.length === AUDIT_WINDOW) {
+        const starvedTicks = starvedWindow.reduce((sum, value) => sum + value, 0);
+        metrics.spawnStarvationTicks = starvedTicks;
+        if (starvedTicks > 3) {
+            pushAlert(room, "WARN", `spawn starvation ${starvedTicks} ticks in window`);
+        }
+    }
+};
+
+const RECENT_LIMIT = 10;
+const ensureTestsMemory = (memory) => {
+    if (!memory.tests) {
+        memory.tests = { pass: 0, fail: 0, recent: [] };
+    }
+    if (!memory.tests.recent) {
+        memory.tests.recent = [];
+    }
+    return memory.tests;
+};
+const recordAssertion = (memory, name, pass, details) => {
+    var _a;
+    const tests = ensureTestsMemory(memory);
+    if (pass) {
+        tests.pass += 1;
+    }
+    else {
+        tests.fail += 1;
+    }
+    tests.lastTick = Game.time;
+    tests.recent = (_a = tests.recent) !== null && _a !== void 0 ? _a : [];
+    tests.recent.push({ name, pass, tick: Game.time, details });
+    if (tests.recent.length > RECENT_LIMIT) {
+        tests.recent.splice(0, tests.recent.length - RECENT_LIMIT);
+    }
+};
+const runRoomAssertions = (room, context) => {
+    const memory = room.memory;
+    recordAssertion(memory, "policy-energy-low", context.policy.energy.low === 200, `low=${context.policy.energy.low}`);
+    recordAssertion(memory, "policy-nav-hint", context.policy.nav.moveRatioHint === 0.5, `hint=${context.policy.nav.moveRatioHint}`);
+    const expectedUpgrade = context.state.energy.bank < 200 ? "conserve" : "steady";
+    recordAssertion(memory, "policy-upgrade-bank", context.policy.upgrade === expectedUpgrade, `bank=${context.state.energy.bank} mode=${context.policy.upgrade}`);
+    const body = compileBody("worker", RCL1Config.worker.bodyPlan, room.energyCapacityAvailable, context.policy);
+    const spawnTime = estimateSpawnTime(body);
+    recordAssertion(memory, "worker-spawn-time", spawnTime <= 300, `spawnTime=${spawnTime}`);
+};
+
+const initializeTick = () => {
+    if (!Heap.orders) {
+        Heap.orders = new Map();
+    }
+    Heap.orders.clear();
+    if (!Heap.snap) {
+        Heap.snap = { rooms: new Map(), squads: new Map() };
+    }
+    Heap.snap.rooms.clear();
+    Heap.snap.squads.clear();
+    if (!Heap.debug) {
+        Heap.debug = {};
+    }
+    Heap.debug.roomScans = {};
+    Heap.debug.creepCpuSamples = [];
+};
+const sense = (room) => {
+    var _a;
+    const snapshot = {
+        tick: Game.time,
+        structures: room.find(FIND_STRUCTURES),
+        hostiles: room.find(FIND_HOSTILE_CREEPS),
+        myCreeps: room.find(FIND_MY_CREEPS),
+        sources: room.find(FIND_SOURCES),
+        energyAvailable: room.energyAvailable,
+        energyCapacityAvailable: room.energyCapacityAvailable
+    };
+    const frame = ensureRoomFrame(room.name);
+    frame.snapshot = snapshot;
+    if (!Heap.debug) {
+        Heap.debug = {};
+    }
+    if (!Heap.debug.roomScans) {
+        Heap.debug.roomScans = {};
+    }
+    Heap.debug.roomScans[room.name] = ((_a = Heap.debug.roomScans[room.name]) !== null && _a !== void 0 ? _a : 0) + 1;
+    return snapshot;
+};
+const writeCompactState = (room, state) => {
+    const compact = {
+        bank: state.energy.bank,
+        hostiles: state.hostiles.count,
+        roads: Number(state.infra.roadsPct.toFixed(2)),
+        links: state.flags.linksOnline ? 1 : 0
+    };
+    room.memory.state = compact;
+};
+const synthesize = (room, snapshot) => {
+    const state = buildRoomState(room, snapshot);
+    const policy = derivePolicy(room, state);
+    writeCompactState(room, state);
+    const frame = ensureRoomFrame(room.name);
+    frame.state = state;
+    frame.policy = policy;
+    return { state, policy };
+};
+const decide = (room, policy) => {
+    const directives = {
+        refill: { slaTicks: 300 },
+        upgrade: { mode: policy.upgrade }
+    };
+    const frame = ensureRoomFrame(room.name);
+    frame.directives = directives;
+    return directives;
+};
+const logSense = (room, snapshot) => {
+    const metrics = [
+        `energy=${snapshot.energyAvailable}/${snapshot.energyCapacityAvailable}`,
+        `workers=${snapshot.myCreeps.length}`,
+        `hostiles=${snapshot.hostiles.length}`
+    ].join(" ");
+    console.log(`[Survey ${room.name}] ${metrics}`);
+};
+const logSynthesize = (room, policy) => {
+    const summary = [
+        `upgrade=${policy.upgrade}`,
+        `threat=${policy.threatLevel}`,
+        `nav.move=${policy.nav.moveRatioHint}`
+    ].join(" ");
+    console.log(`[Council ${room.name}] policy: ${summary}`);
+};
+const logDecide = (room, directives) => {
+    console.log(`[Mayor ${room.name}] directives: refill=${directives.refill.slaTicks} upgrade=${directives.upgrade.mode}`);
+};
+const logAct = (room, report) => {
+    const details = [
+        `workers=${report.workers}/${report.targetMax}`,
+        `queued=${report.queued}`,
+        `ordersIssued=${report.ordersIssued}`,
+        `ordersChanged=${report.ordersChanged}`,
+        `idlePct=${report.idlePct.toFixed(2)}`
+    ].join(" ");
+    console.log(`[Foreman ${room.name}] ${details}`);
+};
+const logChronicler = (room, context, report) => {
+    var _a, _b;
+    const memory = room.memory;
+    const metrics = (_a = memory.metrics) !== null && _a !== void 0 ? _a : {};
+    const alerts = (_b = memory.alerts) !== null && _b !== void 0 ? _b : [];
+    const cpuP95 = metrics.cpuP95 !== undefined ? metrics.cpuP95.toFixed(3) : "-";
+    const refillMedian = metrics.refillSlaMedian !== undefined ? metrics.refillSlaMedian.toFixed(1) : "-";
+    const chronicle = [
+        `t=${Game.time}`,
+        `cpu.p95=${cpuP95}`,
+        `workers=${report.workers}`,
+        `upgrade=${context.policy.upgrade}`,
+        `refillSLA.median=${refillMedian}`,
+        `alerts=${alerts.length}`
+    ].join(" ");
+    console.log(`[Chronicler ${room.name}] ${chronicle}`);
+};
+const act = (room, context) => {
+    const workerSquad = new WorkerSquad();
+    return workerSquad.run({
+        room,
+        policy: context.policy,
+        directives: context.directives,
+        state: context.state,
+        snapshot: context.snapshot
+    });
+};
+const runTick = () => {
+    if (typeof Game === "undefined") {
+        return;
+    }
+    initializeTick();
+    const rooms = Object.values(Game.rooms);
+    for (const room of rooms) {
+        const snapshot = sense(room);
+        logSense(room, snapshot);
+        const { state, policy } = synthesize(room, snapshot);
+        logSynthesize(room, policy);
+        const directives = decide(room, policy);
+        logDecide(room, directives);
+        const tickContext = {
+            state,
+            policy,
+            directives,
+            snapshot
+        };
+        const report = act(room, tickContext);
+        logAct(room, report);
+        runTickMonitors(room, tickContext);
+        if (Game.time % 50 === 0) {
+            runRoomAudit(room);
+        }
+        if (Game.time % 500 === 0) {
+            runRoomAssertions(room, tickContext);
+        }
+        if (Game.time % 100 === 0) {
+            logChronicler(room, tickContext, report);
+        }
+    }
+};
 
 const bootstrapVendors = () => {
     global.Traveler = Traveler;
@@ -693,7 +1380,7 @@ const bootstrapVendors = () => {
 };
 bootstrapVendors();
 const cleanupCreepMemory = () => {
-    if (typeof Memory === 'undefined' || typeof Game === 'undefined') {
+    if (typeof Memory === "undefined" || typeof Game === "undefined") {
         return;
     }
     for (const name of Object.keys(Memory.creeps)) {
@@ -702,12 +1389,13 @@ const cleanupCreepMemory = () => {
         }
     }
 };
-global.__GIT_HASH__ = "dace12b";
+global.__GIT_HASH__ = "0a928e5";
 const loop = () => {
     var _a;
     cleanupCreepMemory();
-    if (typeof Game !== 'undefined' && Game.time % 150 === 0) {
-        console.log(`Loop tick=${Game.time} hash=${(_a = global.__GIT_HASH__) !== null && _a !== void 0 ? _a : 'development'}`);
+    runTick();
+    if (typeof Game !== "undefined" && Game.time % 150 === 0) {
+        console.log(`Loop tick=${Game.time} hash=${(_a = global.__GIT_HASH__) !== null && _a !== void 0 ? _a : "development"}`);
     }
 };
 

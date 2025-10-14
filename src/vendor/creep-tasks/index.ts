@@ -54,7 +54,11 @@ const loadTasks = (): TasksConstructor => {
 		const tasksModule = require('./runtime/Tasks');
 		return tasksModule.Tasks || tasksModule.default;
 	} catch (error) {
-		console.log(`[Vendor] creep-tasks offline (${(error as Error).message})`);
+		const globalScope = global as typeof global & { __creepTasksWarned?: boolean };
+		if (!globalScope.__creepTasksWarned) {
+			console.log(`[Vendor] creep-tasks offline (${(error as Error).message})`);
+			globalScope.__creepTasksWarned = true;
+		}
 		return createFallback();
 	}
 };
