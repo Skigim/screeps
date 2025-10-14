@@ -38,13 +38,9 @@ export default {
 
   plugins: [
     clear({ targets: ["dist"] }),
-    resolve({ rootDir: "src" }),
+    resolve({ rootDir: "src", extensions: ['.ts', '.js'] }),
     typescript({ tsconfig: "./tsconfig.json" }),
-    commonjs({
-      include: ["src/vendor/creep-tasks/**"],
-      dynamicRequireTargets: ["src/vendor/creep-tasks/runtime/**/*.js"],
-      transformMixedEsModules: true
-    }),
+    commonjs(),
     screeps({config: cfg, dryRun: cfg == null}),
     {
       name: 'inject-git-hash',

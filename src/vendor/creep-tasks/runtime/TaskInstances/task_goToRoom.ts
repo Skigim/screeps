@@ -1,27 +1,25 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const Task_1 = require("../Task");
-function hasPos(obj) {
-    return obj.pos != undefined;
-}
-class TaskGoTo extends Task_1.Task {
-    constructor(target, options = {}) {
-        if (hasPos(target)) {
-            super(TaskGoTo.taskName, { ref: '', pos: target.pos }, options);
-        }
-        else {
-            super(TaskGoTo.taskName, { ref: '', pos: target }, options);
-        }
+import { Task } from '../Task';
+
+export type goToRoomTargetType = string;
+
+export class TaskGoToRoom extends Task {
+    public static taskName = 'goToRoom';
+
+    constructor(roomName: goToRoomTargetType, options: TaskOptions = {}) {
+        super(TaskGoToRoom.taskName, { ref: '', pos: new RoomPosition(25, 25, roomName) }, options);
         // Settings
-        this.settings.targetRange = 1;
+        this.settings.targetRange = 24; // Target is almost always controller flag, so range of 2 is acceptable
     }
-    isValidTask() {
+
+    isValidTask(): boolean {
         return !this.creep.pos.inRangeTo(this.targetPos, this.settings.targetRange);
     }
-    isValidTarget() {
+
+    isValidTarget(): boolean {
         return true;
     }
-    isValid() {
+
+    isValid(): boolean {
         // It's necessary to override task.isValid() for tasks which do not have a RoomObject target
         let validTask = false;
         if (this.creep) {
@@ -30,8 +28,7 @@ class TaskGoTo extends Task_1.Task {
         // Return if the task is valid; if not, finalize/delete the task and return false
         if (validTask) {
             return true;
-        }
-        else {
+        } else {
             // Switch to parent task if there is one
             let isValid = false;
             if (this.parent) {
@@ -41,9 +38,8 @@ class TaskGoTo extends Task_1.Task {
             return isValid;
         }
     }
-    work() {
+
+    work(): number {
         return OK;
     }
 }
-TaskGoTo.taskName = 'goTo';
-exports.TaskGoTo = TaskGoTo;
