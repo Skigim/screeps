@@ -7411,7 +7411,7 @@ class RoleHarvester {
             return;
         }
         // MOBILE HARVESTER: Use task-based system
-        this.runMobileHarvester(creep, useDropMining);
+        this.runMobileHarvester(creep);
     }
     /**
      * Stationary harvester - custom logic preserved
@@ -7460,38 +7460,24 @@ class RoleHarvester {
     /**
      * Mobile harvester - task-based with drop mining support
      */
-    static runMobileHarvester(creep, useDropMining) {
-        // State transitions
-        if (creep.store.getFreeCapacity() === 0) {
-            creep.memory.working = true;
+    static runMobileHarvester(creep) {
+        const assignedSourceId = creep.memory.assignedSource;
+        if (!assignedSourceId) {
+            console.log(`[${creep.name}] No assigned source!`);
+            return;
         }
-        if (creep.store.getUsedCapacity() === 0) {
-            creep.memory.working = false;
+        const source = Game.getObjectById(assignedSourceId);
+        if (!source) {
+            console.log(`[${creep.name}] Source ${assignedSourceId} not found!`);
+            return;
         }
-        if (!creep.memory.working) {
-            // Harvest from assigned source
-            if (creep.memory.assignedSource) {
-                const source = Game.getObjectById(creep.memory.assignedSource);
-                if (source) {
-                    creep.task = _default.harvest(source);
-                }
-            }
-            else {
-                // Fallback: any source
-                const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-                if (source) {
-                    creep.task = _default.harvest(source);
-                }
-            }
+        // If no task or task is invalid, assign harvest task
+        if (!creep.task || !creep.task.isValid()) {
+            console.log(`[${creep.name}] Assigning harvest task for source ${source.id}`);
+            creep.task = _default.harvest(source);
         }
         else {
-            // Working - deliver or drop
-            if (useDropMining) {
-                this.assignDropMiningTask(creep);
-            }
-            else {
-                this.assignDeliveryTask(creep);
-            }
+            console.log(`[${creep.name}] Already has valid task: ${creep.task.name}`);
         }
     }
     /**
@@ -7655,6 +7641,7 @@ class RoleUpgrader {
      */
     static assignContainerTask(creep) {
         const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+        console.log(`[${creep.name}] Container task - vacuuming: ${creep.memory.vacuuming}, has energy: ${creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0}`);
         // Special case: If creep is vacuuming (picked up dropped energy), return it to base
         if (creep.memory.vacuuming && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
             this.assignVacuumReturnTask(creep, progressionState);
@@ -7663,13 +7650,16 @@ class RoleUpgrader {
         // If already full, just upgrade
         if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
             if (creep.room.controller) {
+                console.log(`[${creep.name}] Full, assigning upgrade task`);
                 creep.task = _default.upgrade(creep.room.controller);
             }
             return;
         }
         // Priority 1: Withdraw from controller container
         const controllerContainer = this.findControllerContainer(creep.room);
+        console.log(`[${creep.name}] Controller container: ${(controllerContainer === null || controllerContainer === void 0 ? void 0 : controllerContainer.id) || 'none'}`);
         if (controllerContainer && creep.room.controller) {
+            console.log(`[${creep.name}] Assigning chain: withdraw from controller container -> upgrade`);
             creep.task = _default.chain([
                 _default.withdraw(controllerContainer, RESOURCE_ENERGY),
                 _default.upgrade(creep.room.controller)
@@ -7678,6 +7668,7 @@ class RoleUpgrader {
         }
         // Priority 2: Vacuum duty - pick up dropped energy (excluding source areas)
         const droppedEnergy = this.findVacuumTarget(creep.room);
+        console.log(`[${creep.name}] Vacuum target: ${(droppedEnergy === null || droppedEnergy === void 0 ? void 0 : droppedEnergy.id) || 'none'}`);
         if (droppedEnergy) {
             // Single task: pickup (will set vacuum flag via callback)
             creep.task = _default.pickup(droppedEnergy);
@@ -7685,6 +7676,7 @@ class RoleUpgrader {
             return;
         }
         // Priority 3: Nothing to do - idle near controller
+        console.log(`[${creep.name}] No energy source, idling near controller`);
         if (creep.room.controller && creep.pos.getRangeTo(creep.room.controller) > 3) {
             creep.task = _default.goTo(creep.room.controller, { range: 3 });
         }
@@ -10021,7 +10013,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "c1480e1";
+global.__GIT_HASH__ = "c3ef848";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code

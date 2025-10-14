@@ -8,6 +8,7 @@
 import Tasks from "creep-tasks";
 import type { RCLConfig } from "configs/RCL1Config";
 import { RoomStateManager } from "managers/RoomStateManager";
+import { AssignmentManager } from "managers/AssignmentManager";
 
 export class RoleHarvester {
   public static run(creep: Creep, config: RCLConfig): void {
@@ -40,7 +41,7 @@ export class RoleHarvester {
     }
 
     // MOBILE HARVESTER: Use task-based system
-    this.runMobileHarvester(creep, useDropMining);
+    this.runMobileHarvester(creep);
   }
 
   /**
@@ -93,36 +94,25 @@ export class RoleHarvester {
   /**
    * Mobile harvester - task-based with drop mining support
    */
-  private static runMobileHarvester(creep: Creep, useDropMining: boolean): void {
-    // State transitions
-    if (creep.store.getFreeCapacity() === 0) {
-      creep.memory.working = true;
-    }
-    if (creep.store.getUsedCapacity() === 0) {
-      creep.memory.working = false;
+  private static runMobileHarvester(creep: Creep): void {
+    const assignedSourceId = creep.memory.assignedSource;
+    if (!assignedSourceId) {
+      console.log(`[${creep.name}] No assigned source!`);
+      return;
     }
 
-    if (!creep.memory.working) {
-      // Harvest from assigned source
-      if (creep.memory.assignedSource) {
-        const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
-        if (source) {
-          creep.task = Tasks.harvest(source);
-        }
-      } else {
-        // Fallback: any source
-        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-        if (source) {
-          creep.task = Tasks.harvest(source);
-        }
-      }
+    const source = Game.getObjectById(assignedSourceId as Id<Source>);
+    if (!source) {
+      console.log(`[${creep.name}] Source ${assignedSourceId} not found!`);
+      return;
+    }
+
+    // If no task or task is invalid, assign harvest task
+    if (!creep.task || !creep.task.isValid()) {
+      console.log(`[${creep.name}] Assigning harvest task for source ${source.id}`);
+      creep.task = Tasks.harvest(source);
     } else {
-      // Working - deliver or drop
-      if (useDropMining) {
-        this.assignDropMiningTask(creep);
-      } else {
-        this.assignDeliveryTask(creep);
-      }
+      console.log(`[${creep.name}] Already has valid task: ${creep.task.name}`);
     }
   }
 

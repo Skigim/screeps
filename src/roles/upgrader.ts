@@ -117,6 +117,8 @@ export class RoleUpgrader {
   private static assignContainerTask(creep: Creep): void {
     const progressionState = RoomStateManager.getProgressionState(creep.room.name);
 
+    console.log(`[${creep.name}] Container task - vacuuming: ${creep.memory.vacuuming}, has energy: ${creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0}`);
+
     // Special case: If creep is vacuuming (picked up dropped energy), return it to base
     if (creep.memory.vacuuming && creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
       this.assignVacuumReturnTask(creep, progressionState);
@@ -126,6 +128,7 @@ export class RoleUpgrader {
     // If already full, just upgrade
     if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
       if (creep.room.controller) {
+        console.log(`[${creep.name}] Full, assigning upgrade task`);
         creep.task = Tasks.upgrade(creep.room.controller);
       }
       return;
@@ -133,7 +136,10 @@ export class RoleUpgrader {
 
     // Priority 1: Withdraw from controller container
     const controllerContainer = this.findControllerContainer(creep.room);
+    console.log(`[${creep.name}] Controller container: ${controllerContainer?.id || 'none'}`);
+
     if (controllerContainer && creep.room.controller) {
+      console.log(`[${creep.name}] Assigning chain: withdraw from controller container -> upgrade`);
       creep.task = Tasks.chain([
         Tasks.withdraw(controllerContainer, RESOURCE_ENERGY),
         Tasks.upgrade(creep.room.controller)
@@ -143,6 +149,8 @@ export class RoleUpgrader {
 
     // Priority 2: Vacuum duty - pick up dropped energy (excluding source areas)
     const droppedEnergy = this.findVacuumTarget(creep.room);
+    console.log(`[${creep.name}] Vacuum target: ${droppedEnergy?.id || 'none'}`);
+
     if (droppedEnergy) {
       // Single task: pickup (will set vacuum flag via callback)
       creep.task = Tasks.pickup(droppedEnergy);
@@ -151,6 +159,7 @@ export class RoleUpgrader {
     }
 
     // Priority 3: Nothing to do - idle near controller
+    console.log(`[${creep.name}] No energy source, idling near controller`);
     if (creep.room.controller && creep.pos.getRangeTo(creep.room.controller) > 3) {
       creep.task = Tasks.goTo(creep.room.controller, { range: 3 } as any);
     }
