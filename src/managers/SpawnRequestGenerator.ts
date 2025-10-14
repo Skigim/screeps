@@ -557,6 +557,7 @@ export class SpawnRequestGenerator {
 
     // OVERFLOW DETECTION: Spawn additional haulers if sources are overflowing
     // Target: 2 haulers per overflowing source (one picking up, one delivering)
+    // Use max energy capacity for overflow spawns (clear backlog faster)
     if (overflowingSources.length > 0) {
       const targetHaulerCount = readySources.length + overflowingSources.length;
 
@@ -565,7 +566,8 @@ export class SpawnRequestGenerator {
         let body: BodyPartConstant[];
 
         if (roleConfig && typeof roleConfig.body === 'function') {
-          body = roleConfig.body(this.getEnergyForBodyGeneration(room));
+          // Use energyCapacityAvailable for overflow - spawn biggest haulers possible
+          body = roleConfig.body(room.energyCapacityAvailable, room);
         } else if (roleConfig && Array.isArray(roleConfig.body)) {
           body = roleConfig.body;
         } else {
@@ -578,7 +580,7 @@ export class SpawnRequestGenerator {
           requests.push({
             role: "hauler",
             priority: 0, // HIGH PRIORITY - overflow means wasted production
-            reason: `OVERFLOW: ${overflowingSources.length} source(s) overflowing! Need ${targetHaulerCount - haulerCount} more haulers`,
+            reason: `OVERFLOW: ${overflowingSources.length} source(s) overflowing! Need ${targetHaulerCount - haulerCount} more haulers (max size)`,
             body: body,
             minEnergy: bodyCost
           });

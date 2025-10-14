@@ -4955,13 +4955,15 @@ class SpawnRequestGenerator {
         }
         // OVERFLOW DETECTION: Spawn additional haulers if sources are overflowing
         // Target: 2 haulers per overflowing source (one picking up, one delivering)
+        // Use max energy capacity for overflow spawns (clear backlog faster)
         if (overflowingSources.length > 0) {
             const targetHaulerCount = readySources.length + overflowingSources.length;
             if (haulerCount < targetHaulerCount) {
                 const roleConfig = config.roles.hauler;
                 let body;
                 if (roleConfig && typeof roleConfig.body === 'function') {
-                    body = roleConfig.body(this.getEnergyForBodyGeneration(room));
+                    // Use energyCapacityAvailable for overflow - spawn biggest haulers possible
+                    body = roleConfig.body(room.energyCapacityAvailable, room);
                 }
                 else if (roleConfig && Array.isArray(roleConfig.body)) {
                     body = roleConfig.body;
@@ -4974,7 +4976,7 @@ class SpawnRequestGenerator {
                     requests.push({
                         role: "hauler",
                         priority: 0,
-                        reason: `OVERFLOW: ${overflowingSources.length} source(s) overflowing! Need ${targetHaulerCount - haulerCount} more haulers`,
+                        reason: `OVERFLOW: ${overflowingSources.length} source(s) overflowing! Need ${targetHaulerCount - haulerCount} more haulers (max size)`,
                         body: body,
                         minEnergy: bodyCost
                     });
@@ -8296,7 +8298,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "914768d";
+global.__GIT_HASH__ = "5c3685a";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
