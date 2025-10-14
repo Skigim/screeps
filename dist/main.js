@@ -893,25 +893,26 @@ const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersCha
 const assignOrder = (creep, room, snapshot) => {
     var _a, _b;
     ensureHeapMaps();
-    const isEmpty = creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0;
+    const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+    const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+    const isEmpty = used === 0;
+    const isFull = free === 0;
     const controller = room.controller;
     let orderType = "IDLE";
     let targetId;
     const refillTarget = findRefillTarget(snapshot);
     const targetPos = refillTarget ? refillTarget.pos : controller === null || controller === void 0 ? void 0 : controller.pos;
     const posKey = targetPos ? `${targetPos.x},${targetPos.y},${targetPos.roomName}` : undefined;
-    if (isEmpty) {
-        const source = snapshot.sources[0];
-        if (source) {
-            orderType = "HARVEST";
-            targetId = source.id;
-        }
+    const harvestTarget = snapshot.sources.find(source => source.energy > 0);
+    if (!isFull && harvestTarget) {
+        orderType = "HARVEST";
+        targetId = harvestTarget.id;
     }
-    else if (refillTarget) {
+    else if (!isEmpty && refillTarget) {
         orderType = "TRANSFER";
         targetId = refillTarget.id;
     }
-    else if (controller) {
+    else if (!isEmpty && controller) {
         orderType = "UPGRADE";
         targetId = controller.id;
     }
@@ -1342,13 +1343,44 @@ const decide = (room, policy) => {
     frame.directives = directives;
     return directives;
 };
+const appendLog = (room, tag, body) => {
+    const memory = room.memory;
+    if (!memory.engine) {
+        memory.engine = { enabled: false };
+    }
+    if (!memory.engine.logBuffer) {
+        memory.engine.logBuffer = [];
+    }
+    const line = `[${tag} ${room.name}] ${body}`;
+    const signature = `${tag}:${body}`;
+    if (memory.engine.lastLogSignature === signature) {
+        return;
+    }
+    memory.engine.lastLogSignature = signature;
+    memory.engine.logBuffer.push(line);
+    if (memory.engine.logBuffer.length > 12) {
+        memory.engine.logBuffer.splice(0, memory.engine.logBuffer.length - 12);
+    }
+};
+const flushLogs = (room) => {
+    const memory = room.memory;
+    const engine = memory.engine;
+    if (!engine || !engine.logBuffer || engine.logBuffer.length === 0) {
+        return;
+    }
+    for (const line of engine.logBuffer) {
+        console.log(line);
+    }
+    engine.logBuffer = [];
+    engine.lastLogSignature = undefined;
+};
 const logSense = (room, snapshot) => {
     const metrics = [
         `energy=${snapshot.energyAvailable}/${snapshot.energyCapacityAvailable}`,
         `workers=${snapshot.myCreeps.length}`,
         `hostiles=${snapshot.hostiles.length}`
     ].join(" ");
-    console.log(`[Survey ${room.name}] ${metrics}`);
+    appendLog(room, "Survey", metrics);
 };
 const logSynthesize = (room, policy) => {
     const summary = [
@@ -1356,10 +1388,10 @@ const logSynthesize = (room, policy) => {
         `threat=${policy.threatLevel}`,
         `nav.move=${policy.nav.moveRatioHint}`
     ].join(" ");
-    console.log(`[Council ${room.name}] policy: ${summary}`);
+    appendLog(room, "Council", `policy: ${summary}`);
 };
 const logDecide = (room, directives) => {
-    console.log(`[Mayor ${room.name}] directives: refill=${directives.refill.slaTicks} upgrade=${directives.upgrade.mode}`);
+    appendLog(room, "Mayor", `directives: refill=${directives.refill.slaTicks} upgrade=${directives.upgrade.mode}`);
 };
 const logAct = (room, report) => {
     const details = [
@@ -1369,7 +1401,7 @@ const logAct = (room, report) => {
         `ordersChanged=${report.ordersChanged}`,
         `idlePct=${report.idlePct.toFixed(2)}`
     ].join(" ");
-    console.log(`[Foreman ${room.name}] ${details}`);
+    appendLog(room, "Foreman", details);
 };
 const logChronicler = (room, context, report) => {
     var _a, _b;
@@ -1386,7 +1418,7 @@ const logChronicler = (room, context, report) => {
         `refillSLA.median=${refillMedian}`,
         `alerts=${alerts.length}`
     ].join(" ");
-    console.log(`[Chronicler ${room.name}] ${chronicle}`);
+    appendLog(room, "Chronicler", chronicle);
 };
 const act = (room, context) => {
     const workerSquad = new WorkerSquad();
@@ -1445,6 +1477,9 @@ const runTick = () => {
         }
         if (Game.time % 100 === 0) {
             logChronicler(room, tickContext, report);
+        }
+        if (Game.time % 25 === 0) {
+            flushLogs(room);
         }
     }
 };
@@ -1554,7 +1589,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "65d8ac9";
+global.__GIT_HASH__ = "5979526";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
