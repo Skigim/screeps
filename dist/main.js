@@ -1091,7 +1091,7 @@ const assignTask = (creep, room, snapshot, workerCount) => {
     const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
     let task = null;
     let signature = "IDLE";
-    if (isEmpty && harvestTarget) {
+    if (!isFull && harvestTarget) {
         task = Tasks.harvest(harvestTarget);
         signature = `HARVEST:${harvestTarget.id}`;
     }
@@ -1102,10 +1102,6 @@ const assignTask = (creep, room, snapshot, workerCount) => {
     else if (!isEmpty && controller) {
         task = Tasks.upgrade(controller);
         signature = `UPGRADE:${controller.id}`;
-    }
-    else if (!isFull && harvestTarget) {
-        task = Tasks.harvest(harvestTarget);
-        signature = `HARVEST:${harvestTarget.id}`;
     }
     const memory = creep.memory;
     const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
@@ -1754,7 +1750,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "ade7260";
+global.__GIT_HASH__ = "c964ab5";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
