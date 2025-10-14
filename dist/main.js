@@ -4080,8 +4080,11 @@ const RCL2Config = {
 class AssignmentManager {
     /**
      * Main run method - handles all assignments for a room
+     * @param room - The room to manage assignments for
+     * @param config - The RCL configuration
+     * @param methodsIndex - Service locator (not currently used, but included for consistency)
      */
-    static run(room, config) {
+    static run(room, config, methodsIndex) {
         // Find all roles that need source assignments
         const rolesNeedingAssignment = Object.entries(config.roles)
             .filter(([_, roleConfig]) => roleConfig.assignToSource)
@@ -4295,12 +4298,15 @@ class PromotionManager {
     /**
      * Check if any creeps can be promoted
      * Called from main loop when spawn is idle
+     * @param room - The room to check for promotions
+     * @param methodsIndex - Service locator for accessing RoomStateManager
      */
-    static run(room) {
+    static run(room, methodsIndex) {
         // Only run occasionally (every 50 ticks) to reduce CPU
         if (Game.time % 50 !== 0)
             return;
-        // Get room config
+        // Get room config via methodsIndex (breaks circular dependency)
+        const RoomStateManager = methodsIndex.get("RoomStateManager");
         const config = RoomStateManager.getConfigForRoom(room);
         if (!config)
             return;
@@ -5107,8 +5113,9 @@ class SpawnManager {
      * @param spawn - The spawn structure
      * @param config - The RCL configuration (passed from RoomStateManager)
      * @param progressionState - The progression state (passed from RoomStateManager, may be null for RCL1)
+     * @param methodsIndex - Service locator for accessing other managers
      */
-    static run(spawn, config, progressionState) {
+    static run(spawn, config, progressionState, methodsIndex) {
         // Don't spawn if already spawning
         if (spawn.spawning) {
             this.displaySpawningStatus(spawn);
@@ -5122,12 +5129,12 @@ class SpawnManager {
             this.displayStatus(room, requests);
         }
         // Process requests by priority
-        this.processRequests(spawn, requests, config, progressionState);
+        this.processRequests(spawn, requests, config, progressionState, methodsIndex);
     }
     /**
      * Process spawn requests in priority order
      */
-    static processRequests(spawn, requests, config, progressionState) {
+    static processRequests(spawn, requests, config, progressionState, methodsIndex) {
         if (requests.length === 0) {
             return; // No requests
         }
@@ -5292,8 +5299,10 @@ class Architect {
     /**
      * Main entry point - automatically plans and executes for a room
      * Call this once per tick for each room
+     * @param room - The room to plan for
+     * @param methodsIndex - Service locator (optional for console commands)
      */
-    static run(room) {
+    static run(room, methodsIndex) {
         if (!room.controller || !room.controller.my)
             return;
         const rcl = room.controller.level;
@@ -5795,8 +5804,9 @@ class RoomStateManager {
      * Main executor - runs all managers for a room
      * @param room - The room to manage
      * @param progressionState - The progression state (passed from ProgressionManager, may be null for RCL1)
+     * @param methodsIndex - Service locator for accessing other managers
      */
-    static run(room, progressionState) {
+    static run(room, progressionState, methodsIndex) {
         if (!room.controller || !room.controller.my)
             return;
         const config = this.getConfigForRoom(room);
@@ -5813,11 +5823,11 @@ class RoomStateManager {
             return;
         const spawn = spawns[0];
         // Run spawn manager - PASS DATA DOWN (config + progressionState)
-        SpawnManager.run(spawn, config, progressionState);
+        SpawnManager.run(spawn, config, progressionState, methodsIndex);
         // Run assignment manager
-        AssignmentManager.run(room, config);
+        AssignmentManager.run(room, config, methodsIndex);
         // Run architect (automatic infrastructure planning)
-        Architect.run(room);
+        Architect.run(room, methodsIndex);
         // Display status periodically
         if (Game.time % 50 === 0) {
             this.displayRoomStatus(room, config);
@@ -6452,14 +6462,14 @@ class ProgressionManager {
      * Analyzes room state, determines progression phase,
      * then delegates execution to RoomStateManager
      */
-    static run(room) {
+    static run(room, methodsIndex) {
         var _a;
         if (!room.controller || !room.controller.my)
             return;
         const rcl = room.controller.level;
         // RCL1: No progression state, just pass null to RoomStateManager
         if (rcl === 1) {
-            RoomStateManager.run(room, null);
+            RoomStateManager.run(room, null, methodsIndex);
             return;
         }
         // RCL2+: Analyze progression state
@@ -6489,7 +6499,7 @@ class ProgressionManager {
             this.displayStatus(room, progressionState);
         }
         // Delegate execution to RoomStateManager
-        RoomStateManager.run(room, progressionState);
+        RoomStateManager.run(room, progressionState, methodsIndex);
     }
     /**
      * Convert upgraders to builders when construction is needed
@@ -7751,6 +7761,190 @@ class StatsCollector {
 StatsCollector.MAX_TICKS_STORED = 20; // Keep last 20 ticks of stats
 
 /**
+ * MethodsIndex - Service Locator and Event Queue
+ *
+ * This class serves two critical architectural functions:
+ *
+ * 1. Service Locator Pattern:
+ *    - Provides a central registry for all manager modules
+ *    - Eliminates circular dependencies by decoupling inter-manager communication
+ *    - Managers request dependencies by name rather than importing directly
+ *    - Enhances testability by allowing easy dependency injection/mocking
+ *
+ * 2. Event Queue Pattern:
+ *    - Allows low-level modules to signal upward without breaking unidirectional data flow
+ *    - Enables emergency responses (e.g., all harvesters dead) to be handled next tick
+ *    - Events are processed at the end of each tick by high-level orchestrators
+ *    - Automatically prunes stale events to prevent memory leaks
+ *
+ * Usage:
+ *   // In main.ts - instantiate once per tick
+ *   const methodsIndex = new MethodsIndex();
+ *   methodsIndex.register('SpawnManager', SpawnManager);
+ *
+ *   // In a manager - request dependency
+ *   const spawnManager = methodsIndex.get<typeof SpawnManager>('SpawnManager');
+ *
+ *   // In low-level code - emit event
+ *   methodsIndex.emit({
+ *     type: 'EMERGENCY_SPAWN',
+ *     roomName: 'W1N1',
+ *     priority: 'CRITICAL',
+ *     data: { role: 'harvester' }
+ *   });
+ *
+ *   // In high-level code - process events
+ *   const events = methodsIndex.getEvents(room.name);
+ */
+/**
+ * MethodsIndex - Central service registry and event queue
+ *
+ * Instantiated once per tick in main.ts and passed to all managers.
+ * Provides decoupled communication between modules.
+ */
+class MethodsIndex {
+    constructor() {
+        this.managers = new Map();
+        this.eventQueue = [];
+        this.roomDataCache = new Map();
+    }
+    /**
+     * Register a manager module with the service locator
+     *
+     * @param name - Unique identifier for the manager (e.g., 'SpawnManager')
+     * @param manager - The manager class or instance to register
+     */
+    register(name, manager) {
+        this.managers.set(name, manager);
+    }
+    /**
+     * Retrieve a registered manager by name
+     *
+     * @param name - The identifier used during registration
+     * @returns The manager class or instance
+     * @throws Error if manager not found
+     */
+    get(name) {
+        const manager = this.managers.get(name);
+        if (!manager) {
+            throw new Error(`[MethodsIndex] Manager '${name}' not found. Did you forget to register it?`);
+        }
+        return manager;
+    }
+    /**
+     * Check if a manager is registered
+     *
+     * @param name - The identifier to check
+     * @returns True if manager exists
+     */
+    has(name) {
+        return this.managers.has(name);
+    }
+    /**
+     * Emit an event to the queue
+     *
+     * Events are processed by high-level orchestrators at the end of the tick.
+     * Use this for upward signaling without breaking unidirectional data flow.
+     *
+     * @param event - Event object (tickCreated will be added automatically)
+     */
+    emit(event) {
+        this.eventQueue.push({
+            ...event,
+            tickCreated: Game.time
+        });
+    }
+    /**
+     * Retrieve events from the queue
+     *
+     * @param roomName - Optional filter by room name
+     * @param priority - Optional filter by priority level
+     * @returns Array of matching events
+     */
+    getEvents(roomName, priority) {
+        let events = this.eventQueue;
+        if (roomName) {
+            events = events.filter(e => e.roomName === roomName);
+        }
+        if (priority) {
+            events = events.filter(e => e.priority === priority);
+        }
+        return events;
+    }
+    /**
+     * Clear all events from the queue
+     *
+     * Should be called at the end of each tick after events are processed.
+     */
+    clearEvents() {
+        this.eventQueue = [];
+    }
+    /**
+     * Remove events older than a specified age
+     *
+     * Prevents memory leaks from events that were never processed.
+     * Should be called at the start of each tick.
+     *
+     * @param maxAge - Maximum age in ticks (default: 10)
+     */
+    pruneOldEvents(maxAge = 10) {
+        const cutoffTick = Game.time - maxAge;
+        const originalLength = this.eventQueue.length;
+        this.eventQueue = this.eventQueue.filter(e => e.tickCreated >= cutoffTick);
+        const pruned = originalLength - this.eventQueue.length;
+        if (pruned > 0) {
+            console.log(`[MethodsIndex] Pruned ${pruned} stale events older than ${maxAge} ticks`);
+        }
+    }
+    /**
+     * Cache room data for the current tick (Router-Push pattern)
+     *
+     * RoomStateManager collects typed data once and stores it here.
+     * Managers receive data via parameter, but can use this as an escape hatch.
+     *
+     * @param roomName - The room identifier
+     * @param data - The collected room data (RCL1Data, RCL2Data, etc.)
+     */
+    setRoomData(roomName, data) {
+        this.roomDataCache.set(roomName, data);
+    }
+    /**
+     * Retrieve cached room data (Emergency escape hatch only)
+     *
+     * Primary data flow is Router-Push (data passed as parameters).
+     * Only use this for rare edge cases where a manager needs additional data.
+     *
+     * @param roomName - The room identifier
+     * @returns The cached room data, or undefined if not found
+     */
+    getRoomData(roomName) {
+        return this.roomDataCache.get(roomName);
+    }
+    /**
+     * Clear the room data cache
+     *
+     * Should be called at the end of each tick to prevent stale data.
+     */
+    clearRoomData() {
+        this.roomDataCache.clear();
+    }
+    /**
+     * Get statistics about the current state
+     *
+     * Useful for debugging and telemetry.
+     *
+     * @returns Object with counts of managers, events, and cached rooms
+     */
+    getStats() {
+        return {
+            managers: this.managers.size,
+            events: this.eventQueue.length,
+            cachedRooms: this.roomDataCache.size
+        };
+    }
+}
+
+/**
  * Distance Transform Test
  *
  * Tests the Distance Transform algorithm for optimal structure placement.
@@ -8394,7 +8588,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "f5e6c6c";
+global.__GIT_HASH__ = "e3cdbf3";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
@@ -8402,6 +8596,23 @@ const loop = ErrorMapper.wrapLoop(() => {
     // Export to global for console access
     global.StatsTracker = StatsTracker;
     global.Architect = Architect;
+    // ========================================
+    // INITIALIZE SERVICE LOCATOR (METHODS INDEX)
+    // ========================================
+    // Create a fresh instance each tick and register all managers
+    // This eliminates circular dependencies and enables the Event Queue
+    const methodsIndex = new MethodsIndex();
+    // Register all manager modules with the service locator
+    methodsIndex.register("RoomStateManager", RoomStateManager);
+    methodsIndex.register("ProgressionManager", ProgressionManager);
+    methodsIndex.register("SpawnManager", SpawnManager);
+    methodsIndex.register("AssignmentManager", AssignmentManager);
+    methodsIndex.register("TrafficManager", TrafficManager);
+    methodsIndex.register("PromotionManager", PromotionManager);
+    methodsIndex.register("StatsTracker", StatsTracker);
+    methodsIndex.register("Architect", Architect);
+    // Prune stale events from previous ticks (events older than 10 ticks)
+    methodsIndex.pruneOldEvents(10);
     // Clean up memory of dead creeps
     for (const name in Memory.creeps) {
         if (!(name in Game.creeps)) {
@@ -8433,10 +8644,10 @@ const loop = ErrorMapper.wrapLoop(() => {
         // Run traffic manager cleanup (handle stale builder assignments)
         TrafficManager.cleanupAssignments(room);
         // Run promotion manager (upgrade creeps when economy allows)
-        PromotionManager.run(room);
+        PromotionManager.run(room, methodsIndex);
         // Run progression manager - PRIMARY ENTRY POINT
         // This analyzes the room and delegates to RoomStateManager
-        ProgressionManager.run(room);
+        ProgressionManager.run(room, methodsIndex);
     }
     // Clean up stale promotions globally (every 100 ticks)
     if (Game.time % 100 === 0) {
@@ -8467,6 +8678,18 @@ const loop = ErrorMapper.wrapLoop(() => {
     }
     // Collect stats at the end of each tick
     StatsCollector.collect();
+    // Process any critical events emitted during the tick
+    const criticalEvents = methodsIndex.getEvents(undefined, "CRITICAL");
+    if (criticalEvents.length > 0) {
+        console.log(`⚠️ ${criticalEvents.length} CRITICAL events detected:`);
+        for (const event of criticalEvents) {
+            console.log(`  [${event.roomName}] ${event.type}:`, JSON.stringify(event.data));
+        }
+    }
+    // Clear event queue for next tick
+    methodsIndex.clearEvents();
+    // Clear room data cache for next tick
+    methodsIndex.clearRoomData();
 });
 
 exports.loop = loop;

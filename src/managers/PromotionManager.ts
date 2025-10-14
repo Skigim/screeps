@@ -1,5 +1,6 @@
-import { RoomStateManager } from "./RoomStateManager";
+import type { RoomStateManager } from "./RoomStateManager";
 import type { RCLConfig } from "configs/RCL1Config";
+import type { MethodsIndex } from "../core/MethodsIndex";
 
 /**
  * PromotionManager - Upgrades creeps to better bodies as economy improves
@@ -29,12 +30,15 @@ export class PromotionManager {
   /**
    * Check if any creeps can be promoted
    * Called from main loop when spawn is idle
+   * @param room - The room to check for promotions
+   * @param methodsIndex - Service locator for accessing RoomStateManager
    */
-  static run(room: Room): void {
+  static run(room: Room, methodsIndex: MethodsIndex): void {
     // Only run occasionally (every 50 ticks) to reduce CPU
     if (Game.time % 50 !== 0) return;
 
-    // Get room config
+    // Get room config via methodsIndex (breaks circular dependency)
+    const RoomStateManager = methodsIndex.get<typeof import("./RoomStateManager").RoomStateManager>("RoomStateManager");
     const config = RoomStateManager.getConfigForRoom(room);
     if (!config) return;
 

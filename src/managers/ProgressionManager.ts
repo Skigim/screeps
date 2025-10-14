@@ -24,6 +24,7 @@
 
 import { RoomStateManager } from "./RoomStateManager";
 import { StatsTracker } from "./StatsTracker";
+import type { MethodsIndex } from "../core/MethodsIndex";
 
 export enum RCL2Phase {
   PHASE_1_CONTAINERS = "phase1_containers",      // Building source containers, drop mining
@@ -53,14 +54,14 @@ export class ProgressionManager {
    * Analyzes room state, determines progression phase,
    * then delegates execution to RoomStateManager
    */
-  public static run(room: Room): void {
+  public static run(room: Room, methodsIndex: MethodsIndex): void {
     if (!room.controller || !room.controller.my) return;
 
     const rcl = room.controller.level;
 
     // RCL1: No progression state, just pass null to RoomStateManager
     if (rcl === 1) {
-      RoomStateManager.run(room, null);
+      RoomStateManager.run(room, null, methodsIndex);
       return;
     }
 
@@ -98,7 +99,7 @@ export class ProgressionManager {
     }
 
     // Delegate execution to RoomStateManager
-    RoomStateManager.run(room, progressionState);
+    RoomStateManager.run(room, progressionState, methodsIndex);
   }
 
   /**

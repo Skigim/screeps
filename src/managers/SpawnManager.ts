@@ -5,6 +5,7 @@ import { CreepBodyGenerator } from "./CreepBodyGenerator";
 import { CreepBehaviorManager } from "./CreepBehaviorManager";
 import type { RCLConfig } from "configs/RCL1Config";
 import type { ProgressionState } from "./ProgressionManager";
+import type { MethodsIndex } from "../core/MethodsIndex";
 
 /**
  * Spawn Manager - Orchestrates Creep Spawning
@@ -21,11 +22,13 @@ export class SpawnManager {
    * @param spawn - The spawn structure
    * @param config - The RCL configuration (passed from RoomStateManager)
    * @param progressionState - The progression state (passed from RoomStateManager, may be null for RCL1)
+   * @param methodsIndex - Service locator for accessing other managers
    */
   public static run(
     spawn: StructureSpawn,
     config: RCLConfig,
-    progressionState: ProgressionState | null
+    progressionState: ProgressionState | null,
+    methodsIndex: MethodsIndex
   ): void {
     // Don't spawn if already spawning
     if (spawn.spawning) {
@@ -44,7 +47,7 @@ export class SpawnManager {
     }
 
     // Process requests by priority
-    this.processRequests(spawn, requests, config, progressionState);
+    this.processRequests(spawn, requests, config, progressionState, methodsIndex);
   }
 
   /**
@@ -54,7 +57,8 @@ export class SpawnManager {
     spawn: StructureSpawn,
     requests: SpawnRequest[],
     config: RCLConfig,
-    progressionState: ProgressionState | null
+    progressionState: ProgressionState | null,
+    methodsIndex: MethodsIndex
   ): void {
     if (requests.length === 0) {
       return; // No requests

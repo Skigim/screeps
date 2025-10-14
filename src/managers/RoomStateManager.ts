@@ -4,8 +4,8 @@ import type { RCLConfig } from "configs/RCL1Config";
 import { SpawnManager } from "./SpawnManager";
 import { AssignmentManager } from "./AssignmentManager";
 import { Architect } from "./Architect";
-import { ProgressionManager, RCL2Phase, type ProgressionState } from "./ProgressionManager";
-import { StatsTracker } from "./StatsTracker";
+import type { ProgressionState } from "./ProgressionManager"; // TYPE-ONLY IMPORT - breaks circular dependency
+import type { MethodsIndex } from "../core/MethodsIndex";
 
 /**
  * Room State Manager - Tactical Executor
@@ -38,8 +38,9 @@ export class RoomStateManager {
    * Main executor - runs all managers for a room
    * @param room - The room to manage
    * @param progressionState - The progression state (passed from ProgressionManager, may be null for RCL1)
+   * @param methodsIndex - Service locator for accessing other managers
    */
-  public static run(room: Room, progressionState: ProgressionState | null): void {
+  public static run(room: Room, progressionState: ProgressionState | null, methodsIndex: MethodsIndex): void {
     if (!room.controller || !room.controller.my) return;
 
     const config = this.getConfigForRoom(room);
@@ -58,13 +59,13 @@ export class RoomStateManager {
     const spawn = spawns[0];
 
     // Run spawn manager - PASS DATA DOWN (config + progressionState)
-    SpawnManager.run(spawn, config, progressionState);
+    SpawnManager.run(spawn, config, progressionState, methodsIndex);
 
     // Run assignment manager
-    AssignmentManager.run(room, config);
+    AssignmentManager.run(room, config, methodsIndex);
 
     // Run architect (automatic infrastructure planning)
-    Architect.run(room);
+    Architect.run(room, methodsIndex);
 
     // Display status periodically
     if (Game.time % 50 === 0) {

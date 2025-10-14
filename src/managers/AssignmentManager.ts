@@ -1,5 +1,6 @@
 import { Traveler } from "../Traveler";
 import type { RCLConfig } from "configs/RCL1Config";
+import type { MethodsIndex } from "../core/MethodsIndex";
 
 /**
  * Assignment Manager - Manages creep assignments to prevent overcrowding
@@ -8,8 +9,11 @@ import type { RCLConfig } from "configs/RCL1Config";
 export class AssignmentManager {
   /**
    * Main run method - handles all assignments for a room
+   * @param room - The room to manage assignments for
+   * @param config - The RCL configuration
+   * @param methodsIndex - Service locator (not currently used, but included for consistency)
    */
-  public static run(room: Room, config: RCLConfig): void {
+  public static run(room: Room, config: RCLConfig, methodsIndex: MethodsIndex): void {
     // Find all roles that need source assignments
     const rolesNeedingAssignment = Object.entries(config.roles)
       .filter(([_, roleConfig]) => roleConfig.assignToSource)

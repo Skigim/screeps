@@ -8,7 +8,8 @@
  * - Performance metrics
  */
 
-import { RCL2Phase, ProgressionState } from "./ProgressionManager";
+import { RCL2Phase } from "./ProgressionManager";
+import type { ProgressionState } from "./ProgressionManager";
 
 export class StatsTracker {
   /**

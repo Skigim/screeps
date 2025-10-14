@@ -13,6 +13,9 @@ import { PromotionManager } from "managers/PromotionManager";
 import { StatsCollector } from "utils/StatsCollector";
 import { StatsTracker } from "managers/StatsTracker";
 import { Architect } from "managers/Architect";
+import { SpawnManager } from "managers/SpawnManager";
+import { AssignmentManager } from "managers/AssignmentManager";
+import { MethodsIndex } from "core/MethodsIndex";
 import "utils/ConsoleCommands"; // Import to register global console commands
 import * as _ from "lodash";
 
@@ -67,6 +70,26 @@ export const loop = ErrorMapper.wrapLoop(() => {
   global.StatsTracker = StatsTracker;
   global.Architect = Architect;
 
+  // ========================================
+  // INITIALIZE SERVICE LOCATOR (METHODS INDEX)
+  // ========================================
+  // Create a fresh instance each tick and register all managers
+  // This eliminates circular dependencies and enables the Event Queue
+  const methodsIndex = new MethodsIndex();
+
+  // Register all manager modules with the service locator
+  methodsIndex.register("RoomStateManager", RoomStateManager);
+  methodsIndex.register("ProgressionManager", ProgressionManager);
+  methodsIndex.register("SpawnManager", SpawnManager);
+  methodsIndex.register("AssignmentManager", AssignmentManager);
+  methodsIndex.register("TrafficManager", TrafficManager);
+  methodsIndex.register("PromotionManager", PromotionManager);
+  methodsIndex.register("StatsTracker", StatsTracker);
+  methodsIndex.register("Architect", Architect);
+
+  // Prune stale events from previous ticks (events older than 10 ticks)
+  methodsIndex.pruneOldEvents(10);
+
   // Clean up memory of dead creeps
   for (const name in Memory.creeps) {
     if (!(name in Game.creeps)) {
@@ -102,11 +125,11 @@ export const loop = ErrorMapper.wrapLoop(() => {
     TrafficManager.cleanupAssignments(room);
 
     // Run promotion manager (upgrade creeps when economy allows)
-    PromotionManager.run(room);
+    PromotionManager.run(room, methodsIndex);
 
     // Run progression manager - PRIMARY ENTRY POINT
     // This analyzes the room and delegates to RoomStateManager
-    ProgressionManager.run(room);
+    ProgressionManager.run(room, methodsIndex);
   }
 
   // Clean up stale promotions globally (every 100 ticks)
@@ -139,4 +162,19 @@ export const loop = ErrorMapper.wrapLoop(() => {
 
   // Collect stats at the end of each tick
   StatsCollector.collect();
+
+  // Process any critical events emitted during the tick
+  const criticalEvents = methodsIndex.getEvents(undefined, "CRITICAL");
+  if (criticalEvents.length > 0) {
+    console.log(`⚠️ ${criticalEvents.length} CRITICAL events detected:`);
+    for (const event of criticalEvents) {
+      console.log(`  [${event.roomName}] ${event.type}:`, JSON.stringify(event.data));
+    }
+  }
+
+  // Clear event queue for next tick
+  methodsIndex.clearEvents();
+
+  // Clear room data cache for next tick
+  methodsIndex.clearRoomData();
 });

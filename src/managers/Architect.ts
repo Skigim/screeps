@@ -15,6 +15,7 @@
  */
 
 import { Traveler } from "../Traveler";
+import type { MethodsIndex } from "../core/MethodsIndex";
 
 export interface ArchitectPlan {
   extensions: RoomPosition[];
@@ -31,8 +32,10 @@ export class Architect {
   /**
    * Main entry point - automatically plans and executes for a room
    * Call this once per tick for each room
+   * @param room - The room to plan for
+   * @param methodsIndex - Service locator (optional for console commands)
    */
-  public static run(room: Room): void {
+  public static run(room: Room, methodsIndex?: MethodsIndex): void {
     if (!room.controller || !room.controller.my) return;
 
     const rcl = room.controller.level;
