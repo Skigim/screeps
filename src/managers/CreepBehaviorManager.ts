@@ -28,7 +28,8 @@ export class CreepBehaviorManager {
     const baseMemory: CreepMemory = {
       role: role as any,
       room: roomName,
-      working: false
+      working: false,
+      task: null // Required by creep-tasks library
     };
 
     // Role-specific memory initialization

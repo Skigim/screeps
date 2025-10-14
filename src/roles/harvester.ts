@@ -1,88 +1,97 @@
-import { Traveler } from "../Traveler";
+/**
+ * Task-based Harvester Role
+ *
+ * Mostly preserves custom logic due to unique stationary harvester behavior.
+ * Uses tasks for mobile harvester movement and delivery.
+ */
+
+import Tasks from "creep-tasks";
 import type { RCLConfig } from "configs/RCL1Config";
 import { RoomStateManager } from "managers/RoomStateManager";
 
 export class RoleHarvester {
   public static run(creep: Creep, config: RCLConfig): void {
-    // Get role config for this role
     const roleConfig = config.roles.harvester;
     if (!roleConfig) {
       console.log(`⚠️ No harvester config found for ${creep.name}`);
       return;
     }
 
-    // Get progression state to determine behavior
-    const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+    // Execute current task if exists
+    if (creep.task) {
+      return;
+    }
 
-    // Enable drop mining if:
-    // 1. RCL1 with useContainers enabled (stationary harvester + hauler system)
-    // 2. RCL2+ with haulers enabled
-    const isRCL1WithContainers = creep.room.controller?.level === 1 && config.spawning.useContainers;
+    const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+    const isRCL1WithContainers =
+      creep.room.controller?.level === 1 && config.spawning.useContainers;
     const useDropMining = isRCL1WithContainers || progressionState?.useHaulers || false;
 
-    // Check if this is a stationary harvester (no CARRY parts)
     const hasCarryParts = creep.getActiveBodyparts(CARRY) > 0;
     const isStationaryHarvester = !hasCarryParts;
 
-    // STATIONARY HARVESTER: Park on container and continuously harvest
+    // STATIONARY HARVESTER: Custom logic (tasks not beneficial here)
     if (isStationaryHarvester && useDropMining) {
-      // Find the container for our assigned source
-      let targetContainer: StructureContainer | null = null;
+      this.runStationaryHarvester(creep);
+      return;
+    }
 
-      if (creep.memory.assignedSource) {
-        const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
-        if (source) {
-          const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER
-          }) as StructureContainer[];
+    // MOBILE HARVESTER: Use task-based system
+    this.runMobileHarvester(creep, useDropMining);
+  }
 
-          if (containers.length > 0) {
-            targetContainer = containers[0];
-          }
-        }
+  /**
+   * Stationary harvester - custom logic preserved
+   * Parks on container and harvests continuously
+   */
+  private static runStationaryHarvester(creep: Creep): void {
+    if (!creep.memory.assignedSource) return;
 
-        // If container exists, park on it and harvest continuously
-        if (targetContainer) {
-          if (!creep.pos.isEqualTo(targetContainer.pos)) {
-            // Not on container - move to it
-            Traveler.travelTo(creep, targetContainer, { range: 0 });
-          } else {
-            // On container - harvest continuously (energy auto-drops into container)
-            if (source) {
-              creep.harvest(source);
-            }
-          }
-          return;
-        }
+    const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
+    if (!source) return;
 
-        // No container yet - check for construction site
-        if (source) {
-          const containerSites = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER
-          });
+    // Find container at source
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    }) as StructureContainer[];
 
-          if (containerSites.length > 0) {
-            const site = containerSites[0];
-            if (!creep.pos.isEqualTo(site.pos)) {
-              Traveler.travelTo(creep, site, { range: 0 });
-            } else {
-              // On construction site - harvest (energy drops on ground for builders/haulers)
-              creep.harvest(source);
-            }
-            return;
-          }
-
-          // No container or site - just harvest next to source
-          if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, source);
-          }
-        }
+    if (containers.length > 0) {
+      const targetContainer = containers[0];
+      if (!creep.pos.isEqualTo(targetContainer.pos)) {
+        creep.task = Tasks.goTo(targetContainer, { range: 0 } as any);
+      } else {
+        // On container - harvest (no task needed, just action)
+        creep.harvest(source);
       }
       return;
     }
 
-    // MOBILE HARVESTER: Original behavior with CARRY parts
-    // Toggle working state
+    // No container - check for construction site
+    const containerSites = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+
+    if (containerSites.length > 0) {
+      const site = containerSites[0];
+      if (!creep.pos.isEqualTo(site.pos)) {
+        creep.task = Tasks.goTo(site, { range: 0 } as any);
+      } else {
+        creep.harvest(source);
+      }
+      return;
+    }
+
+    // No container or site - harvest next to source
+    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+      creep.task = Tasks.goTo(source, { range: 1 } as any);
+    }
+  }
+
+  /**
+   * Mobile harvester - task-based with drop mining support
+   */
+  private static runMobileHarvester(creep: Creep, useDropMining: boolean): void {
+    // State transitions
     if (creep.store.getFreeCapacity() === 0) {
       creep.memory.working = true;
     }
@@ -91,93 +100,85 @@ export class RoleHarvester {
     }
 
     if (!creep.memory.working) {
-      // Harvest energy from assigned source
+      // Harvest from assigned source
       if (creep.memory.assignedSource) {
         const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
         if (source) {
-          if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, source);
-          }
+          creep.task = Tasks.harvest(source);
         }
       } else {
-        // Fallback: find any source if no assignment
+        // Fallback: any source
         const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
         if (source) {
-          if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, source);
-          }
+          creep.task = Tasks.harvest(source);
         }
       }
     } else {
-      // ECONOMIC HANDOVER: If haulers are active, switch to drop mining
+      // Working - deliver or drop
       if (useDropMining) {
-        // Find the container for our assigned source
-        let targetContainer: StructureContainer | null = null;
-
-        if (creep.memory.assignedSource) {
-          const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
-          if (source) {
-            const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
-              filter: s => s.structureType === STRUCTURE_CONTAINER
-            }) as StructureContainer[];
-
-            if (containers.length > 0) {
-              targetContainer = containers[0];
-            }
-          }
-        }
-
-        // If container exists, park on top of it and drop energy
-        if (targetContainer) {
-          if (creep.pos.isEqualTo(targetContainer.pos)) {
-            // On container - drop energy for haulers to pick up
-            creep.drop(RESOURCE_ENERGY);
-          } else {
-            // Move to container
-            Traveler.travelTo(creep, targetContainer, { range: 0 });
-          }
-          return;
-        }
-
-        // No container yet - find construction site and drop there
-        if (creep.memory.assignedSource) {
-          const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
-          if (source) {
-            const containerSites = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, {
-              filter: s => s.structureType === STRUCTURE_CONTAINER
-            });
-
-            if (containerSites.length > 0) {
-              const site = containerSites[0];
-              if (creep.pos.isEqualTo(site.pos)) {
-                creep.drop(RESOURCE_ENERGY);
-              } else {
-                Traveler.travelTo(creep, site, { range: 0 });
-              }
-              return;
-            }
-          }
-        }
+        this.assignDropMiningTask(creep);
+      } else {
+        this.assignDeliveryTask(creep);
       }
+    }
+  }
 
-      // LEGACY BEHAVIOR: No haulers yet - deliver energy to spawn/extensions
-      // Transfer energy to spawn or extensions
-      const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-        filter: (structure: any) => {
-          return (
-            (structure.structureType === STRUCTURE_EXTENSION ||
-              structure.structureType === STRUCTURE_SPAWN ||
-              structure.structureType === STRUCTURE_TOWER) &&
-            structure.store && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-          );
-        }
-      });
+  /**
+   * Drop energy at container or site for haulers
+   */
+  private static assignDropMiningTask(creep: Creep): void {
+    if (!creep.memory.assignedSource) return;
 
-      if (target) {
-        if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, target);
-        }
+    const source = Game.getObjectById<Source>(creep.memory.assignedSource as any);
+    if (!source) return;
+
+    // Find container
+    const containers = source.pos.findInRange(FIND_STRUCTURES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    }) as StructureContainer[];
+
+    if (containers.length > 0) {
+      const targetContainer = containers[0];
+      if (creep.pos.isEqualTo(targetContainer.pos)) {
+        // On container - drop energy (no task, just action)
+        creep.drop(RESOURCE_ENERGY);
+      } else {
+        creep.task = Tasks.goTo(targetContainer, { range: 0 } as any);
       }
+      return;
+    }
+
+    // Check for construction site
+    const containerSites = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, {
+      filter: s => s.structureType === STRUCTURE_CONTAINER
+    });
+
+    if (containerSites.length > 0) {
+      const site = containerSites[0];
+      if (creep.pos.isEqualTo(site.pos)) {
+        creep.drop(RESOURCE_ENERGY);
+      } else {
+        creep.task = Tasks.goTo(site, { range: 0 } as any);
+      }
+      return;
+    }
+  }
+
+  /**
+   * Deliver energy to spawn/extensions (legacy behavior)
+   */
+  private static assignDeliveryTask(creep: Creep): void {
+    const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+      filter: (structure: any) =>
+        (structure.structureType === STRUCTURE_EXTENSION ||
+          structure.structureType === STRUCTURE_SPAWN ||
+          structure.structureType === STRUCTURE_TOWER) &&
+        structure.store &&
+        structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+    }) as StructureExtension | StructureSpawn | StructureTower | null;
+
+    if (target) {
+      creep.task = Tasks.transfer(target, RESOURCE_ENERGY);
     }
   }
 }

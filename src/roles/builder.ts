@@ -1,382 +1,294 @@
-import { Traveler } from "../Traveler";
+/**
+ * Task-based Builder Role
+ *
+ * Uses creep-tasks while preserving all custom logic:
+ * - Phase-aware construction prioritization
+ * - Energy source locking (no wandering)
+ * - Hauler energy delivery system
+ * - Road avoidance behavior
+ * - Container site locking for Phase 1
+ */
+
+import Tasks from "creep-tasks";
 import type { RCLConfig } from "configs/RCL1Config";
 import { RoomStateManager } from "managers/RoomStateManager";
 import { RCL2Phase } from "managers/ProgressionManager";
-import { SpawnRequestGenerator } from "managers/SpawnRequestGenerator";
 import { TrafficManager } from "managers/TrafficManager";
 
 export class RoleBuilder {
   public static run(creep: Creep, config: RCLConfig): void {
-    // Get role config for this role
-    const roleConfig = config.roles.builder;
-    if (!roleConfig) {
-      console.log(`⚠️ No builder config found for ${creep.name}`);
+    // Execute current task if exists
+    if (creep.task) {
+      // While working, move off road if needed
+      if (creep.memory.working) {
+        this.moveOffRoadIfNeeded(creep);
+      }
       return;
     }
 
-    // CRITICAL: State transitions only happen when COMPLETELY full or COMPLETELY empty
-    // This prevents builders from wandering around half-full
+    // State transitions when COMPLETELY full or empty
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = false;
-      delete creep.memory.energySourceId; // Clear locked source when empty
-      delete creep.memory.energyRequested; // Clear energy request when empty
-      delete creep.memory.requestTime; // Clear request time when empty
+      delete creep.memory.energySourceId;
+      delete creep.memory.energyRequested;
+      delete creep.memory.requestTime;
     }
     if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
       creep.memory.working = true;
-      delete creep.memory.energySourceId; // Clear locked source when full
-      delete creep.memory.energyRequested; // Clear energy request when full
-      delete creep.memory.requestTime; // Clear request time when full
+      delete creep.memory.energySourceId;
+      delete creep.memory.energyRequested;
+      delete creep.memory.requestTime;
     }
 
     if (creep.memory.working) {
-      // Intelligent construction prioritization
-      const target = this.findBestConstructionTarget(creep);
-
-      if (target) {
-        const buildResult = creep.build(target);
-
-        if (buildResult === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, target);
-        } else if (buildResult === OK) {
-          // Successfully building - check if we're on a road and move off if so
-          // This keeps roads clear for hauler traffic
-          this.moveOffRoadIfNeeded(creep);
-        }
-      } else {
-        // If no construction sites, upgrade controller
-        if (creep.room.controller) {
-          const upgradeResult = creep.upgradeController(creep.room.controller);
-
-          if (upgradeResult === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, creep.room.controller);
-          } else if (upgradeResult === OK) {
-            // Successfully upgrading - move off road if needed
-            this.moveOffRoadIfNeeded(creep);
-          }
-        }
-      }
+      this.assignWorkTask(creep);
     } else {
-      // Energy collection priority with TARGET LOCKING
-      // Lock onto ONE energy source and stick with it until COMPLETELY FULL
-      // This prevents wandering between ruins, spawns, drops, sources mid-gathering
-
-      // FIRST: Check if transport-capable haulers exist, then request delivery
-      const hasTransportHaulers = TrafficManager.hasTransportCapableHaulers(creep.room);
-
-      if (hasTransportHaulers && !creep.memory.energyRequested) {
-        // Check if any haulers have energy available
-        const availableHaulers = creep.room.find(FIND_MY_CREEPS, {
-          filter: (c) =>
-            c.memory.role === "hauler" &&
-            c.store[RESOURCE_ENERGY] > 0 &&
-            c.memory.canTransport !== false
-        });
-
-        if (availableHaulers.length > 0) {
-          // Request energy delivery from TrafficManager
-          TrafficManager.requestEnergy(creep);
-          // Note: energyRequested flag is set by TrafficManager
-        }
-      }
-
-      // If we requested energy and waiting for delivery
-      if (creep.memory.energyRequested) {
-        // Check timeout - if no delivery in 20 ticks, self-serve
-        if (creep.memory.requestTime && Game.time - creep.memory.requestTime > 20) {
-          console.log(`${creep.name}: Energy request timeout, self-serving`);
-          delete creep.memory.energyRequested;
-          delete creep.memory.requestTime;
-        } else {
-          // Find the hauler assigned to us
-          const assignedHauler = creep.room.find(FIND_MY_CREEPS, {
-            filter: (c) => c.memory.role === "hauler" && c.memory.assignedBuilder === creep.name
-          })[0];
-
-          if (assignedHauler) {
-            const distanceToHauler = creep.pos.getRangeTo(assignedHauler);
-
-            if (distanceToHauler > 5) {
-              // Too far - approach the hauler
-              creep.travelTo(assignedHauler, { range: 3 });
-            } else {
-              // Within range - move 2 tiles off road and wait
-              // This gives room for hauler to also move off road for delivery
-              this.moveOffRoadIfNeeded(creep, 2);
-            }
-          } else {
-            // No hauler found (not assigned yet or hauler busy) - just wait off-road
-            this.moveOffRoadIfNeeded(creep);
-          }
-
-          return; // Wait for delivery
-        }
-      }
-
-      // No active request or timed out - proceed with self-gathering
-
-      // If we have a locked target, try to use it first
-      if (creep.memory.energySourceId) {
-        const lockedTarget = Game.getObjectById(creep.memory.energySourceId) as any;
-
-        // Validate locked target still has energy
-        let targetValid = false;
-        if (lockedTarget) {
-          if (lockedTarget instanceof Resource) {
-            targetValid = lockedTarget.amount > 0;
-          } else if (lockedTarget instanceof Source) {
-            targetValid = lockedTarget.energy > 0;
-          } else if (lockedTarget.store) {
-            targetValid = lockedTarget.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
-          }
-        }
-
-        // If locked target is still valid, use it
-        if (targetValid) {
-          if (lockedTarget instanceof Resource) {
-            if (creep.pickup(lockedTarget) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, lockedTarget);
-            }
-          } else if (lockedTarget instanceof Source) {
-            if (creep.harvest(lockedTarget) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, lockedTarget);
-            }
-          } else {
-            if (creep.withdraw(lockedTarget, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, lockedTarget);
-            }
-          }
-          return; // Stick with locked target
-        } else {
-          // Locked target exhausted - clear lock and find new target
-          delete creep.memory.energySourceId;
-        }
-      }
-
-      // No locked target - find and LOCK onto new energy source
-      // Priority:
-      // 1. PHASE 1 ONLY: Dropped energy AT the locked container site (0 range - exact position)
-      // 2. Ruins (free energy from dead structures)
-      // 3. Spawn/Extensions (if surplus)
-      // 4. Dropped energy anywhere
-      // 5. Harvest source (crisis mode)
-
-      // Get progression state for Phase 1 detection
-      const progressionState = RoomStateManager.getProgressionState(creep.room.name);
-
-      // PHASE 1 SPECIAL LOGIC: Only pick up energy AT the locked container site
-      if (progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS) {
-        const lockedSite = this.findBestConstructionTarget(creep);
-
-        if (lockedSite && lockedSite.structureType === STRUCTURE_CONTAINER) {
-          // Look for dropped energy EXACTLY at the container construction site (0 range)
-          const droppedAtSite = lockedSite.pos.lookFor(LOOK_RESOURCES)
-            .filter(r => r.resourceType === RESOURCE_ENERGY && r.amount > 0);
-
-          if (droppedAtSite.length > 0) {
-            const dropped = droppedAtSite[0];
-            creep.memory.energySourceId = dropped.id; // LOCK IT
-            if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, dropped);
-            }
-            return;
-          }
-
-          // No energy at the container site yet - harvest from the source
-          // Find which source this container is for (should be adjacent)
-          const adjacentSources = lockedSite.pos.findInRange(FIND_SOURCES, 1);
-
-          if (adjacentSources.length > 0) {
-            const source = adjacentSources[0];
-            creep.memory.energySourceId = source.id; // LOCK IT
-            if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, source);
-            }
-            return;
-          }
-        }
-      }
-
-      // NON-PHASE-1 LOGIC: Check for dropped energy near construction target
-      const constructionTarget = this.findBestConstructionTarget(creep);
-      if (constructionTarget) {
-        const nearbyDropped = constructionTarget.pos.findInRange(FIND_DROPPED_RESOURCES, 3, {
-          filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
-        });
-
-        if (nearbyDropped.length > 0) {
-          // Sort by amount (grab biggest pile first)
-          nearbyDropped.sort((a, b) => b.amount - a.amount);
-          const dropped = nearbyDropped[0];
-
-          creep.memory.energySourceId = dropped.id; // LOCK IT
-          if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, dropped);
-          }
-          return;
-        }
-      }
-
-      // SECOND PRIORITY: Loot ruins (common with captured rooms)
-      const ruins = creep.room.find(FIND_RUINS);
-      const ruinWithEnergy = ruins.find(r => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
-
-      if (ruinWithEnergy) {
-        creep.memory.energySourceId = ruinWithEnergy.id; // LOCK IT
-        if (creep.withdraw(ruinWithEnergy, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, ruinWithEnergy);
-        }
-        return;
-      }
-
-      // THIRD PRIORITY: Withdraw from containers
-      // Priority: Source containers → Destination container (spawn-adjacent)
-
-      // 3A. Source containers (primary energy storage)
-      const sourceContainers = creep.room.find(FIND_STRUCTURES, {
-        filter: s => {
-          if (s.structureType !== STRUCTURE_CONTAINER) return false;
-          const container = s as StructureContainer;
-
-          // Check if this is a source container (near a source)
-          const nearbySources = s.pos.findInRange(FIND_SOURCES, 1);
-          if (nearbySources.length === 0) return false;
-
-          const energy = container.store?.getUsedCapacity(RESOURCE_ENERGY);
-          return energy !== null && energy !== undefined && energy > 0;
-        }
-      }) as StructureContainer[];
-
-      if (sourceContainers.length > 0) {
-        const closest = creep.pos.findClosestByPath(sourceContainers);
-        if (closest) {
-          creep.memory.energySourceId = closest.id; // LOCK IT
-          if (creep.withdraw(closest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-            Traveler.travelTo(creep, closest);
-          }
-          return;
-        }
-      }
-
-      // 3B. Destination container (spawn-adjacent container filled by haulers)
-      if (progressionState?.destContainerId) {
-        const destContainer = Game.getObjectById(progressionState.destContainerId);
-
-        if (destContainer?.store) {
-          const energy = destContainer.store.getUsedCapacity(RESOURCE_ENERGY);
-          if (energy && energy > 0) {
-            creep.memory.energySourceId = destContainer.id; // LOCK IT
-            if (creep.withdraw(destContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-              Traveler.travelTo(creep, destContainer);
-            }
-            return;
-          }
-        }
-      }
-
-      // FOURTH PRIORITY: Pickup dropped energy
-      const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
-        filter: resource => resource.resourceType === RESOURCE_ENERGY
-      });
-
-      if (droppedEnergy) {
-        creep.memory.energySourceId = droppedEnergy.id; // LOCK IT
-        if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, droppedEnergy);
-        }
-        return;
-      }
-
-      // FIFTH PRIORITY (CRISIS MODE): Harvest directly from source
-      const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-
-      if (source) {
-        creep.memory.energySourceId = source.id; // LOCK IT
-        if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-          Traveler.travelTo(creep, source);
-        }
-      }
+      this.assignGatherTask(creep);
     }
   }
 
   /**
-   * Move creep off road if currently standing on one
-   * Keeps roads clear for hauler traffic while building/upgrading
-   * @param creep The creep to move
-   * @param minDistance Minimum distance from any road (default: 1 tile)
+   * Assign construction or upgrade task
    */
-  private static moveOffRoadIfNeeded(creep: Creep, minDistance: number = 1): void {
-    // Check if creep is already far enough from any road
-    const nearbyRoads = creep.pos.findInRange(FIND_STRUCTURES, minDistance, {
-      filter: (s) => s.structureType === STRUCTURE_ROAD
-    });
+  private static assignWorkTask(creep: Creep): void {
+    const target = this.findBestConstructionTarget(creep);
 
-    if (nearbyRoads.length === 0) {
-      return; // Already far enough from roads
+    if (target) {
+      creep.task = Tasks.build(target);
+    } else if (creep.room.controller) {
+      creep.task = Tasks.upgrade(creep.room.controller);
+    }
+  }
+
+  /**
+   * Assign energy gathering task with locking and hauler requests
+   */
+  private static assignGatherTask(creep: Creep): void {
+    // Check for hauler delivery system
+    const hasTransportHaulers = TrafficManager.hasTransportCapableHaulers(creep.room);
+
+    if (hasTransportHaulers && !creep.memory.energyRequested) {
+      const availableHaulers = creep.room.find(FIND_MY_CREEPS, {
+        filter: c =>
+          c.memory.role === "hauler" &&
+          c.store[RESOURCE_ENERGY] > 0 &&
+          c.memory.canTransport !== false
+      });
+
+      if (availableHaulers.length > 0) {
+        TrafficManager.requestEnergy(creep);
+      }
     }
 
-    // Find positions that are at least minDistance tiles from any road
+    // If waiting for delivery
+    if (creep.memory.energyRequested) {
+      // Check timeout
+      if (creep.memory.requestTime && Game.time - creep.memory.requestTime > 20) {
+        console.log(`${creep.name}: Energy request timeout, self-serving`);
+        delete creep.memory.energyRequested;
+        delete creep.memory.requestTime;
+      } else {
+        // Wait for hauler (move off road)
+        const assignedHauler = creep.room.find(FIND_MY_CREEPS, {
+          filter: c => c.memory.role === "hauler" && c.memory.assignedBuilder === creep.name
+        })[0];
+
+        if (assignedHauler && creep.pos.getRangeTo(assignedHauler) > 5) {
+          creep.task = Tasks.goTo(assignedHauler, { range: 3 } as any);
+        } else {
+          this.moveOffRoadIfNeeded(creep, 2);
+        }
+        return;
+      }
+    }
+
+    // Use locked target if valid
+    if (creep.memory.energySourceId) {
+      const lockedTarget = Game.getObjectById(creep.memory.energySourceId) as any;
+      if (this.isValidEnergySource(lockedTarget)) {
+        this.assignEnergySourceTask(creep, lockedTarget);
+        return;
+      } else {
+        delete creep.memory.energySourceId;
+      }
+    }
+
+    // Find and lock new energy source
+    const energySource = this.findAndLockEnergySource(creep);
+    if (energySource) {
+      this.assignEnergySourceTask(creep, energySource);
+    }
+  }
+
+  /**
+   * Assign task to gather from specific energy source
+   */
+  private static assignEnergySourceTask(creep: Creep, target: any): void {
+    if (target instanceof Resource) {
+      creep.task = Tasks.pickup(target);
+    } else if (target instanceof Source) {
+      creep.task = Tasks.harvest(target);
+    } else {
+      creep.task = Tasks.withdraw(target, RESOURCE_ENERGY);
+    }
+  }
+
+  /**
+   * Check if energy source is still valid
+   */
+  private static isValidEnergySource(target: any): boolean {
+    if (!target) return false;
+    if (target instanceof Resource) return target.amount > 0;
+    if (target instanceof Source) return target.energy > 0;
+    if (target.store) return target.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+    return false;
+  }
+
+  /**
+   * Find and lock onto new energy source
+   * Preserves all original priority logic
+   */
+  private static findAndLockEnergySource(creep: Creep): any {
+    const progressionState = RoomStateManager.getProgressionState(creep.room.name);
+
+    // PHASE 1 SPECIAL: Energy at container construction site
+    if (progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS) {
+      const lockedSite = this.findBestConstructionTarget(creep);
+      if (lockedSite && lockedSite.structureType === STRUCTURE_CONTAINER) {
+        const droppedAtSite = lockedSite.pos
+          .lookFor(LOOK_RESOURCES)
+          .filter(r => r.resourceType === RESOURCE_ENERGY && r.amount > 0);
+
+        if (droppedAtSite.length > 0) {
+          creep.memory.energySourceId = droppedAtSite[0].id;
+          return droppedAtSite[0];
+        }
+
+        // Harvest from adjacent source
+        const adjacentSources = lockedSite.pos.findInRange(FIND_SOURCES, 1);
+        if (adjacentSources.length > 0) {
+          creep.memory.energySourceId = adjacentSources[0].id;
+          return adjacentSources[0];
+        }
+      }
+    }
+
+    // Dropped energy near construction target
+    const constructionTarget = this.findBestConstructionTarget(creep);
+    if (constructionTarget) {
+      const nearbyDropped = constructionTarget.pos.findInRange(FIND_DROPPED_RESOURCES, 3, {
+        filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
+      });
+
+      if (nearbyDropped.length > 0) {
+        nearbyDropped.sort((a, b) => b.amount - a.amount);
+        creep.memory.energySourceId = nearbyDropped[0].id;
+        return nearbyDropped[0];
+      }
+    }
+
+    // Priority 2: Ruins
+    const ruins = creep.room.find(FIND_RUINS);
+    const ruinWithEnergy = ruins.find(r => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+    if (ruinWithEnergy) {
+      creep.memory.energySourceId = ruinWithEnergy.id;
+      return ruinWithEnergy;
+    }
+
+    // Priority 3: Source containers
+    const sourceContainers = creep.room.find(FIND_STRUCTURES, {
+      filter: s => {
+        if (s.structureType !== STRUCTURE_CONTAINER) return false;
+        const container = s as StructureContainer;
+        const nearbySources = s.pos.findInRange(FIND_SOURCES, 1);
+        if (nearbySources.length === 0) return false;
+        return container.store?.getUsedCapacity(RESOURCE_ENERGY)! > 0;
+      }
+    }) as StructureContainer[];
+
+    if (sourceContainers.length > 0) {
+      const closest = creep.pos.findClosestByPath(sourceContainers);
+      if (closest) {
+        creep.memory.energySourceId = closest.id;
+        return closest;
+      }
+    }
+
+    // Priority 4: Destination container
+    if (progressionState?.destContainerId) {
+      const destContainer = Game.getObjectById(progressionState.destContainerId) as StructureContainer | null;
+      if (destContainer && destContainer.store?.getUsedCapacity(RESOURCE_ENERGY)! > 0) {
+        creep.memory.energySourceId = destContainer.id;
+        return destContainer;
+      }
+    }
+
+    // Priority 5: Dropped energy
+    const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+      filter: resource => resource.resourceType === RESOURCE_ENERGY
+    });
+    if (droppedEnergy) {
+      creep.memory.energySourceId = droppedEnergy.id;
+      return droppedEnergy;
+    }
+
+    // Priority 6: Harvest source
+    const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+    if (source) {
+      creep.memory.energySourceId = source.id;
+      return source;
+    }
+
+    return null;
+  }
+
+  /**
+   * Move creep off road if currently standing on one
+   */
+  private static moveOffRoadIfNeeded(creep: Creep, minDistance: number = 1): void {
+    const nearbyRoads = creep.pos.findInRange(FIND_STRUCTURES, minDistance, {
+      filter: s => s.structureType === STRUCTURE_ROAD
+    });
+
+    if (nearbyRoads.length === 0) return;
+
     const candidates: RoomPosition[] = [];
-    const searchRange = minDistance + 2; // Search a bit beyond minimum distance
+    const searchRange = minDistance + 2;
 
     for (let dx = -searchRange; dx <= searchRange; dx++) {
       for (let dy = -searchRange; dy <= searchRange; dy++) {
         if (dx === 0 && dy === 0) continue;
-
         const x = creep.pos.x + dx;
         const y = creep.pos.y + dy;
-
-        // Check if position is valid
         const terrain = creep.room.getTerrain().get(x, y);
         if (terrain === TERRAIN_MASK_WALL) continue;
-
         const pos = new RoomPosition(x, y, creep.room.name);
-
-        // Check if position is at least minDistance tiles from any road
         const roadsNearPos = pos.findInRange(FIND_STRUCTURES, minDistance - 1, {
-          filter: (s) => s.structureType === STRUCTURE_ROAD
+          filter: s => s.structureType === STRUCTURE_ROAD
         });
-
         if (roadsNearPos.length === 0) {
-          // This position is far enough from roads
           candidates.push(pos);
         }
       }
     }
 
-    if (candidates.length === 0) {
-      return; // No valid positions found, stay put
-    }
-
-    // Find closest candidate position
-    const target = creep.pos.findClosestByPath(candidates);
-    if (target) {
-      creep.travelTo(target);
+    if (candidates.length > 0) {
+      const target = creep.pos.findClosestByPath(candidates);
+      if (target) {
+        creep.task = Tasks.goTo(target);
+      }
     }
   }
 
   /**
-   * Find the best construction target using progression-aware intelligent prioritization
-   *
-   * PHASE 1 SPECIAL LOGIC (Source Containers):
-   * - Lock onto ONE source container and finish it completely
-   * - Store the locked target in creep memory
-   * - Only switch to next container when current one is complete
-   *
-   * Priority order:
-   * 1. CURRENT PHASE PRIORITY: Build structures needed for current phase progression
-   * 2. FINISH STARTED: Continue building partially-built structures
-   * 3. FALLBACK PRIORITY: Extensions > Containers > Roads
+   * Find best construction target with phase-aware prioritization
+   * Preserves all original logic including Phase 1 container locking
    */
   private static findBestConstructionTarget(creep: Creep): ConstructionSite | null {
     const sites = creep.room.find(FIND_CONSTRUCTION_SITES);
-
     if (sites.length === 0) return null;
 
-    // Get current progression state
     const progressionState = RoomStateManager.getProgressionState(creep.room.name);
-
-    // Determine phase-priority structure type
     let phasePriorityType: BuildableStructureConstant | null = null;
 
     if (progressionState) {
@@ -396,31 +308,25 @@ export class RoleBuilder {
       }
     }
 
-    // PHASE 1 SPECIAL LOGIC: Lock onto ONE source container at a time
+    // PHASE 1 SPECIAL: Lock onto ONE container
     if (progressionState?.phase === RCL2Phase.PHASE_1_CONTAINERS) {
       const containerSites = sites.filter(site => site.structureType === STRUCTURE_CONTAINER);
-
       if (containerSites.length > 0) {
-        // Check if we have a locked container target
         if (creep.memory.lockedConstructionSiteId) {
-          const lockedSite = Game.getObjectById(creep.memory.lockedConstructionSiteId) as ConstructionSite | null;
-
-          // If locked site still exists, keep using it
+          const lockedSite = Game.getObjectById(
+            creep.memory.lockedConstructionSiteId
+          ) as ConstructionSite | null;
           if (lockedSite && lockedSite.structureType === STRUCTURE_CONTAINER) {
             return lockedSite;
           } else {
-            // Locked site completed or removed - clear the lock
             delete creep.memory.lockedConstructionSiteId;
           }
         }
 
-        // No lock or lock expired - choose ONE container and LOCK onto it
-        // Prefer containers with progress (finish what's started)
         const partiallyBuilt = containerSites.filter(site => site.progress > 0);
-
         let chosenSite: ConstructionSite;
+
         if (partiallyBuilt.length > 0) {
-          // Sort by most progress
           partiallyBuilt.sort((a, b) => {
             const aProgress = a.progress / a.progressTotal;
             const bProgress = b.progress / b.progressTotal;
@@ -428,26 +334,20 @@ export class RoleBuilder {
           });
           chosenSite = partiallyBuilt[0];
         } else {
-          // No partially built - pick closest unstarted container
           chosenSite = creep.pos.findClosestByPath(containerSites) || containerSites[0];
         }
 
-        // LOCK this container site
         creep.memory.lockedConstructionSiteId = chosenSite.id;
         return chosenSite;
       }
     }
 
-    // 1. HIGHEST PRIORITY: Build phase-appropriate structures FIRST (non-Phase-1 logic)
+    // Priority 1: Phase-specific structures
     if (phasePriorityType) {
       const phaseSites = sites.filter(site => site.structureType === phasePriorityType);
-
       if (phaseSites.length > 0) {
-        // If any are partially built, finish those first
         const partiallyBuilt = phaseSites.filter(site => site.progress > 0);
-
         if (partiallyBuilt.length > 0) {
-          // Sort by most progress (closest to completion)
           partiallyBuilt.sort((a, b) => {
             const aProgress = a.progress / a.progressTotal;
             const bProgress = b.progress / b.progressTotal;
@@ -455,17 +355,13 @@ export class RoleBuilder {
           });
           return partiallyBuilt[0];
         }
-
-        // Otherwise, start building any phase-priority structure
         return creep.pos.findClosestByPath(phaseSites) || phaseSites[0];
       }
     }
 
-    // 2. SECONDARY PRIORITY: Finish any partially-built structures (even if not phase priority)
+    // Priority 2: Finish partially-built structures
     const partiallyBuilt = sites.filter(site => site.progress > 0);
-
     if (partiallyBuilt.length > 0) {
-      // Sort by most progress (closest to completion)
       partiallyBuilt.sort((a, b) => {
         const aProgress = a.progress / a.progressTotal;
         const bProgress = b.progress / b.progressTotal;
@@ -474,7 +370,7 @@ export class RoleBuilder {
       return partiallyBuilt[0];
     }
 
-    // 3. FALLBACK: Use standard priority order for new construction
+    // Priority 3: Fallback priority order
     const priorityOrder: BuildableStructureConstant[] = [
       STRUCTURE_EXTENSION,
       STRUCTURE_CONTAINER,
@@ -483,13 +379,11 @@ export class RoleBuilder {
 
     for (const structureType of priorityOrder) {
       const sitesOfType = sites.filter(site => site.structureType === structureType);
-
       if (sitesOfType.length > 0) {
         return creep.pos.findClosestByPath(sitesOfType) || sitesOfType[0];
       }
     }
 
-    // 4. LAST RESORT: Any remaining construction site
     return creep.pos.findClosestByPath(sites);
   }
 }

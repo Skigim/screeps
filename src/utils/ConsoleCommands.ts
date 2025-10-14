@@ -21,7 +21,7 @@ export class ConsoleCommands {
 
     const name = `${role.charAt(0).toUpperCase() + role.slice(1)}${Game.time}`;
     const result = spawn.spawnCreep(body, name, {
-      memory: { role, room: spawn.room.name, working: false }
+      memory: { role, room: spawn.room.name, working: false, task: null }
     });
 
     if (result === OK) {

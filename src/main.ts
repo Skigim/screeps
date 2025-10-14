@@ -1,6 +1,9 @@
 /// <reference types="screeps" />
 /// <reference path="types/screeps-extensions.d.ts" />
 
+// Import creep-tasks - this automatically loads prototypes
+import "creep-tasks";
+
 import { ErrorMapper } from "utils/ErrorMapper";
 import { RoleHarvester } from "roles/harvester";
 import { RoleUpgrader } from "roles/upgrader";
@@ -41,6 +44,7 @@ declare global {
     room: string;
     working: boolean;
     assignedSource?: string;
+    // task property is declared by creep-tasks library
     _trav?: any;
     _travel?: any;
   }
@@ -152,7 +156,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
     if (creep.memory.role === "harvester") {
       RoleHarvester.run(creep, config);
     } else if (creep.memory.role === "upgrader") {
-      RoleUpgrader.run(creep, config);
+      RoleUpgrader.run(creep, config); // Now uses task-based system
     } else if (creep.memory.role === "builder") {
       RoleBuilder.run(creep, config);
     } else if (creep.memory.role === "hauler") {
