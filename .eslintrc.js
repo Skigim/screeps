@@ -7,16 +7,13 @@ module.exports = {
   extends: [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
-    "plugin:@typescript-eslint/recommended-requiring-type-checking",
     "plugin:prettier/recommended",
-    "prettier/@typescript-eslint",
     "plugin:import/errors",
     "plugin:import/warnings",
     "plugin:import/typescript"
   ],
   parser: "@typescript-eslint/parser",
   parserOptions: {
-    project: "tsconfig.json",
     sourceType: "module"
   },
   plugins: ["@typescript-eslint", "import"],
@@ -31,7 +28,7 @@ module.exports = {
   rules: {
     "@typescript-eslint/array-type": "error",
     "@typescript-eslint/consistent-type-assertions": "error",
-    "@typescript-eslint/consistent-type-definitions": "error",
+    "@typescript-eslint/consistent-type-definitions": "off",
     "@typescript-eslint/explicit-function-return-type": "off",
     "@typescript-eslint/explicit-member-accessibility": [
       "error",
@@ -47,11 +44,19 @@ module.exports = {
         hoist: "all"
       }
     ],
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_"
+      }
+    ],
     "@typescript-eslint/no-unused-expressions": "error",
     "@typescript-eslint/no-use-before-define": ["error", { functions: false }],
     "@typescript-eslint/prefer-for-of": "error",
     "@typescript-eslint/space-within-parens": ["off", "never"],
     "@typescript-eslint/unified-signatures": "error",
+    "@typescript-eslint/no-non-null-assertion": "warn",
     "arrow-parens": ["off", "as-needed"],
     camelcase: "error",
     complexity: "off",
@@ -83,7 +88,8 @@ module.exports = {
     "one-var": ["error", "never"],
     "quote-props": "off",
     radix: "error",
-    "sort-imports": "warn",
+    "sort-imports": "off",
     "spaced-comment": "error",
+    "import/no-named-as-default": "off"
   }
 };

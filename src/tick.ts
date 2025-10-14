@@ -1,11 +1,11 @@
-import { derivePolicy } from './core/policy';
-import { buildRoomState, type RoomSenseSnapshot } from './core/state';
-import { Heap } from './core/heap';
-import type { Directives, Policy, RoomState } from './types/contracts';
-import { WorkerSquad } from './squads/worker';
-import { runTickMonitors, type TickContext } from './health/check';
-import { runRoomAudit } from './health/audit';
-import { runRoomAssertions } from './health/assert';
+import { derivePolicy } from "./core/policy";
+import { buildRoomState, type RoomSenseSnapshot } from "./core/state";
+import { Heap } from "./core/heap";
+import type { Directives, Policy, RoomState } from "./types/contracts";
+import { WorkerSquad } from "./squads/worker";
+import { runTickMonitors, type TickContext } from "./health/check";
+import { runRoomAudit } from "./health/audit";
+import { runRoomAssertions } from "./health/assert";
 
 const initializeTick = (): void => {
   if (!Heap.orders) {
@@ -78,7 +78,7 @@ const act = (room: Room, context: TickContext): void => {
 };
 
 export const runTick = (): void => {
-  if (typeof Game === 'undefined') {
+  if (typeof Game === "undefined") {
     return;
   }
 

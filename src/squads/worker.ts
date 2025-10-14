@@ -1,8 +1,8 @@
-import { RCL1Config } from '../config/rcl1';
-import { calculateBodyCost, compileBody } from '../core/bodyFactory';
-import { Heap } from '../core/heap';
-import type { Directives, Policy, RoomState, SquadMetrics } from '../types/contracts';
-import type { RoomSenseSnapshot } from '../core/state';
+import { RCL1Config } from "../config/rcl1";
+import { calculateBodyCost, compileBody } from "../core/bodyFactory";
+import { Heap } from "../core/heap";
+import type { Directives, Policy, RoomState, SquadMetrics } from "../types/contracts";
+import type { RoomSenseSnapshot } from "../core/state";
 
 export type WorkerSquadContext = {
   room: Room;
@@ -12,7 +12,8 @@ export type WorkerSquadContext = {
   snapshot: RoomSenseSnapshot;
 };
 
-const orderSignature = (order: { type: string; targetId?: Id<any> }): string => `${order.type}:${order.targetId ?? 'none'}`;
+const orderSignature = (order: { type: string; targetId?: Id<any> }): string =>
+  `${order.type}:${order.targetId ?? "none"}`;
 
 const ensureHeapMaps = (): void => {
   if (!Heap.snap) {
@@ -32,10 +33,10 @@ const ensureHeapMaps = (): void => {
   }
 };
 
-const cpuNow = (): number => (typeof Game !== 'undefined' && Game.cpu ? Game.cpu.getUsed() : 0);
+const cpuNow = (): number => (typeof Game !== "undefined" && Game.cpu ? Game.cpu.getUsed() : 0);
 
 const recordMetrics = (room: Room, idlePct: number, ordersIssued: number, ordersChanged: number): void => {
-  const squadName = 'worker';
+  const squadName = "worker";
   ensureHeapMaps();
   const entries = Heap.snap!.squads.get(squadName) ?? [];
   const metrics: SquadMetrics = {
@@ -58,23 +59,23 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
   ensureHeapMaps();
   const isEmpty = creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0;
   const controller = room.controller;
-  let orderType = 'IDLE';
+  let orderType = "IDLE";
   let targetId: Id<any> | undefined;
 
   if (isEmpty) {
     const source = snapshot.sources[0];
     if (source) {
-      orderType = 'HARVEST';
+      orderType = "HARVEST";
       targetId = source.id;
     }
   } else if (controller) {
-    orderType = 'UPGRADE';
+    orderType = "UPGRADE";
     targetId = controller.id as Id<any>;
   }
 
   const signature = orderSignature({ type: orderType, targetId });
   const memory = creep.memory as CreepMemory & { orderId?: string; role?: string; squad?: string };
-  const previousSignature = memory.orderId ?? '';
+  const previousSignature = memory.orderId ?? "";
   const changed = signature !== previousSignature;
 
   const order = {
@@ -85,16 +86,16 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
 
   Heap.orders!.set(creep.name, order);
   memory.orderId = signature;
-  memory.role = 'worker';
-  memory.squad = 'worker';
+  memory.role = "worker";
+  memory.squad = "worker";
 
-  return { changed, idle: orderType === 'IDLE' };
+  return { changed, idle: orderType === "IDLE" };
 };
 
 const maintainPopulation = (context: WorkerSquadContext): void => {
-  const { room, policy, snapshot } = context;
+  const { policy, snapshot } = context;
   const workerCreeps = snapshot.myCreeps.filter(
-    (creep) => ((creep.memory as CreepMemory & { role?: string }).role ?? '') === 'worker'
+    creep => ((creep.memory as CreepMemory & { role?: string }).role ?? "") === "worker"
   );
   if (workerCreeps.length >= RCL1Config.worker.max) {
     return;
@@ -113,7 +114,7 @@ const maintainPopulation = (context: WorkerSquadContext): void => {
     return;
   }
 
-  const body = compileBody('worker', RCL1Config.worker.bodyPlan, snapshot.energyCapacityAvailable, policy);
+  const body = compileBody("worker", RCL1Config.worker.bodyPlan, snapshot.energyCapacityAvailable, policy);
   const cost = calculateBodyCost(body);
 
   if (snapshot.energyAvailable < cost) {
@@ -123,18 +124,18 @@ const maintainPopulation = (context: WorkerSquadContext): void => {
   const name = `wrk-${Game.time}-${Math.floor(Math.random() * 1000)}`;
   idleSpawn.spawnCreep(body, name, {
     memory: {
-      role: 'worker',
-      squad: 'worker'
+      role: "worker",
+      squad: "worker"
     } as CreepMemory
   });
 };
 
 export class WorkerSquad {
-  run(context: WorkerSquadContext): void {
+  public run(context: WorkerSquadContext): void {
     maintainPopulation(context);
 
     const workerCreeps = context.snapshot.myCreeps.filter(
-      (creep) => ((creep.memory as CreepMemory & { role?: string }).role ?? '') === 'worker'
+      creep => ((creep.memory as CreepMemory & { role?: string }).role ?? "") === "worker"
     );
     let ordersIssued = 0;
     let ordersChanged = 0;

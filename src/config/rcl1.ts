@@ -2,7 +2,7 @@ export const RCL1Config = {
   worker: {
     min: 3,
     max: 4,
-    bodyPlan: 'worker-basic'
+    bodyPlan: "worker-basic"
   },
   spawn: {
     energyBuffer: 200

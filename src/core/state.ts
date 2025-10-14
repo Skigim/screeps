@@ -1,4 +1,4 @@
-import type { RoomState } from '../types/contracts';
+import type { RoomState } from "../types/contracts";
 
 export type RoomSenseSnapshot = {
   tick: number;
@@ -11,17 +11,17 @@ export type RoomSenseSnapshot = {
 };
 
 const energyFromStructure = (structure: Structure): number => {
-  if ('store' in structure && structure.store) {
+  if ("store" in structure && structure.store) {
     const store = structure.store as Store<ResourceConstant, false> & { [key: string]: number | undefined };
-    if (typeof store.getUsedCapacity === 'function') {
+    if (typeof store.getUsedCapacity === "function") {
       const capacity = store.getUsedCapacity(RESOURCE_ENERGY);
-      return typeof capacity === 'number' ? capacity : 0;
+      return typeof capacity === "number" ? capacity : 0;
     }
 
     return store[RESOURCE_ENERGY] ?? 0;
   }
 
-  if ('energy' in structure) {
+  if ("energy" in structure) {
     return (structure as StructureExtension | StructureSpawn).energy ?? 0;
   }
 
@@ -29,7 +29,7 @@ const energyFromStructure = (structure: Structure): number => {
 };
 
 const calculateRoadCoverage = (structures: Structure[]): number => {
-  const roadCount = structures.filter((structure) => structure.structureType === STRUCTURE_ROAD).length;
+  const roadCount = structures.filter(structure => structure.structureType === STRUCTURE_ROAD).length;
   if (roadCount === 0) {
     return 0;
   }
@@ -54,7 +54,7 @@ export const buildRoomState = (_room: Room, snapshot: RoomSenseSnapshot): RoomSt
     hostiles: { count: snapshot.hostiles.length },
     energy: { bank: energyBank },
     infra: { roadsPct: calculateRoadCoverage(snapshot.structures) },
-    flags: { linksOnline: Boolean(((_room.memory as any)?.flags)?.linksOnline) }
+    flags: { linksOnline: Boolean((_room.memory as any)?.flags?.linksOnline) }
   };
 
   return state;

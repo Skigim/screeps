@@ -1,8 +1,7 @@
-import { RCL1Config } from '../config/rcl1';
-import { Heap } from '../core/heap';
-import type { Directives, Policy, RoomMetricsMemory, RoomState } from '../types/contracts';
-import type { RoomSenseSnapshot } from '../core/state';
-import type { HealthAlert } from '../types/contracts';
+import { RCL1Config } from "../config/rcl1";
+import { Heap } from "../core/heap";
+import type { Directives, HealthAlert, Policy, RoomMetricsMemory, RoomState } from "../types/contracts";
+import type { RoomSenseSnapshot } from "../core/state";
 
 const ALERT_LIMIT = 20;
 const ROLLING_WINDOW = 50;
@@ -42,7 +41,7 @@ const updateRolling = (buffer: number[], value: number, cap: number): void => {
   }
 };
 
-export const pushAlert = (room: Room, type: 'WARN' | 'FAIL', msg: string): void => {
+export const pushAlert = (room: Room, type: "WARN" | "FAIL", msg: string): void => {
   const memory = getAugmentedMemory(room);
 
   if (!memory.alerts) {
@@ -76,17 +75,19 @@ export const runTickMonitors = (room: Room, context: TickContext): void => {
   const metrics = ensureRoomMetrics(room);
 
   if (!memory.policy) {
-    pushAlert(room, 'FAIL', 'policy missing');
+    pushAlert(room, "FAIL", "policy missing");
   }
 
-  const workerCreeps = context.snapshot.myCreeps.filter((creep) => (creep.memory as CreepMemory & { role?: string }).role === 'worker');
+  const workerCreeps = context.snapshot.myCreeps.filter(
+    creep => (creep.memory as CreepMemory & { role?: string }).role === "worker"
+  );
   if (workerCreeps.length < RCL1Config.worker.min) {
-    pushAlert(room, 'WARN', `worker count below target (${workerCreeps.length}/${RCL1Config.worker.min})`);
+    pushAlert(room, "WARN", `worker count below target (${workerCreeps.length}/${RCL1Config.worker.min})`);
   }
 
   const controller = room.controller;
   if (controller && controller.ticksToDowngrade !== undefined && controller.ticksToDowngrade <= 4000) {
-    pushAlert(room, 'WARN', 'controller downgrade risk');
+    pushAlert(room, "WARN", "controller downgrade risk");
   }
 
   const creepSamples = Heap.debug?.creepCpuSamples ?? [];
@@ -94,7 +95,7 @@ export const runTickMonitors = (room: Room, context: TickContext): void => {
     const medianCpu = median(creepSamples);
     metrics.creepCpuMedian = medianCpu;
     if (medianCpu > 0.3) {
-      pushAlert(room, 'WARN', `median creep CPU ${medianCpu.toFixed(3)}ms`);
+      pushAlert(room, "WARN", `median creep CPU ${medianCpu.toFixed(3)}ms`);
     }
   }
 
@@ -112,7 +113,7 @@ export const runTickMonitors = (room: Room, context: TickContext): void => {
     (structure): structure is StructureSpawn => structure.structureType === STRUCTURE_SPAWN
   );
 
-  if (spawns.some((spawn) => spawn.spawning)) {
+  if (spawns.some(spawn => spawn.spawning)) {
     metrics.lastSpawnTick = Game.time;
   }
 };

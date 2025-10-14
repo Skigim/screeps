@@ -1,16 +1,6 @@
-import { Traveler } from './vendor/traveler';
-import Tasks from './vendor/creep-tasks';
-import { runTick } from './tick';
-
-declare global {
-  namespace NodeJS {
-    interface Global {
-      Traveler: typeof Traveler;
-      Tasks: typeof Tasks;
-      __GIT_HASH__?: string;
-    }
-  }
-}
+import { Traveler } from "./vendor/traveler";
+import Tasks from "./vendor/creep-tasks";
+import { runTick } from "./tick";
 
 const bootstrapVendors = (): void => {
   global.Traveler = Traveler;
@@ -20,7 +10,7 @@ const bootstrapVendors = (): void => {
 bootstrapVendors();
 
 const cleanupCreepMemory = (): void => {
-  if (typeof Memory === 'undefined' || typeof Game === 'undefined') {
+  if (typeof Memory === "undefined" || typeof Game === "undefined") {
     return;
   }
 
@@ -37,7 +27,7 @@ export const loop = (): void => {
   cleanupCreepMemory();
   runTick();
 
-  if (typeof Game !== 'undefined' && Game.time % 150 === 0) {
-    console.log(`Loop tick=${Game.time} hash=${global.__GIT_HASH__ ?? 'development'}`);
+  if (typeof Game !== "undefined" && Game.time % 150 === 0) {
+    console.log(`Loop tick=${Game.time} hash=${global.__GIT_HASH__ ?? "development"}`);
   }
 };

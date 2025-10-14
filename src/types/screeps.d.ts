@@ -1,9 +1,4 @@
-import type {
-  HealthAlert,
-  Policy,
-  RoomMetricsMemory,
-  RoomTestsMemory
-} from './contracts';
+import type { HealthAlert, Policy, RoomMetricsMemory, RoomTestsMemory } from "./contracts";
 
 declare global {
   interface CreepMemory {

@@ -1,7 +1,7 @@
-import { RCL1Config } from '../config/rcl1';
-import { compileBody, estimateSpawnTime } from '../core/bodyFactory';
-import type { Policy, RoomTestsMemory } from '../types/contracts';
-import type { TickContext } from './check';
+import { RCL1Config } from "../config/rcl1";
+import { compileBody, estimateSpawnTime } from "../core/bodyFactory";
+import type { Policy, RoomTestsMemory } from "../types/contracts";
+import type { TickContext } from "./check";
 
 const RECENT_LIMIT = 10;
 
@@ -43,10 +43,15 @@ const recordAssertion = (memory: AugmentedRoomMemory, name: string, pass: boolea
 export const runRoomAssertions = (room: Room, context: TickContext): void => {
   const memory = room.memory as AugmentedRoomMemory;
 
-  recordAssertion(memory, 'policy-energy-low', context.policy.energy.low === 200, `low=${context.policy.energy.low}`);
-  recordAssertion(memory, 'policy-nav-hint', context.policy.nav.moveRatioHint === 0.5, `hint=${context.policy.nav.moveRatioHint}`);
+  recordAssertion(memory, "policy-energy-low", context.policy.energy.low === 200, `low=${context.policy.energy.low}`);
+  recordAssertion(
+    memory,
+    "policy-nav-hint",
+    context.policy.nav.moveRatioHint === 0.5,
+    `hint=${context.policy.nav.moveRatioHint}`
+  );
 
-  const body = compileBody('worker', RCL1Config.worker.bodyPlan, room.energyCapacityAvailable, context.policy);
+  const body = compileBody("worker", RCL1Config.worker.bodyPlan, room.energyCapacityAvailable, context.policy);
   const spawnTime = estimateSpawnTime(body);
-  recordAssertion(memory, 'worker-spawn-time', spawnTime <= 300, `spawnTime=${spawnTime}`);
+  recordAssertion(memory, "worker-spawn-time", spawnTime <= 300, `spawnTime=${spawnTime}`);
 };

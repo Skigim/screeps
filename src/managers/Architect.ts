@@ -1,63 +1,46 @@
 /**
  * Architect - Intelligent Room Planning System
  *
- * Analyzes room topology and uses pathfinding data to optimally place:
- * - Extensions (efficient energy distribution)
- * - Containers (source containers, destination containers)
- * - Roads (connecting infrastructure)
- * - Future: Towers, labs, storage, terminals, etc.
- *
- * Design Philosophy:
- * - Use actual pathfinding data (Traveler) to inform decisions
- * - Minimize creep travel time (fewer CPU cycles, faster economy)
- * - Adaptive to room terrain and source positions
- * - Extensible for all RCL levels
+ * Recovered from previous iteration and made self-contained.
+ * Plans optimal positions for extensions, containers, and roads using Traveler paths.
  */
 
-import { Traveler } from "../Traveler";
-import type { MethodsIndex } from "../core/MethodsIndex";
+import { Traveler } from "../vendor/traveler";
 
 export interface ArchitectPlan {
   extensions: RoomPosition[];
-  sourceContainers: Map<string, RoomPosition>; // sourceId -> position
-  spawnContainers: RoomPosition[]; // Spawn-adjacent containers (one per source road)
+  sourceContainers: Map<string, RoomPosition>;
+  spawnContainers: RoomPosition[];
   destContainers: {
     controller?: RoomPosition;
-    // Future: storage, terminal, etc.
   };
   roads: RoomPosition[];
 }
 
 export class Architect {
   /**
-   * Main entry point - automatically plans and executes for a room
-   * Call this once per tick for each room
-   * @param room - The room to plan for
-   * @param methodsIndex - Service locator (optional for console commands)
+   * Main entry point for room planning.
    */
-  public static run(room: Room, methodsIndex?: MethodsIndex): void {
-    if (!room.controller || !room.controller.my) return;
+  public static run(room: Room): void {
+    if (!room.controller || !room.controller.my) {
+      return;
+    }
 
     const rcl = room.controller.level;
     const roomKey = room.name;
 
-    // Initialize Memory tracking if needed
     if (!Memory.architectPlans) {
       Memory.architectPlans = {};
     }
 
     const lastPlannedRCL = Memory.architectPlans[roomKey];
 
-    // Only plan when RCL has CHANGED (not on fresh deploy with no memory!)
-    // If lastPlannedRCL is undefined, just record current RCL without planning
     if (lastPlannedRCL === undefined) {
-      // First time seeing this room - record RCL without triggering
       Memory.architectPlans[roomKey] = rcl;
       console.log(`📐 Architect: Initialized tracking for ${room.name} at RCL ${rcl} (no planning yet)`);
       return;
     }
 
-    // Now we have previous data - only plan if RCL actually changed
     if (lastPlannedRCL !== rcl && rcl >= 2) {
       console.log(`📐 Architect: RCL changed ${lastPlannedRCL} → ${rcl} in ${room.name}`);
       console.log(`📐 Architect: Planning infrastructure for ${room.name} (RCL ${rcl})`);
@@ -65,14 +48,10 @@ export class Architect {
       const plan = this.planRoom(room);
       this.executePlan(room, plan);
 
-      // Mark this RCL as planned in Memory (persists across code pushes)
       Memory.architectPlans[roomKey] = rcl;
     }
   }
 
-  /**
-   * Force replan for a room (useful after manual cleanup or structure destruction)
-   */
   public static forceReplan(roomName: string): void {
     const room = Game.rooms[roomName];
     if (!room || !room.controller || !room.controller.my) {
@@ -82,7 +61,6 @@ export class Architect {
 
     console.log(`🔄 Architect: Force replanning ${roomName}...`);
 
-    // Clear the RCL tracking in Memory to force replan
     if (Memory.architectPlans) {
       delete Memory.architectPlans[roomName];
     }
@@ -91,10 +69,6 @@ export class Architect {
     console.log(`✅ Architect: Replan complete for ${roomName}`);
   }
 
-  /**
-   * Generate a complete construction plan for a room
-   * Includes cleanup of faulty/misplaced construction sites
-   */
   public static planRoom(room: Room): ArchitectPlan {
     const plan: ArchitectPlan = {
       extensions: [],
@@ -104,7 +78,6 @@ export class Architect {
       roads: []
     };
 
-    // Get key anchor points
     const spawn = room.find(FIND_MY_SPAWNS)[0];
     if (!spawn) {
       console.log(`⚠️ Architect: No spawn found in ${room.name}`);
@@ -113,13 +86,9 @@ export class Architect {
 
     const controller = room.controller;
     const sources = room.find(FIND_SOURCES);
-
-    // Plan infrastructure based on RCL
-    const rcl = controller?.level || 1;
+    const rcl = controller?.level ?? 1;
 
     if (rcl >= 2) {
-      // RCL 2: Containers first (drop mining), then extensions, then roads
-      // Phase 1: Source containers (fast with drop mining)
       for (const source of sources) {
         const containerPos = this.planSourceContainer(room, source);
         if (containerPos) {
@@ -127,15 +96,9 @@ export class Architect {
         }
       }
 
-      // Phase 1.5: Spawn-adjacent containers (one per source road)
-      // These go BEFORE extensions so extensions can fit around them
       plan.spawnContainers = this.planSpawnContainers(room, spawn, sources);
+      plan.extensions = this.planExtensions(room, spawn, 5, plan.spawnContainers);
 
-      // Phase 2: Extensions (haulers bring energy from containers)
-      // Extensions now avoid spawn containers
-      plan.extensions = this.planExtensions(room, spawn, 5, plan.spawnContainers); // RCL 2 unlocks 5 extensions
-
-      // Phase 4: Controller container (last)
       if (controller) {
         const controllerContainer = this.planControllerContainer(room, controller, spawn);
         if (controllerContainer) {
@@ -143,66 +106,50 @@ export class Architect {
         }
       }
 
-      // Phase 3: Road network connecting everything
-      plan.roads = this.planRoadNetwork(room, spawn, sources, controller, plan);
-
-      // Clean up faulty construction sites that don't match the plan
-      const removed = this.cleanupFaultySites(room, plan);
-
-      // If we removed sites, they need to be replaced with correct ones
-      // This will be handled by executePlan in the same tick
+      plan.roads = this.planRoadNetwork(room, spawn, sources, controller ?? undefined, plan);
+      this.cleanupFaultySites(room, plan);
     }
 
     return plan;
   }
 
-  /**
-   * Execute a construction plan (place construction sites)
-   */
   public static executePlan(room: Room, plan: ArchitectPlan): void {
     const existingSites = room.find(FIND_CONSTRUCTION_SITES);
-    const maxSites = 100; // Game limit
+    const maxSites = 100;
 
-    // Prioritize construction: Containers > Extensions > Roads
-    const placementQueue: Array<{ pos: RoomPosition; type: BuildableStructureConstant }> = [];
+    const placementQueue: { pos: RoomPosition; type: BuildableStructureConstant }[] = [];
 
-    // 1. Source containers (highest priority - enable drop mining and hauler logistics)
-    for (const pos of plan.sourceContainers.values()) {
-      if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
+    for (const pos of Array.from(plan.sourceContainers.values())) {
+      if (!this.hasStructureAt(pos, STRUCTURE_CONTAINER)) {
         placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
       }
     }
 
-    // 2. Spawn-adjacent containers (second priority - central logistics hubs)
     for (const pos of plan.spawnContainers) {
-      if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
+      if (!this.hasStructureAt(pos, STRUCTURE_CONTAINER)) {
         placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
       }
     }
 
-    // 3. Extensions (third priority - increase energy capacity for stationary harvesters)
     for (const pos of plan.extensions) {
-      if (!this.hasStructureAt(room, pos, STRUCTURE_EXTENSION)) {
+      if (!this.hasStructureAt(pos, STRUCTURE_EXTENSION)) {
         placementQueue.push({ pos, type: STRUCTURE_EXTENSION });
       }
     }
 
-    // 4. Roads (fourth priority - improve logistics)
     for (const pos of plan.roads) {
-      if (!this.hasStructureAt(room, pos, STRUCTURE_ROAD) && !this.hasStructureAt(room, pos, STRUCTURE_SPAWN)) {
+      if (!this.hasStructureAt(pos, STRUCTURE_ROAD) && !this.hasStructureAt(pos, STRUCTURE_SPAWN)) {
         placementQueue.push({ pos, type: STRUCTURE_ROAD });
       }
     }
 
-    // 5. Controller container (lowest priority - final polish)
     if (plan.destContainers.controller) {
       const pos = plan.destContainers.controller;
-      if (!this.hasStructureAt(room, pos, STRUCTURE_CONTAINER)) {
+      if (!this.hasStructureAt(pos, STRUCTURE_CONTAINER)) {
         placementQueue.push({ pos, type: STRUCTURE_CONTAINER });
       }
     }
 
-    // Place construction sites (respecting game limit)
     let placed = 0;
     for (const { pos, type } of placementQueue) {
       if (existingSites.length + placed >= maxSites) {
@@ -222,10 +169,6 @@ export class Architect {
     }
   }
 
-  /**
-   * Plan extension positions in a crescent around spawn
-   * Avoids spawn containers to prevent blocking logistics hubs
-   */
   private static planExtensions(
     room: Room,
     spawn: StructureSpawn,
@@ -235,33 +178,23 @@ export class Architect {
     const positions: RoomPosition[] = [];
     const spawnPos = spawn.pos;
 
-    // Crescent pattern: Positions around spawn, prioritizing front/sides
     const crescentOffsets = [
-      // Front arc (3 positions)
-      { x: -1, y: -1 }, { x: 0, y: -1 }, { x: 1, y: -1 },
-      // Side positions (2 positions)
-      { x: -2, y: 0 }, { x: 2, y: 0 }
-      // Can extend to full circle if needed:
-      // { x: -1, y: 1 }, { x: 0, y: 1 }, { x: 1, y: 1 }
+      { x: -1, y: -1 },
+      { x: 0, y: -1 },
+      { x: 1, y: -1 },
+      { x: -2, y: 0 },
+      { x: 2, y: 0 }
     ];
 
     for (const offset of crescentOffsets) {
       if (positions.length >= count) break;
 
-      const pos = new RoomPosition(
-        spawnPos.x + offset.x,
-        spawnPos.y + offset.y,
-        room.name
-      );
+      const pos = new RoomPosition(spawnPos.x + offset.x, spawnPos.y + offset.y, room.name);
 
-      // Skip positions that are reserved for spawn containers
       if (avoidPositions.some(avoid => avoid.x === pos.x && avoid.y === pos.y)) {
         continue;
       }
 
-      // Validate position (buildable terrain)
-      // NOTE: Don't filter out positions with existing structures here!
-      // Let executePlan() handle that - otherwise replan will delete all sites
       if (this.isValidBuildPosition(room, pos)) {
         positions.push(pos);
       }
@@ -270,35 +203,21 @@ export class Architect {
     return positions;
   }
 
-  /**
-   * Plan spawn-adjacent containers (one per source)
-   * Positioned where roads from spawn to sources intersect spawn area
-   * These act as central logistics hubs for haulers to deliver energy
-   */
   private static planSpawnContainers(room: Room, spawn: StructureSpawn, sources: Source[]): RoomPosition[] {
     const containers: RoomPosition[] = [];
     const spawnPos = spawn.pos;
 
     for (const source of sources) {
-      // Find the path from spawn to source
       const path = Traveler.findTravelPath(spawnPos, source.pos);
-
       if (!path || path.path.length < 2) continue;
 
-      // Find a position along the path that's close to spawn (range 2-3)
-      // This creates a "logistics hub" where haulers can deposit energy
       for (const step of path.path) {
         const distance = spawnPos.getRangeTo(step.x, step.y);
-
-        // Look for positions at range 2-3 from spawn (not too close, not too far)
         if (distance >= 2 && distance <= 3) {
           const pos = new RoomPosition(step.x, step.y, room.name);
-
-          // Validate it's buildable and not already used
-          if (this.isValidBuildPosition(room, pos) &&
-              !containers.some(c => c.x === pos.x && c.y === pos.y)) {
+          if (this.isValidBuildPosition(room, pos) && !containers.some(c => c.x === pos.x && c.y === pos.y)) {
             containers.push(pos);
-            break; // One container per source
+            break;
           }
         }
       }
@@ -307,19 +226,9 @@ export class Architect {
     return containers;
   }
 
-  /**
-   * Plan source container position (adjacent to source, optimal for harvesting)
-   */
   private static planSourceContainer(room: Room, source: Source): RoomPosition | null {
-    const sourcePos = source.pos;
+    const adjacentPositions = this.getAdjacentPositions(room, source.pos);
 
-    // Find the best adjacent position:
-    // 1. Walkable terrain
-    // 2. Not blocking pathfinding to other areas
-    // 3. Ideally not on a road (but can be)
-    const adjacentPositions = this.getAdjacentPositions(room, sourcePos);
-
-    // Score positions based on accessibility and terrain
     let bestPos: RoomPosition | null = null;
     let bestScore = -Infinity;
 
@@ -327,17 +236,12 @@ export class Architect {
       if (!this.isValidBuildPosition(room, pos)) continue;
 
       let score = 0;
-
-      // Prefer positions with more open adjacent tiles (easier access)
-      const openNeighbors = this.getAdjacentPositions(room, pos)
-        .filter(p => this.isWalkable(room, p))
-        .length;
+      const openNeighbors = this.getAdjacentPositions(room, pos).filter(p => this.isWalkable(room, p)).length;
       score += openNeighbors * 10;
 
-      // Prefer plain terrain over swamp (cheaper roads later)
       const terrain = room.getTerrain().get(pos.x, pos.y);
-      if (terrain === 0) score += 5; // Plain
-      if (terrain === TERRAIN_MASK_SWAMP) score -= 5; // Swamp
+      if (terrain === 0) score += 5;
+      if (terrain === TERRAIN_MASK_SWAMP) score -= 5;
 
       if (score > bestScore) {
         bestScore = score;
@@ -348,38 +252,26 @@ export class Architect {
     return bestPos;
   }
 
-  /**
-   * Plan controller container position (near controller, accessible to upgraders)
-   */
   private static planControllerContainer(
     room: Room,
     controller: StructureController,
     spawn: StructureSpawn
   ): RoomPosition | null {
-    const controllerPos = controller.pos;
-
-    // Find position adjacent to controller that's on the path from spawn
-    // This ensures upgraders can easily access it
-    const path = Traveler.findTravelPath(spawn.pos, controllerPos);
+    const path = Traveler.findTravelPath(spawn.pos, controller.pos);
 
     if (!path || path.path.length === 0) {
-      console.log(`⚠️ Architect: No path found from spawn to controller`);
+      console.log("⚠️ Architect: No path found from spawn to controller");
       return null;
     }
 
-    // Find the last path position that's adjacent to the controller
     for (let i = path.path.length - 1; i >= 0; i--) {
       const pathPos = path.path[i];
-      if (this.isAdjacentTo(pathPos, controllerPos)) {
-        // Check if this position is valid for a container
-        if (this.isValidBuildPosition(room, pathPos)) {
-          return new RoomPosition(pathPos.x, pathPos.y, room.name);
-        }
+      if (this.isAdjacentTo(pathPos, controller.pos) && this.isValidBuildPosition(room, pathPos)) {
+        return new RoomPosition(pathPos.x, pathPos.y, room.name);
       }
     }
 
-    // Fallback: Just find any valid adjacent position
-    const adjacentPositions = this.getAdjacentPositions(room, controllerPos);
+    const adjacentPositions = this.getAdjacentPositions(room, controller.pos);
     for (const pos of adjacentPositions) {
       if (this.isValidBuildPosition(room, pos)) {
         return pos;
@@ -389,10 +281,6 @@ export class Architect {
     return null;
   }
 
-  /**
-   * Plan road network connecting spawn, sources, and controller
-   * Uses terrain-agnostic pathfinding (swamps = plains since roads will be built)
-   */
   private static planRoadNetwork(
     room: Room,
     spawn: StructureSpawn,
@@ -403,33 +291,27 @@ export class Architect {
     const roadPositions: Set<string> = new Set();
     const spawnPos = spawn.pos;
 
-    // Helper to add path to road set with terrain-agnostic pathfinding
     const addPathToRoads = (fromPos: RoomPosition, toPos: RoomPosition) => {
-      // Custom roomCallback to treat swamps and plains equally (we're building roads!)
       const roomCallback = (roomName: string): CostMatrix | boolean => {
         if (roomName !== room.name) return false;
 
         const costs = new PathFinder.CostMatrix();
         const terrain = room.getTerrain();
 
-        // Set costs: plains = 1, swamps = 1 (same!), walls = 255
         for (let x = 0; x < 50; x++) {
           for (let y = 0; y < 50; y++) {
             const tile = terrain.get(x, y);
-            if (tile === TERRAIN_MASK_WALL) {
-              costs.set(x, y, 255); // Impassable
-            } else {
-              costs.set(x, y, 1); // Both plains and swamps cost 1
-            }
+            costs.set(x, y, tile === TERRAIN_MASK_WALL ? 255 : 1);
           }
         }
 
-        // Avoid existing structures (except roads/containers)
         const structures = room.find(FIND_STRUCTURES);
         for (const structure of structures) {
-          if (structure.structureType !== STRUCTURE_ROAD &&
-              structure.structureType !== STRUCTURE_CONTAINER &&
-              structure.structureType !== STRUCTURE_RAMPART) {
+          if (
+            structure.structureType !== STRUCTURE_ROAD &&
+            structure.structureType !== STRUCTURE_CONTAINER &&
+            structure.structureType !== STRUCTURE_RAMPART
+          ) {
             costs.set(structure.pos.x, structure.pos.y, 255);
           }
         }
@@ -438,51 +320,41 @@ export class Architect {
       };
 
       const path = Traveler.findTravelPath(fromPos, toPos, {
-        roomCallback: roomCallback,
+        roomCallback,
         ignoreCreeps: true,
         maxOps: 4000
       });
 
       if (path && path.path.length > 0) {
         for (const step of path.path) {
-          const posKey = `${step.x},${step.y}`;
-          roadPositions.add(posKey);
+          roadPositions.add(`${step.x},${step.y}`);
         }
       }
     };
 
-    // Roads from spawn to each source container
-    for (const [sourceId, containerPos] of plan.sourceContainers) {
+    for (const containerPos of Array.from(plan.sourceContainers.values())) {
       addPathToRoads(spawnPos, containerPos);
     }
 
-    // Road from spawn to controller container (if exists)
     if (plan.destContainers.controller) {
       addPathToRoads(spawnPos, plan.destContainers.controller);
     }
 
-    // Convert set back to RoomPosition array
     const roads: RoomPosition[] = [];
-    for (const posKey of roadPositions) {
-      const [x, y] = posKey.split(',').map(Number);
+    for (const posKey of Array.from(roadPositions)) {
+      const [x, y] = posKey.split(",").map(Number);
       roads.push(new RoomPosition(x, y, room.name));
     }
 
     return roads;
   }
 
-  /**
-   * Check if a position is valid for building
-   */
   private static isValidBuildPosition(room: Room, pos: RoomPosition): boolean {
-    // Check bounds
     if (pos.x < 1 || pos.x > 48 || pos.y < 1 || pos.y > 48) return false;
 
-    // Check terrain (not wall)
     const terrain = room.getTerrain().get(pos.x, pos.y);
     if (terrain === TERRAIN_MASK_WALL) return false;
 
-    // Check no existing structures (except roads, which can be built over)
     const structures = pos.lookFor(LOOK_STRUCTURES);
     for (const structure of structures) {
       if (structure.structureType !== STRUCTURE_ROAD && structure.structureType !== STRUCTURE_CONTAINER) {
@@ -493,35 +365,25 @@ export class Architect {
     return true;
   }
 
-  /**
-   * Check if a structure exists at a position
-   */
-  private static hasStructureAt(room: Room, pos: RoomPosition, structureType: StructureConstant): boolean {
+  private static hasStructureAt(pos: RoomPosition, structureType: StructureConstant): boolean {
     const structures = pos.lookFor(LOOK_STRUCTURES);
     const sites = pos.lookFor(LOOK_CONSTRUCTION_SITES);
 
     return (
-      structures.some(s => s.structureType === structureType) ||
-      sites.some(s => s.structureType === structureType)
+      structures.some(s => s.structureType === structureType) || sites.some(s => s.structureType === structureType)
     );
   }
 
-  /**
-   * Check if position is walkable
-   */
   private static isWalkable(room: Room, pos: RoomPosition): boolean {
     const terrain = room.getTerrain().get(pos.x, pos.y);
     return terrain !== TERRAIN_MASK_WALL;
   }
 
-  /**
-   * Get adjacent positions (8 directions)
-   */
   private static getAdjacentPositions(room: Room, pos: RoomPosition): RoomPosition[] {
     const positions: RoomPosition[] = [];
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
-        if (dx === 0 && dy === 0) continue; // Skip center
+        if (dx === 0 && dy === 0) continue;
         const x = pos.x + dx;
         const y = pos.y + dy;
         if (x >= 0 && x <= 49 && y >= 0 && y <= 49) {
@@ -532,55 +394,41 @@ export class Architect {
     return positions;
   }
 
-  /**
-   * Check if two positions are adjacent
-   */
   private static isAdjacentTo(pos1: RoomPosition, pos2: RoomPosition): boolean {
     return Math.abs(pos1.x - pos2.x) <= 1 && Math.abs(pos1.y - pos2.y) <= 1;
   }
 
-  /**
-   * Clean up faulty construction sites that don't match the current plan
-   * Removes misplaced sites so they can be rebuilt correctly
-   * Returns number of sites removed
-   */
   private static cleanupFaultySites(room: Room, plan: ArchitectPlan): number {
     const allSites = room.find(FIND_CONSTRUCTION_SITES);
     let removed = 0;
 
-    // Build sets of planned positions for quick lookup
     const plannedExtensions = new Set(plan.extensions.map(pos => `${pos.x},${pos.y}`));
-    const plannedContainers = new Set([
-      ...Array.from(plan.sourceContainers.values()).map(pos => `${pos.x},${pos.y}`),
-      plan.destContainers.controller ? `${plan.destContainers.controller.x},${plan.destContainers.controller.y}` : null
-    ].filter(Boolean));
+    const plannedContainers = new Set(
+      [
+        ...Array.from(plan.sourceContainers.values()).map(pos => `${pos.x},${pos.y}`),
+        plan.destContainers.controller
+          ? `${plan.destContainers.controller.x},${plan.destContainers.controller.y}`
+          : null
+      ].filter(Boolean) as string[]
+    );
     const plannedRoads = new Set(plan.roads.map(pos => `${pos.x},${pos.y}`));
 
     for (const site of allSites) {
       const posKey = `${site.pos.x},${site.pos.y}`;
       let shouldRemove = false;
 
-      // Check if this site matches the plan
       switch (site.structureType) {
         case STRUCTURE_EXTENSION:
-          if (!plannedExtensions.has(posKey)) {
-            shouldRemove = true;
-            console.log(`🗑️ Architect: Removing misplaced extension at ${site.pos}`);
-          }
+          shouldRemove = !plannedExtensions.has(posKey);
+          if (shouldRemove) console.log(`🗑️ Architect: Removing misplaced extension at ${site.pos}`);
           break;
-
         case STRUCTURE_CONTAINER:
-          if (!plannedContainers.has(posKey)) {
-            shouldRemove = true;
-            console.log(`🗑️ Architect: Removing misplaced container at ${site.pos}`);
-          }
+          shouldRemove = !plannedContainers.has(posKey);
+          if (shouldRemove) console.log(`🗑️ Architect: Removing misplaced container at ${site.pos}`);
           break;
-
         case STRUCTURE_ROAD:
-          if (!plannedRoads.has(posKey)) {
-            shouldRemove = true;
-            console.log(`🗑️ Architect: Removing misplaced road at ${site.pos}`);
-          }
+          shouldRemove = !plannedRoads.has(posKey);
+          if (shouldRemove) console.log(`🗑️ Architect: Removing misplaced road at ${site.pos}`);
           break;
       }
 
@@ -597,31 +445,24 @@ export class Architect {
     return removed;
   }
 
-  /**
-   * Display plan in room visual (for debugging)
-   */
   public static visualizePlan(room: Room, plan: ArchitectPlan): void {
     const visual = room.visual;
 
-    // Extensions (green circles)
     for (const pos of plan.extensions) {
-      visual.circle(pos, { fill: 'green', radius: 0.4, opacity: 0.5 });
+      visual.circle(pos, { fill: "green", radius: 0.4, opacity: 0.5 });
     }
 
-    // Source containers (yellow squares)
-    for (const pos of plan.sourceContainers.values()) {
-      visual.rect(pos.x - 0.4, pos.y - 0.4, 0.8, 0.8, { fill: 'yellow', opacity: 0.5 });
+    for (const pos of Array.from(plan.sourceContainers.values())) {
+      visual.rect(pos.x - 0.4, pos.y - 0.4, 0.8, 0.8, { fill: "yellow", opacity: 0.5 });
     }
 
-    // Controller container (blue square)
     if (plan.destContainers.controller) {
       const pos = plan.destContainers.controller;
-      visual.rect(pos.x - 0.4, pos.y - 0.4, 0.8, 0.8, { fill: 'blue', opacity: 0.5 });
+      visual.rect(pos.x - 0.4, pos.y - 0.4, 0.8, 0.8, { fill: "blue", opacity: 0.5 });
     }
 
-    // Roads (gray lines)
     for (const pos of plan.roads) {
-      visual.circle(pos, { fill: 'gray', radius: 0.2, opacity: 0.3 });
+      visual.circle(pos, { fill: "gray", radius: 0.2, opacity: 0.3 });
     }
   }
 }

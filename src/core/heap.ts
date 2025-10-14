@@ -1,4 +1,4 @@
-import type { SquadMetrics } from '../types/contracts';
+import type { SquadMetrics } from "../types/contracts";
 
 interface HeapSnap {
   rooms: Map<string, unknown>;
@@ -16,7 +16,7 @@ interface HeapGlobals extends NodeJS.Global {
   debug?: HeapDebug;
 }
 
-export const Heap = (global as unknown as HeapGlobals);
+export const Heap = global as unknown as HeapGlobals;
 
 if (!Heap.orders) {
   Heap.orders = new Map();
