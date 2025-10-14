@@ -279,3 +279,7 @@ export class WorkerSquad {
     };
   }
 }
+
+export const workerInternals = {
+  assignTask
+};
