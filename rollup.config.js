@@ -47,10 +47,16 @@ export default {
       transform(code, id) {
         if (id.endsWith('main.ts')) {
           // Inject git hash as a global constant
-          return code.replace(
+          const transformed = code.replace(
             /\/\/ @GIT_HASH@/g,
             `global.__GIT_HASH__ = "${gitHash}";`
           );
+
+          if (transformed === code) {
+            return { code, map: { mappings: "" } };
+          }
+
+          return { code: transformed, map: { mappings: "" } };
         }
         return null;
       }

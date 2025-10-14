@@ -1394,7 +1394,7 @@ const cleanupCreepMemory = () => {
         }
     }
 };
-global.__GIT_HASH__ = "e341339";
+global.__GIT_HASH__ = "46ac788";
 const loop = () => {
     var _a;
     cleanupCreepMemory();
