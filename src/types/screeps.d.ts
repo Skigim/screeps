@@ -1,4 +1,5 @@
 import type { HealthAlert, Policy, RoomEngineMemory, RoomMetricsMemory, RoomTestsMemory } from "./contracts";
+import type { TaskInstance, TaskMemory } from "../vendor/creep-tasks";
 
 declare global {
   interface CreepMemory {
@@ -7,10 +8,14 @@ declare global {
     role?: string;
     squad?: string;
     orderId?: string;
+    task?: TaskMemory;
+    taskSignature?: string;
   }
 
   interface Creep {
     travelTo(destination: RoomPosition | { pos: RoomPosition }, options?: any): number;
+    task: TaskInstance | null;
+    runTask(): ScreepsReturnCode;
   }
 
   interface RoomMemory {

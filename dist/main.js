@@ -641,64 +641,274 @@ if (typeof Creep !== 'undefined') {
     };
 }
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const createFallback = () => {
-    const fallback = class StubTasks {
-        static chain(tasks = []) {
-            return tasks.length > 0 ? tasks[0] : null;
+/*
+ * Lightweight task runner inspired by the original creep-tasks package.
+ * Provides a small subset of task functionality tailored for the RCL1 worker squad.
+ */
+const isRoomObject = (value) => {
+    return typeof value === "object" && value !== null && "pos" in value;
+};
+const MOVE_OPTS = { reusePath: 5, visualizePathStyle: { stroke: "#ffaa00" } };
+const registry = new Map();
+const getTargetById = (id) => {
+    var _a;
+    if (typeof Game === "undefined" || !id) {
+        return null;
+    }
+    return (_a = Game.getObjectById(id)) !== null && _a !== void 0 ? _a : null;
+};
+const clearTask = (creep) => {
+    delete creep.memory.task;
+    creep._task = null;
+};
+class BaseTask {
+    constructor(proto) {
+        this.proto = proto;
+        this.creep = null;
+    }
+    get name() {
+        return this.proto.name;
+    }
+    assign(creep) {
+        this.creep = creep;
+        this.creep._task = this;
+    }
+    run() {
+        if (!this.creep) {
+            return ERR_BUSY;
         }
-    };
-    const taskMethods = [
-        'attack',
-        'build',
-        'claim',
-        'dismantle',
-        'drop',
-        'fortify',
-        'getBoosted',
-        'getRenewed',
-        'goTo',
-        'goToRoom',
-        'harvest',
-        'heal',
-        'meleeAttack',
-        'pickup',
-        'rangedAttack',
-        'repair',
-        'reserve',
-        'signController',
-        'transfer',
-        'transferAll',
-        'upgrade',
-        'withdraw',
-        'withdrawAll'
-    ];
-    for (const method of taskMethods) {
-        fallback[method] = (..._args) => {
-            throw new Error(`Tasks.${method} is unavailable`);
+        const target = this.resolveTarget();
+        if (!target) {
+            this.onTargetMissing();
+            return ERR_INVALID_TARGET;
+        }
+        if (!this.ensureInRange(target)) {
+            return this.creep.moveTo(target, MOVE_OPTS);
+        }
+        const result = this.perform(target);
+        this.afterRun(result, target);
+        return result;
+    }
+    get range() {
+        var _a;
+        return (_a = this.proto.range) !== null && _a !== void 0 ? _a : 1;
+    }
+    ensureInRange(target) {
+        if (!this.creep) {
+            return false;
+        }
+        if (target instanceof RoomPosition) {
+            return target.isEqualTo(this.creep.pos);
+        }
+        return this.creep.pos.inRangeTo(target, this.range);
+    }
+    onTargetMissing() {
+        if (this.creep) {
+            clearTask(this.creep);
+        }
+    }
+    complete() {
+        if (this.creep) {
+            clearTask(this.creep);
+        }
+    }
+    afterRun(_result, _target) { }
+}
+class HarvestTask extends BaseTask {
+    constructor(targetOrProto) {
+        super(isRoomObject(targetOrProto)
+            ? { name: HarvestTask.taskName, targetId: targetOrProto.id, range: 1 }
+            : targetOrProto);
+    }
+    resolveTarget() {
+        return getTargetById(this.proto.targetId);
+    }
+    perform(target) {
+        if (!this.creep) {
+            return ERR_BUSY;
+        }
+        if (this.creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            this.complete();
+            return OK;
+        }
+        return this.creep.harvest(target);
+    }
+    afterRun(result, target) {
+        if (!this.creep) {
+            return;
+        }
+        if (result === OK) {
+            if (this.creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0 || target.energy === 0) {
+                this.complete();
+            }
+            return;
+        }
+        if (result === ERR_NOT_ENOUGH_RESOURCES ||
+            result === ERR_INVALID_TARGET ||
+            result === ERR_NO_BODYPART ||
+            result === ERR_TIRED) {
+            this.complete();
+        }
+    }
+}
+HarvestTask.taskName = "harvest";
+class TransferTask extends BaseTask {
+    constructor(targetOrProto, resourceType = RESOURCE_ENERGY, amount) {
+        super(isRoomObject(targetOrProto)
+            ? {
+                name: TransferTask.taskName,
+                targetId: targetOrProto.id,
+                range: 1,
+                resourceType,
+                amount
+            }
+            : targetOrProto);
+    }
+    resolveTarget() {
+        const target = getTargetById(this.proto.targetId);
+        if (!target) {
+            return null;
+        }
+        if (target.structureType === STRUCTURE_SPAWN) {
+            return target;
+        }
+        if (target.structureType === STRUCTURE_EXTENSION) {
+            return target;
+        }
+        return null;
+    }
+    perform(target) {
+        var _a;
+        if (!this.creep) {
+            return ERR_BUSY;
+        }
+        const resourceType = (_a = this.proto.resourceType) !== null && _a !== void 0 ? _a : RESOURCE_ENERGY;
+        if (this.creep.store.getUsedCapacity(resourceType) === 0) {
+            this.complete();
+            return ERR_NOT_ENOUGH_ENERGY;
+        }
+        return this.creep.transfer(target, resourceType, this.proto.amount);
+    }
+    afterRun(result, target) {
+        if (!this.creep) {
+            return;
+        }
+        if (result === OK || result === ERR_FULL || result === ERR_INVALID_TARGET || result === ERR_NOT_ENOUGH_ENERGY) {
+            this.complete();
+            return;
+        }
+        if (target instanceof StructureSpawn || target instanceof StructureExtension) {
+            const store = target.store;
+            if (store && store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                this.complete();
+            }
+        }
+    }
+}
+TransferTask.taskName = "transfer";
+class UpgradeTask extends BaseTask {
+    constructor(targetOrProto) {
+        super(isRoomObject(targetOrProto)
+            ? { name: UpgradeTask.taskName, targetId: targetOrProto.id, range: 3 }
+            : targetOrProto);
+    }
+    resolveTarget() {
+        return getTargetById(this.proto.targetId);
+    }
+    perform(target) {
+        if (!this.creep) {
+            return ERR_BUSY;
+        }
+        if (this.creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            this.complete();
+            return ERR_NOT_ENOUGH_ENERGY;
+        }
+        return this.creep.upgradeController(target);
+    }
+    afterRun(result, _target) {
+        if (!this.creep) {
+            return;
+        }
+        if (result === OK && this.creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            this.complete();
+            return;
+        }
+        if (result === ERR_NOT_ENOUGH_ENERGY || result === ERR_INVALID_TARGET || result === ERR_NO_BODYPART) {
+            this.complete();
+        }
+    }
+}
+UpgradeTask.taskName = "upgrade";
+registry.set(HarvestTask.taskName, proto => new HarvestTask(proto));
+registry.set(TransferTask.taskName, proto => new TransferTask(proto));
+registry.set(UpgradeTask.taskName, proto => new UpgradeTask(proto));
+const instantiateTask = (creep, proto) => {
+    const factory = registry.get(proto.name);
+    if (!factory) {
+        return null;
+    }
+    const task = factory(proto);
+    task.assign(creep);
+    return task;
+};
+const installPrototypes = () => {
+    if (typeof Creep === "undefined") {
+        return;
+    }
+    const creepProto = Creep.prototype;
+    if (!Object.getOwnPropertyDescriptor(creepProto, "task")) {
+        Object.defineProperty(creepProto, "task", {
+            get() {
+                if (this._task) {
+                    return this._task;
+                }
+                const stored = this.memory.task;
+                if (!stored) {
+                    return null;
+                }
+                const task = instantiateTask(this, stored);
+                if (!task) {
+                    delete this.memory.task;
+                    return null;
+                }
+                return task;
+            },
+            set(task) {
+                if (!task) {
+                    clearTask(this);
+                    return;
+                }
+                task.assign(this);
+                this.memory.task = task.proto;
+            }
+        });
+    }
+    if (typeof creepProto.runTask !== "function") {
+        creepProto.runTask = function runTask() {
+            const task = this.task;
+            if (!task) {
+                return ERR_INVALID_TARGET;
+            }
+            return task.run();
         };
     }
-    return fallback;
 };
-const loadTasks = () => {
-    if (typeof Game === 'undefined') {
-        return createFallback();
+installPrototypes();
+class TasksFacade {
+    chain(tasks = []) {
+        return tasks.length > 0 ? tasks[0] : null;
     }
-    try {
-        require('./runtime/prototypes');
-        const tasksModule = require('./runtime/Tasks');
-        return tasksModule.Tasks || tasksModule.default;
+    harvest(target) {
+        return new HarvestTask(target);
     }
-    catch (error) {
-        const globalScope = global;
-        if (!globalScope.__creepTasksWarned) {
-            console.log(`[Vendor] creep-tasks offline (${error.message})`);
-            globalScope.__creepTasksWarned = true;
-        }
-        return createFallback();
+    transfer(target, resourceType = RESOURCE_ENERGY, amount) {
+        return new TransferTask(target, resourceType, amount);
     }
-};
-const Tasks = loadTasks();
+    upgrade(target) {
+        return new UpgradeTask(target);
+    }
+}
+const Tasks = new TasksFacade();
 
 const MIN_ENERGY_LOW = 200;
 const DEFAULT_HIGH_ENERGY = 10000;
@@ -817,7 +1027,6 @@ const compileBody = (_plan, _profile, _energyCap, _policy) => {
 const estimateSpawnTime = (body) => body.length * 3;
 const calculateBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
 
-const orderSignature = (order) => { var _a, _b; return `${order.type}:${(_a = order.targetId) !== null && _a !== void 0 ? _a : "none"}:${(_b = order.posKey) !== null && _b !== void 0 ? _b : "none"}`; };
 const ensureHeapMaps = () => {
     if (!Heap.snap) {
         Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -865,6 +1074,56 @@ const findRefillTarget = (snapshot) => {
         return hasEnergyFreeCapacity(structure);
     });
 };
+const pickHarvestTarget = (snapshot) => {
+    const active = snapshot.sources.find(source => source.energy > 0);
+    return active !== null && active !== void 0 ? active : snapshot.sources[0];
+};
+const assignTask = (creep, room, snapshot) => {
+    var _a;
+    ensureHeapMaps();
+    const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+    const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+    const isEmpty = used === 0;
+    const isFull = free === 0;
+    const controller = room.controller;
+    const refillTarget = findRefillTarget(snapshot);
+    const harvestTarget = !isFull ? pickHarvestTarget(snapshot) : undefined;
+    let task = null;
+    let signature = "IDLE";
+    if (!isFull && harvestTarget) {
+        task = Tasks.harvest(harvestTarget);
+        signature = `HARVEST:${harvestTarget.id}`;
+    }
+    else if (!isEmpty && refillTarget) {
+        task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
+        signature = `TRANSFER:${refillTarget.id}`;
+    }
+    else if (!isEmpty && controller) {
+        task = Tasks.upgrade(controller);
+        signature = `UPGRADE:${controller.id}`;
+    }
+    const memory = creep.memory;
+    const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
+    const changed = signature !== previousSignature;
+    memory.taskSignature = signature;
+    memory.role = "worker";
+    memory.squad = "worker";
+    if (Heap.orders) {
+        Heap.orders.set(creep.name, { task: signature, persisted: !changed });
+    }
+    return { changed, idle: signature === "IDLE", signature, task };
+};
+const applyTaskAssignment = (creep, assignment) => {
+    if (assignment.task) {
+        if (assignment.changed || !creep.task) {
+            creep.task = assignment.task;
+        }
+        return;
+    }
+    if (creep.task) {
+        creep.task = null;
+    }
+};
 const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersChanged) => {
     var _a;
     const squadName = "worker";
@@ -889,111 +1148,6 @@ const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersCha
         entries.splice(0, entries.length - 50);
     }
     snap.squads.set(squadName, entries);
-};
-const assignOrder = (creep, room, snapshot) => {
-    var _a, _b;
-    ensureHeapMaps();
-    const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-    const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
-    const isEmpty = used === 0;
-    const isFull = free === 0;
-    const controller = room.controller;
-    let orderType = "IDLE";
-    let targetId;
-    const refillTarget = findRefillTarget(snapshot);
-    const targetPos = refillTarget ? refillTarget.pos : controller === null || controller === void 0 ? void 0 : controller.pos;
-    const posKey = targetPos ? `${targetPos.x},${targetPos.y},${targetPos.roomName}` : undefined;
-    const harvestTarget = snapshot.sources.find(source => source.energy > 0);
-    if (!isFull && harvestTarget) {
-        orderType = "HARVEST";
-        targetId = harvestTarget.id;
-    }
-    else if (!isEmpty && refillTarget) {
-        orderType = "TRANSFER";
-        targetId = refillTarget.id;
-    }
-    else if (!isEmpty && controller) {
-        orderType = "UPGRADE";
-        targetId = controller.id;
-    }
-    const signature = orderSignature({ type: orderType, targetId, posKey });
-    const memory = creep.memory;
-    const previousSignature = (_a = memory.orderId) !== null && _a !== void 0 ? _a : "";
-    const changed = signature !== previousSignature;
-    const order = {
-        id: `${creep.name}:${Game.time}`,
-        type: orderType,
-        params: { persisted: !changed }
-    };
-    if (targetId) {
-        order.targetId = targetId;
-    }
-    if (posKey) {
-        order.params = { ...((_b = order.params) !== null && _b !== void 0 ? _b : {}), posKey };
-    }
-    if (orderType === "TRANSFER") {
-        order.res = RESOURCE_ENERGY;
-        order.amount = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-    }
-    if (Heap.orders) {
-        Heap.orders.set(creep.name, order);
-    }
-    memory.orderId = signature;
-    memory.role = "worker";
-    memory.squad = "worker";
-    return { changed, idle: orderType === "IDLE", order };
-};
-const moveCreep = (creep, target) => {
-    const destination = target instanceof RoomPosition ? target : target.pos;
-    creep.moveTo(destination, { reusePath: 5, visualizePathStyle: { stroke: "#ffaa00" } });
-};
-const executeBasicOrder = (creep, order) => {
-    var _a;
-    if (!order || order.type === "IDLE") {
-        return;
-    }
-    const target = order.targetId ? Game.getObjectById(order.targetId) : undefined;
-    switch (order.type) {
-        case "HARVEST": {
-            if (!target || target.energy === 0) {
-                return;
-            }
-            const result = creep.harvest(target);
-            if (result === ERR_NOT_IN_RANGE) {
-                moveCreep(creep, target);
-            }
-            break;
-        }
-        case "TRANSFER": {
-            if (!target || creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-                return;
-            }
-            const result = creep.transfer(target, (_a = order.res) !== null && _a !== void 0 ? _a : RESOURCE_ENERGY);
-            if (result === ERR_NOT_IN_RANGE) {
-                moveCreep(creep, target);
-            }
-            else if (result === ERR_FULL || result === ERR_INVALID_TARGET) {
-                creep.memory.orderId = undefined;
-            }
-            break;
-        }
-        case "UPGRADE": {
-            if (!target || !creep.store.getUsedCapacity(RESOURCE_ENERGY)) {
-                return;
-            }
-            const result = creep.upgradeController(target);
-            if (result === ERR_NOT_IN_RANGE) {
-                moveCreep(creep, target);
-            }
-            break;
-        }
-        default: {
-            if (order.targetId && target) {
-                moveCreep(creep, target);
-            }
-            break;
-        }
-    }
 };
 const maintainPopulation = (context) => {
     const { policy, snapshot } = context;
@@ -1033,9 +1187,10 @@ class WorkerSquad {
         let idleCount = 0;
         for (const creep of workerCreeps) {
             const before = cpuNow();
-            const { changed, idle, order } = assignOrder(creep, context.room, context.snapshot);
+            const assignment = assignTask(creep, context.room, context.snapshot);
             const after = cpuNow();
             const delta = after - before;
+            ensureHeapMaps();
             if (!Heap.debug) {
                 Heap.debug = {};
             }
@@ -1044,13 +1199,18 @@ class WorkerSquad {
             }
             Heap.debug.creepCpuSamples.push(delta);
             ordersIssued += 1;
-            if (changed) {
+            if (assignment.changed) {
                 ordersChanged += 1;
             }
-            if (idle) {
+            if (assignment.idle) {
                 idleCount += 1;
+                applyTaskAssignment(creep, assignment);
+                continue;
             }
-            executeBasicOrder(creep, order);
+            applyTaskAssignment(creep, assignment);
+            if (typeof creep.runTask === "function") {
+                creep.runTask();
+            }
         }
         const idlePct = workerCreeps.length === 0 ? 0 : idleCount / workerCreeps.length;
         const queued = context.snapshot.structures.reduce((count, structure) => {
@@ -1589,7 +1749,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "5979526";
+global.__GIT_HASH__ = "98ed71b";
 const loop = () => {
     cleanupCreepMemory();
     runTick();

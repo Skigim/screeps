@@ -1,6 +1,7 @@
 import { RCL1Config } from "../config/rcl1";
 import { calculateBodyCost, compileBody } from "../core/bodyFactory";
 import { Heap } from "../core/heap";
+import Tasks, { type TaskInstance } from "../vendor/creep-tasks";
 import type { Directives, Policy, RoomState, SquadMetrics } from "../types/contracts";
 import type { RoomSenseSnapshot } from "../core/state";
 
@@ -22,17 +23,12 @@ export type WorkerSquadReport = {
   idlePct: number;
 };
 
-type BasicOrder = {
-  id: string;
-  type: string;
-  targetId?: Id<any>;
-  res?: ResourceConstant;
-  amount?: number;
-  params?: Record<string, unknown>;
+type TaskAssignment = {
+  changed: boolean;
+  idle: boolean;
+  signature: string;
+  task: TaskInstance | null;
 };
-
-const orderSignature = (order: { type: string; targetId?: Id<any>; posKey?: string }): string =>
-  `${order.type}:${order.targetId ?? "none"}:${order.posKey ?? "none"}`;
 
 const ensureHeapMaps = (): void => {
   if (!Heap.snap) {
@@ -90,6 +86,63 @@ const findRefillTarget = (snapshot: RoomSenseSnapshot): StructureSpawn | Structu
   });
 };
 
+const pickHarvestTarget = (snapshot: RoomSenseSnapshot): Source | undefined => {
+  const active = snapshot.sources.find(source => source.energy > 0);
+  return active ?? snapshot.sources[0];
+};
+
+const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): TaskAssignment => {
+  ensureHeapMaps();
+  const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+  const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+  const isEmpty = used === 0;
+  const isFull = free === 0;
+  const controller = room.controller;
+  const refillTarget = findRefillTarget(snapshot);
+  const harvestTarget = !isFull ? pickHarvestTarget(snapshot) : undefined;
+
+  let task: TaskInstance | null = null;
+  let signature = "IDLE";
+
+  if (!isFull && harvestTarget) {
+    task = Tasks.harvest(harvestTarget);
+    signature = `HARVEST:${harvestTarget.id}`;
+  } else if (!isEmpty && refillTarget) {
+    task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
+    signature = `TRANSFER:${refillTarget.id}`;
+  } else if (!isEmpty && controller) {
+    task = Tasks.upgrade(controller);
+    signature = `UPGRADE:${controller.id}`;
+  }
+
+  const memory = creep.memory as CreepMemory & { taskSignature?: string; role?: string; squad?: string };
+  const previousSignature = memory.taskSignature ?? "";
+  const changed = signature !== previousSignature;
+
+  memory.taskSignature = signature;
+  memory.role = "worker";
+  memory.squad = "worker";
+
+  if (Heap.orders) {
+    Heap.orders.set(creep.name, { task: signature, persisted: !changed });
+  }
+
+  return { changed, idle: signature === "IDLE", signature, task };
+};
+
+const applyTaskAssignment = (creep: Creep, assignment: TaskAssignment): void => {
+  if (assignment.task) {
+    if (assignment.changed || !creep.task) {
+      creep.task = assignment.task;
+    }
+    return;
+  }
+
+  if (creep.task) {
+    creep.task = null;
+  }
+};
+
 const recordMetrics = (
   room: Room,
   headcount: number,
@@ -121,121 +174,6 @@ const recordMetrics = (
     entries.splice(0, entries.length - 50);
   }
   snap.squads.set(squadName, entries);
-};
-
-const assignOrder = (
-  creep: Creep,
-  room: Room,
-  snapshot: RoomSenseSnapshot
-): { changed: boolean; idle: boolean; order: BasicOrder } => {
-  ensureHeapMaps();
-  const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-  const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
-  const isEmpty = used === 0;
-  const isFull = free === 0;
-  const controller = room.controller;
-  let orderType = "IDLE";
-  let targetId: Id<any> | undefined;
-  const refillTarget = findRefillTarget(snapshot);
-  const targetPos = refillTarget ? refillTarget.pos : controller?.pos;
-  const posKey = targetPos ? `${targetPos.x},${targetPos.y},${targetPos.roomName}` : undefined;
-  const harvestTarget = snapshot.sources.find(source => source.energy > 0);
-
-  if (!isFull && harvestTarget) {
-    orderType = "HARVEST";
-    targetId = harvestTarget.id;
-  } else if (!isEmpty && refillTarget) {
-    orderType = "TRANSFER";
-    targetId = refillTarget.id as Id<any>;
-  } else if (!isEmpty && controller) {
-    orderType = "UPGRADE";
-    targetId = controller.id as Id<any>;
-  }
-
-  const signature = orderSignature({ type: orderType, targetId, posKey });
-  const memory = creep.memory as CreepMemory & { orderId?: string; role?: string; squad?: string };
-  const previousSignature = memory.orderId ?? "";
-  const changed = signature !== previousSignature;
-
-  const order: BasicOrder = {
-    id: `${creep.name}:${Game.time}`,
-    type: orderType,
-    params: { persisted: !changed }
-  };
-
-  if (targetId) {
-    order.targetId = targetId;
-  }
-  if (posKey) {
-    order.params = { ...(order.params ?? {}), posKey };
-  }
-  if (orderType === "TRANSFER") {
-    order.res = RESOURCE_ENERGY;
-    order.amount = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-  }
-
-  if (Heap.orders) {
-    Heap.orders.set(creep.name, order);
-  }
-  memory.orderId = signature;
-  memory.role = "worker";
-  memory.squad = "worker";
-
-  return { changed, idle: orderType === "IDLE", order };
-};
-
-const moveCreep = (creep: Creep, target: RoomObject | RoomPosition): void => {
-  const destination = target instanceof RoomPosition ? target : target.pos;
-  creep.moveTo(destination, { reusePath: 5, visualizePathStyle: { stroke: "#ffaa00" } });
-};
-
-const executeBasicOrder = (creep: Creep, order: BasicOrder): void => {
-  if (!order || order.type === "IDLE") {
-    return;
-  }
-
-  const target = order.targetId ? Game.getObjectById(order.targetId) : undefined;
-
-  switch (order.type) {
-    case "HARVEST": {
-      if (!target || (target as Source).energy === 0) {
-        return;
-      }
-      const result = creep.harvest(target as Source);
-      if (result === ERR_NOT_IN_RANGE) {
-        moveCreep(creep, target as Source);
-      }
-      break;
-    }
-    case "TRANSFER": {
-      if (!target || creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-        return;
-      }
-      const result = creep.transfer(target as Structure, order.res ?? RESOURCE_ENERGY);
-      if (result === ERR_NOT_IN_RANGE) {
-        moveCreep(creep, target as Structure);
-      } else if (result === ERR_FULL || result === ERR_INVALID_TARGET) {
-        (creep.memory as CreepMemory & { orderId?: string }).orderId = undefined;
-      }
-      break;
-    }
-    case "UPGRADE": {
-      if (!target || !creep.store.getUsedCapacity(RESOURCE_ENERGY)) {
-        return;
-      }
-      const result = creep.upgradeController(target as StructureController);
-      if (result === ERR_NOT_IN_RANGE) {
-        moveCreep(creep, target as StructureController);
-      }
-      break;
-    }
-    default: {
-      if (order.targetId && target) {
-        moveCreep(creep, target);
-      }
-      break;
-    }
-  }
 };
 
 const maintainPopulation = (context: WorkerSquadContext): void => {
@@ -289,9 +227,10 @@ export class WorkerSquad {
 
     for (const creep of workerCreeps) {
       const before = cpuNow();
-      const { changed, idle, order } = assignOrder(creep, context.room, context.snapshot);
+      const assignment = assignTask(creep, context.room, context.snapshot);
       const after = cpuNow();
       const delta = after - before;
+      ensureHeapMaps();
       if (!Heap.debug) {
         Heap.debug = {};
       }
@@ -299,15 +238,21 @@ export class WorkerSquad {
         Heap.debug.creepCpuSamples = [];
       }
       Heap.debug.creepCpuSamples.push(delta);
+
       ordersIssued += 1;
-      if (changed) {
+      if (assignment.changed) {
         ordersChanged += 1;
       }
-      if (idle) {
+      if (assignment.idle) {
         idleCount += 1;
+        applyTaskAssignment(creep, assignment);
+        continue;
       }
 
-      executeBasicOrder(creep, order);
+      applyTaskAssignment(creep, assignment);
+      if (typeof creep.runTask === "function") {
+        creep.runTask();
+      }
     }
 
     const idlePct = workerCreeps.length === 0 ? 0 : idleCount / workerCreeps.length;
