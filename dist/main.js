@@ -940,7 +940,59 @@ const assignOrder = (creep, room, snapshot) => {
     memory.orderId = signature;
     memory.role = "worker";
     memory.squad = "worker";
-    return { changed, idle: orderType === "IDLE" };
+    return { changed, idle: orderType === "IDLE", order };
+};
+const moveCreep = (creep, target) => {
+    const destination = target instanceof RoomPosition ? target : target.pos;
+    creep.moveTo(destination, { reusePath: 5, visualizePathStyle: { stroke: "#ffaa00" } });
+};
+const executeBasicOrder = (creep, order) => {
+    var _a;
+    if (!order || order.type === "IDLE") {
+        return;
+    }
+    const target = order.targetId ? Game.getObjectById(order.targetId) : undefined;
+    switch (order.type) {
+        case "HARVEST": {
+            if (!target || target.energy === 0) {
+                return;
+            }
+            const result = creep.harvest(target);
+            if (result === ERR_NOT_IN_RANGE) {
+                moveCreep(creep, target);
+            }
+            break;
+        }
+        case "TRANSFER": {
+            if (!target || creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+                return;
+            }
+            const result = creep.transfer(target, (_a = order.res) !== null && _a !== void 0 ? _a : RESOURCE_ENERGY);
+            if (result === ERR_NOT_IN_RANGE) {
+                moveCreep(creep, target);
+            }
+            else if (result === ERR_FULL || result === ERR_INVALID_TARGET) {
+                creep.memory.orderId = undefined;
+            }
+            break;
+        }
+        case "UPGRADE": {
+            if (!target || !creep.store.getUsedCapacity(RESOURCE_ENERGY)) {
+                return;
+            }
+            const result = creep.upgradeController(target);
+            if (result === ERR_NOT_IN_RANGE) {
+                moveCreep(creep, target);
+            }
+            break;
+        }
+        default: {
+            if (order.targetId && target) {
+                moveCreep(creep, target);
+            }
+            break;
+        }
+    }
 };
 const maintainPopulation = (context) => {
     const { policy, snapshot } = context;
@@ -980,7 +1032,7 @@ class WorkerSquad {
         let idleCount = 0;
         for (const creep of workerCreeps) {
             const before = cpuNow();
-            const { changed, idle } = assignOrder(creep, context.room, context.snapshot);
+            const { changed, idle, order } = assignOrder(creep, context.room, context.snapshot);
             const after = cpuNow();
             const delta = after - before;
             if (!Heap.debug) {
@@ -997,6 +1049,7 @@ class WorkerSquad {
             if (idle) {
                 idleCount += 1;
             }
+            executeBasicOrder(creep, order);
         }
         const idlePct = workerCreeps.length === 0 ? 0 : idleCount / workerCreeps.length;
         const queued = context.snapshot.structures.reduce((count, structure) => {
@@ -1394,7 +1447,7 @@ const cleanupCreepMemory = () => {
         }
     }
 };
-global.__GIT_HASH__ = "46ac788";
+global.__GIT_HASH__ = "25aba14";
 const loop = () => {
     var _a;
     cleanupCreepMemory();

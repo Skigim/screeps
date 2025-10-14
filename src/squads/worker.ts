@@ -22,6 +22,15 @@ export type WorkerSquadReport = {
   idlePct: number;
 };
 
+type BasicOrder = {
+  id: string;
+  type: string;
+  targetId?: Id<any>;
+  res?: ResourceConstant;
+  amount?: number;
+  params?: Record<string, unknown>;
+};
+
 const orderSignature = (order: { type: string; targetId?: Id<any>; posKey?: string }): string =>
   `${order.type}:${order.targetId ?? "none"}:${order.posKey ?? "none"}`;
 
@@ -114,7 +123,11 @@ const recordMetrics = (
   snap.squads.set(squadName, entries);
 };
 
-const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { changed: boolean; idle: boolean } => {
+const assignOrder = (
+  creep: Creep,
+  room: Room,
+  snapshot: RoomSenseSnapshot
+): { changed: boolean; idle: boolean; order: BasicOrder } => {
   ensureHeapMaps();
   const isEmpty = creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0;
   const controller = room.controller;
@@ -143,14 +156,7 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
   const previousSignature = memory.orderId ?? "";
   const changed = signature !== previousSignature;
 
-  const order: {
-    id: string;
-    type: string;
-    targetId?: Id<any>;
-    res?: ResourceConstant;
-    amount?: number;
-    params?: Record<string, unknown>;
-  } = {
+  const order: BasicOrder = {
     id: `${creep.name}:${Game.time}`,
     type: orderType,
     params: { persisted: !changed }
@@ -174,7 +180,61 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
   memory.role = "worker";
   memory.squad = "worker";
 
-  return { changed, idle: orderType === "IDLE" };
+  return { changed, idle: orderType === "IDLE", order };
+};
+
+const moveCreep = (creep: Creep, target: RoomObject | RoomPosition): void => {
+  const destination = target instanceof RoomPosition ? target : target.pos;
+  creep.moveTo(destination, { reusePath: 5, visualizePathStyle: { stroke: "#ffaa00" } });
+};
+
+const executeBasicOrder = (creep: Creep, order: BasicOrder): void => {
+  if (!order || order.type === "IDLE") {
+    return;
+  }
+
+  const target = order.targetId ? Game.getObjectById(order.targetId) : undefined;
+
+  switch (order.type) {
+    case "HARVEST": {
+      if (!target || (target as Source).energy === 0) {
+        return;
+      }
+      const result = creep.harvest(target as Source);
+      if (result === ERR_NOT_IN_RANGE) {
+        moveCreep(creep, target as Source);
+      }
+      break;
+    }
+    case "TRANSFER": {
+      if (!target || creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        return;
+      }
+      const result = creep.transfer(target as Structure, order.res ?? RESOURCE_ENERGY);
+      if (result === ERR_NOT_IN_RANGE) {
+        moveCreep(creep, target as Structure);
+      } else if (result === ERR_FULL || result === ERR_INVALID_TARGET) {
+        (creep.memory as CreepMemory & { orderId?: string }).orderId = undefined;
+      }
+      break;
+    }
+    case "UPGRADE": {
+      if (!target || !creep.store.getUsedCapacity(RESOURCE_ENERGY)) {
+        return;
+      }
+      const result = creep.upgradeController(target as StructureController);
+      if (result === ERR_NOT_IN_RANGE) {
+        moveCreep(creep, target as StructureController);
+      }
+      break;
+    }
+    default: {
+      if (order.targetId && target) {
+        moveCreep(creep, target);
+      }
+      break;
+    }
+  }
 };
 
 const maintainPopulation = (context: WorkerSquadContext): void => {
@@ -228,7 +288,7 @@ export class WorkerSquad {
 
     for (const creep of workerCreeps) {
       const before = cpuNow();
-      const { changed, idle } = assignOrder(creep, context.room, context.snapshot);
+      const { changed, idle, order } = assignOrder(creep, context.room, context.snapshot);
       const after = cpuNow();
       const delta = after - before;
       if (!Heap.debug) {
@@ -245,6 +305,8 @@ export class WorkerSquad {
       if (idle) {
         idleCount += 1;
       }
+
+      executeBasicOrder(creep, order);
     }
 
     const idlePct = workerCreeps.length === 0 ? 0 : idleCount / workerCreeps.length;
