@@ -23,6 +23,14 @@ const cleanupCreepMemory = (): void => {
   }
 };
 
+const getGitHash = (): string => {
+  try {
+    return (Reflect.get(global, "__GIT_HASH__") as string | undefined) ?? "development";
+  } catch (_error) {
+    return "development";
+  }
+};
+
 // @GIT_HASH@
 
 export const loop = (): void => {
@@ -30,6 +38,7 @@ export const loop = (): void => {
   runTick();
 
   if (typeof Game !== "undefined" && Game.time % 150 === 0) {
-    console.log(`Loop tick=${Game.time} hash=${global.__GIT_HASH__ ?? "development"}`);
+    const gitHash = getGitHash();
+    console.log(`Loop tick=${Game.time} hash=${gitHash}`);
   }
 };

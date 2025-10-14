@@ -1545,13 +1545,22 @@ const cleanupCreepMemory = () => {
         }
     }
 };
-global.__GIT_HASH__ = "382ad76";
-const loop = () => {
+const getGitHash = () => {
     var _a;
+    try {
+        return (_a = Reflect.get(global, "__GIT_HASH__")) !== null && _a !== void 0 ? _a : "development";
+    }
+    catch (_error) {
+        return "development";
+    }
+};
+global.__GIT_HASH__ = "65d8ac9";
+const loop = () => {
     cleanupCreepMemory();
     runTick();
     if (typeof Game !== "undefined" && Game.time % 150 === 0) {
-        console.log(`Loop tick=${Game.time} hash=${(_a = global.__GIT_HASH__) !== null && _a !== void 0 ? _a : "development"}`);
+        const gitHash = getGitHash();
+        console.log(`Loop tick=${Game.time} hash=${gitHash}`);
     }
 };
 
