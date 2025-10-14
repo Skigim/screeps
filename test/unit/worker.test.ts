@@ -146,7 +146,6 @@ describe("worker assignTask", () => {
     (Tasks as Mutable<typeof Tasks>).upgrade = upgradeStub;
 
     (creep.memory as CreepMemory & { taskSignature?: string }).taskSignature = "UPGRADE:controller-1";
-    creep.task = existingTask;
 
     const assignment = workerInternals.assignTask(creep, room, snapshot, RCL1Config.worker.min);
 
