@@ -26,6 +26,11 @@ declare global {
         roomScans?: Record<string, number>;
         creepCpuSamples?: number[];
       };
+      Engine?: {
+        start: (roomName?: string) => string;
+        stop: (roomName?: string) => string;
+        status: (roomName?: string) => string;
+      };
     }
   }
 }

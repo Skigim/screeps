@@ -58,3 +58,11 @@ export type RoomTestsMemory = {
   lastTick?: number;
   recent?: { name: string; pass: boolean; tick: number; details?: string }[];
 };
+
+export type RoomEngineMemory = {
+  enabled: boolean;
+  startedTick?: number;
+  lastStartCommandTick?: number;
+  lastStopCommandTick?: number;
+  lastStatusLogTick?: number;
+};

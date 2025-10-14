@@ -1,7 +1,14 @@
 import { derivePolicy } from "./core/policy";
 import { buildRoomState, type RoomSenseSnapshot } from "./core/state";
 import { Heap, ensureRoomFrame } from "./core/heap";
-import type { Directives, HealthAlert, Policy, RoomMetricsMemory, RoomState } from "./types/contracts";
+import type {
+  Directives,
+  HealthAlert,
+  Policy,
+  RoomEngineMemory,
+  RoomMetricsMemory,
+  RoomState
+} from "./types/contracts";
 import { WorkerSquad, type WorkerSquadReport } from "./squads/worker";
 import { runTickMonitors, type TickContext } from "./health/check";
 import { runRoomAudit } from "./health/audit";
@@ -157,6 +164,24 @@ export const runTick = (): void => {
 
   const rooms = Object.values(Game.rooms);
   for (const room of rooms) {
+    const engineMemory = (room.memory as RoomMemory & { engine?: RoomEngineMemory }).engine;
+    if (!engineMemory || engineMemory.enabled !== true) {
+      const shouldLog = !engineMemory?.lastStatusLogTick || Game.time - engineMemory.lastStatusLogTick >= 25;
+      if (shouldLog) {
+        if (engineMemory) {
+          engineMemory.lastStatusLogTick = Game.time;
+        } else {
+          (room.memory as RoomMemory & { engine?: RoomEngineMemory }).engine = {
+            enabled: false,
+            lastStatusLogTick: Game.time
+          };
+        }
+
+        console.log(`[Engine ${room.name}] idle. Use Engine.start('${room.name}') to begin operations.`);
+      }
+      continue;
+    }
+
     const snapshot = sense(room);
     logSense(room, snapshot);
 

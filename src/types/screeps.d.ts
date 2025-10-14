@@ -1,4 +1,4 @@
-import type { HealthAlert, Policy, RoomMetricsMemory, RoomTestsMemory } from "./contracts";
+import type { HealthAlert, Policy, RoomEngineMemory, RoomMetricsMemory, RoomTestsMemory } from "./contracts";
 
 declare global {
   interface CreepMemory {
@@ -19,6 +19,7 @@ declare global {
     metrics?: RoomMetricsMemory;
     alerts?: HealthAlert[];
     tests?: RoomTestsMemory;
+    engine?: RoomEngineMemory;
     flags?: {
       linksOnline?: boolean;
       roadsPlanned?: boolean;

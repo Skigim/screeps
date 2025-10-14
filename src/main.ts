@@ -1,6 +1,7 @@
 import { Traveler } from "./vendor/traveler";
 import Tasks from "./vendor/creep-tasks";
 import { runTick } from "./tick";
+import { registerEngineConsole } from "./console/engine";
 
 const bootstrapVendors = (): void => {
   global.Traveler = Traveler;
@@ -8,6 +9,7 @@ const bootstrapVendors = (): void => {
 };
 
 bootstrapVendors();
+registerEngineConsole();
 
 const cleanupCreepMemory = (): void => {
   if (typeof Memory === "undefined" || typeof Game === "undefined") {
