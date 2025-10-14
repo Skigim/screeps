@@ -99,12 +99,12 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): Task
   const isFull = free === 0;
   const controller = room.controller;
   const refillTarget = findRefillTarget(snapshot);
-  const harvestTarget = !isFull ? pickHarvestTarget(snapshot) : undefined;
+  const harvestTarget = pickHarvestTarget(snapshot);
 
   let task: TaskInstance | null = null;
   let signature = "IDLE";
 
-  if (!isFull && harvestTarget) {
+  if (isEmpty && harvestTarget) {
     task = Tasks.harvest(harvestTarget);
     signature = `HARVEST:${harvestTarget.id}`;
   } else if (!isEmpty && refillTarget) {
@@ -113,6 +113,9 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): Task
   } else if (!isEmpty && controller) {
     task = Tasks.upgrade(controller);
     signature = `UPGRADE:${controller.id}`;
+  } else if (!isFull && harvestTarget) {
+    task = Tasks.harvest(harvestTarget);
+    signature = `HARVEST:${harvestTarget.id}`;
   }
 
   const memory = creep.memory as CreepMemory & { taskSignature?: string; role?: string; squad?: string };

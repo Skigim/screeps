@@ -1087,10 +1087,10 @@ const assignTask = (creep, room, snapshot) => {
     const isFull = free === 0;
     const controller = room.controller;
     const refillTarget = findRefillTarget(snapshot);
-    const harvestTarget = !isFull ? pickHarvestTarget(snapshot) : undefined;
+    const harvestTarget = pickHarvestTarget(snapshot);
     let task = null;
     let signature = "IDLE";
-    if (!isFull && harvestTarget) {
+    if (isEmpty && harvestTarget) {
         task = Tasks.harvest(harvestTarget);
         signature = `HARVEST:${harvestTarget.id}`;
     }
@@ -1101,6 +1101,10 @@ const assignTask = (creep, room, snapshot) => {
     else if (!isEmpty && controller) {
         task = Tasks.upgrade(controller);
         signature = `UPGRADE:${controller.id}`;
+    }
+    else if (!isFull && harvestTarget) {
+        task = Tasks.harvest(harvestTarget);
+        signature = `HARVEST:${harvestTarget.id}`;
     }
     const memory = creep.memory;
     const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
@@ -1749,7 +1753,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "98ed71b";
+global.__GIT_HASH__ = "812ca3a";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
