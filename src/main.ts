@@ -1,4 +1,5 @@
 import { Traveler } from "./vendor/traveler";
+import "./vendor/creep-tasks/runtime";
 import Tasks from "./vendor/creep-tasks";
 import { runTick } from "./tick";
 import { registerEngineConsole } from "./console/engine";

@@ -1,5 +1,6 @@
 import { assert } from "chai";
 import { workerInternals } from "../../src/squads/worker";
+import type { TaskInstance } from "../../src/vendor/creep-tasks";
 import { RCL1Config } from "../../src/config/rcl1";
 import { Heap } from "../../src/core/heap";
 import Tasks from "../../src/vendor/creep-tasks";
@@ -101,7 +102,8 @@ describe("worker assignTask", () => {
     const assignment = workerInternals.assignTask(creep, room, snapshot, RCL1Config.worker.min);
 
     assert.strictEqual(assignment.task?.name, "harvest");
-    assert.strictEqual(creep.memory.taskSignature, "HARVEST:source-1");
+    const memory = creep.memory as CreepMemory & { taskSignature?: string };
+    assert.strictEqual(memory.taskSignature, "HARVEST:source-1");
   });
 
   it("upgrades when carry is full", () => {
@@ -111,6 +113,47 @@ describe("worker assignTask", () => {
     const assignment = workerInternals.assignTask(creep, room, snapshot, RCL1Config.worker.min);
 
     assert.strictEqual(assignment.task?.name, "upgrade");
-    assert.strictEqual(creep.memory.taskSignature, "UPGRADE:controller-1");
+    const memory = creep.memory as CreepMemory & { taskSignature?: string };
+    assert.strictEqual(memory.taskSignature, "UPGRADE:controller-1");
+  });
+
+  it("retains existing upgrade task until energy is spent", () => {
+    const creep = makeCreep(40, 50);
+    const snapshot = makeSnapshot();
+
+    const existingTask = {
+      name: "upgrade",
+      proto: { name: "upgrade", _target: { ref: "controller-1" } },
+      target: { ref: "controller-1" },
+      isValid: () => true,
+      run: () => OK
+    } as unknown as TaskInstance;
+
+    let upgradeCalls = 0;
+    const upgradeStub = (() => {
+      upgradeCalls += 1;
+      return {
+        name: "upgrade",
+        proto: { name: "upgrade" },
+        assign: () => {
+          /* noop */
+        },
+        run: () => OK,
+        isValid: () => true
+      };
+    }) as unknown as typeof Tasks.upgrade;
+
+    (Tasks as Mutable<typeof Tasks>).upgrade = upgradeStub;
+
+    (creep.memory as CreepMemory & { taskSignature?: string }).taskSignature = "UPGRADE:controller-1";
+    creep.task = existingTask;
+
+    const assignment = workerInternals.assignTask(creep, room, snapshot, RCL1Config.worker.min);
+
+    assert.strictEqual(assignment.task, existingTask);
+    assert.isFalse(assignment.changed);
+    const memory = creep.memory as CreepMemory & { taskSignature?: string };
+    assert.strictEqual(memory.taskSignature, "UPGRADE:controller-1");
+    assert.strictEqual(upgradeCalls, 0, "should not create a new upgrade task while current task remains valid");
   });
 });

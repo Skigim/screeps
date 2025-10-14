@@ -30,6 +30,19 @@ type TaskAssignment = {
   task: TaskInstance | null;
 };
 
+const signatureForTask = (task: TaskInstance | null): string => {
+  if (!task) {
+    return "IDLE";
+  }
+
+  const target = (task as TaskInstance & { target?: RoomObject | null }).target ?? null;
+  const proto = task.proto as Record<string, unknown>;
+  const protoTarget = Reflect.get(proto, "_target") as { ref?: string } | undefined;
+  const ref = (target && "ref" in target ? (target as { ref?: string }).ref : undefined) ?? protoTarget?.ref ?? "";
+
+  return `${task.name.toUpperCase()}:${ref}`;
+};
+
 const ensureHeapMaps = (): void => {
   if (!Heap.snap) {
     Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -101,23 +114,28 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, worke
   const refillTarget = findRefillTarget(snapshot);
   const harvestTarget = pickHarvestTarget(snapshot);
   const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
+  const controllerId = controller?.id;
 
   let task: TaskInstance | null = null;
   let signature = "IDLE";
+  const memory = creep.memory as CreepMemory & { taskSignature?: string; role?: string; squad?: string };
+  const previousSignature = memory.taskSignature ?? "";
 
-  if (!isFull && harvestTarget) {
+  const currentTask = creep.task as TaskInstance | null;
+  if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
+    signature = signatureForTask(currentTask);
+    task = currentTask;
+  } else if (!isFull && harvestTarget) {
     task = Tasks.harvest(harvestTarget);
     signature = `HARVEST:${harvestTarget.id}`;
   } else if (shouldRefillSpawn) {
     task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
     signature = `TRANSFER:${refillTarget.id}`;
-  } else if (!isEmpty && controller) {
+  } else if (!isEmpty && controllerId) {
     task = Tasks.upgrade(controller);
-    signature = `UPGRADE:${controller.id}`;
+    signature = `UPGRADE:${controllerId}`;
   }
 
-  const memory = creep.memory as CreepMemory & { taskSignature?: string; role?: string; squad?: string };
-  const previousSignature = memory.taskSignature ?? "";
   const changed = signature !== previousSignature;
 
   memory.taskSignature = signature;

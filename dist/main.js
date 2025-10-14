@@ -641,274 +641,190 @@ if (typeof Creep !== 'undefined') {
     };
 }
 
-/*
- * Lightweight task runner inspired by the original creep-tasks package.
- * Provides a small subset of task functionality tailored for the RCL1 worker squad.
- */
-const isRoomObject = (value) => {
-    return typeof value === "object" && value !== null && "pos" in value;
+var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
+
+const DYNAMIC_REQUIRE_LOADERS = Object.create(null);
+const DYNAMIC_REQUIRE_CACHE = Object.create(null);
+const DYNAMIC_REQUIRE_SHORTS = Object.create(null);
+const DEFAULT_PARENT_MODULE = {
+	id: '<' + 'rollup>', exports: {}, parent: undefined, filename: null, loaded: false, children: [], paths: []
 };
-const MOVE_OPTS = { reusePath: 5, visualizePathStyle: { stroke: "#ffaa00" } };
-const registry = new Map();
-const getTargetById = (id) => {
-    var _a;
-    if (typeof Game === "undefined" || !id) {
-        return null;
-    }
-    return (_a = Game.getObjectById(id)) !== null && _a !== void 0 ? _a : null;
-};
-const clearTask = (creep) => {
-    delete creep.memory.task;
-    creep._task = null;
-};
-class BaseTask {
-    constructor(proto) {
-        this.proto = proto;
-        this.creep = null;
-    }
-    get name() {
-        return this.proto.name;
-    }
-    assign(creep) {
-        this.creep = creep;
-        this.creep._task = this;
-    }
-    run() {
-        if (!this.creep) {
-            return ERR_BUSY;
-        }
-        const target = this.resolveTarget();
-        if (!target) {
-            this.onTargetMissing();
-            return ERR_INVALID_TARGET;
-        }
-        if (!this.ensureInRange(target)) {
-            return this.creep.moveTo(target, MOVE_OPTS);
-        }
-        const result = this.perform(target);
-        this.afterRun(result, target);
-        return result;
-    }
-    get range() {
-        var _a;
-        return (_a = this.proto.range) !== null && _a !== void 0 ? _a : 1;
-    }
-    ensureInRange(target) {
-        if (!this.creep) {
-            return false;
-        }
-        if (target instanceof RoomPosition) {
-            return target.isEqualTo(this.creep.pos);
-        }
-        return this.creep.pos.inRangeTo(target, this.range);
-    }
-    onTargetMissing() {
-        if (this.creep) {
-            clearTask(this.creep);
-        }
-    }
-    complete() {
-        if (this.creep) {
-            clearTask(this.creep);
-        }
-    }
-    afterRun(_result, _target) { }
+const CHECKED_EXTENSIONS = ['', '.js', '.json'];
+
+function normalize (path) {
+	path = path.replace(/\\/g, '/');
+	const parts = path.split('/');
+	const slashed = parts[0] === '';
+	for (let i = 1; i < parts.length; i++) {
+		if (parts[i] === '.' || parts[i] === '') {
+			parts.splice(i--, 1);
+		}
+	}
+	for (let i = 1; i < parts.length; i++) {
+		if (parts[i] !== '..') continue;
+		if (i > 0 && parts[i - 1] !== '..' && parts[i - 1] !== '.') {
+			parts.splice(--i, 2);
+			i--;
+		}
+	}
+	path = parts.join('/');
+	if (slashed && path[0] !== '/')
+	  path = '/' + path;
+	else if (path.length === 0)
+	  path = '.';
+	return path;
 }
-class HarvestTask extends BaseTask {
-    constructor(targetOrProto) {
-        super(isRoomObject(targetOrProto)
-            ? { name: HarvestTask.taskName, targetId: targetOrProto.id, range: 1 }
-            : targetOrProto);
-    }
-    resolveTarget() {
-        return getTargetById(this.proto.targetId);
-    }
-    perform(target) {
-        if (!this.creep) {
-            return ERR_BUSY;
-        }
-        if (this.creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
-            this.complete();
-            return OK;
-        }
-        return this.creep.harvest(target);
-    }
-    afterRun(result, target) {
-        if (!this.creep) {
-            return;
-        }
-        if (result === OK) {
-            if (this.creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0 || target.energy === 0) {
-                this.complete();
-            }
-            return;
-        }
-        if (result === ERR_NOT_ENOUGH_RESOURCES ||
-            result === ERR_INVALID_TARGET ||
-            result === ERR_NO_BODYPART ||
-            result === ERR_TIRED) {
-            this.complete();
-        }
-    }
+
+function join () {
+	if (arguments.length === 0)
+	  return '.';
+	let joined;
+	for (let i = 0; i < arguments.length; ++i) {
+	  let arg = arguments[i];
+	  if (arg.length > 0) {
+		if (joined === undefined)
+		  joined = arg;
+		else
+		  joined += '/' + arg;
+	  }
+	}
+	if (joined === undefined)
+	  return '.';
+
+	return joined;
 }
-HarvestTask.taskName = "harvest";
-class TransferTask extends BaseTask {
-    constructor(targetOrProto, resourceType = RESOURCE_ENERGY, amount) {
-        super(isRoomObject(targetOrProto)
-            ? {
-                name: TransferTask.taskName,
-                targetId: targetOrProto.id,
-                range: 1,
-                resourceType,
-                amount
-            }
-            : targetOrProto);
-    }
-    resolveTarget() {
-        const target = getTargetById(this.proto.targetId);
-        if (!target) {
-            return null;
-        }
-        if (target.structureType === STRUCTURE_SPAWN) {
-            return target;
-        }
-        if (target.structureType === STRUCTURE_EXTENSION) {
-            return target;
-        }
-        return null;
-    }
-    perform(target) {
-        var _a;
-        if (!this.creep) {
-            return ERR_BUSY;
-        }
-        const resourceType = (_a = this.proto.resourceType) !== null && _a !== void 0 ? _a : RESOURCE_ENERGY;
-        if (this.creep.store.getUsedCapacity(resourceType) === 0) {
-            this.complete();
-            return ERR_NOT_ENOUGH_ENERGY;
-        }
-        return this.creep.transfer(target, resourceType, this.proto.amount);
-    }
-    afterRun(result, target) {
-        if (!this.creep) {
-            return;
-        }
-        if (result === OK || result === ERR_FULL || result === ERR_INVALID_TARGET || result === ERR_NOT_ENOUGH_ENERGY) {
-            this.complete();
-            return;
-        }
-        if (target instanceof StructureSpawn || target instanceof StructureExtension) {
-            const store = target.store;
-            if (store && store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
-                this.complete();
-            }
-        }
-    }
+
+function isPossibleNodeModulesPath (modulePath) {
+	let c0 = modulePath[0];
+	if (c0 === '/' || c0 === '\\') return false;
+	let c1 = modulePath[1], c2 = modulePath[2];
+	if ((c0 === '.' && (!c1 || c1 === '/' || c1 === '\\')) ||
+		(c0 === '.' && c1 === '.' && (!c2 || c2 === '/' || c2 === '\\'))) return false;
+	if (c1 === ':' && (c2 === '/' || c2 === '\\'))
+		return false;
+	return true;
 }
-TransferTask.taskName = "transfer";
-class UpgradeTask extends BaseTask {
-    constructor(targetOrProto) {
-        super(isRoomObject(targetOrProto)
-            ? { name: UpgradeTask.taskName, targetId: targetOrProto.id, range: 3 }
-            : targetOrProto);
-    }
-    resolveTarget() {
-        return getTargetById(this.proto.targetId);
-    }
-    perform(target) {
-        if (!this.creep) {
-            return ERR_BUSY;
-        }
-        if (this.creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            this.complete();
-            return ERR_NOT_ENOUGH_ENERGY;
-        }
-        return this.creep.upgradeController(target);
-    }
-    afterRun(result, _target) {
-        if (!this.creep) {
-            return;
-        }
-        if (result === OK && this.creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            this.complete();
-            return;
-        }
-        if (result === ERR_NOT_ENOUGH_ENERGY || result === ERR_INVALID_TARGET || result === ERR_NO_BODYPART) {
-            this.complete();
-        }
-    }
+
+function dirname (path) {
+  if (path.length === 0)
+    return '.';
+
+  let i = path.length - 1;
+  while (i > 0) {
+    const c = path.charCodeAt(i);
+    if ((c === 47 || c === 92) && i !== path.length - 1)
+      break;
+    i--;
+  }
+
+  if (i > 0)
+    return path.substr(0, i);
+
+  if (path.chartCodeAt(0) === 47 || path.chartCodeAt(0) === 92)
+    return path.charAt(0);
+
+  return '.';
 }
-UpgradeTask.taskName = "upgrade";
-registry.set(HarvestTask.taskName, proto => new HarvestTask(proto));
-registry.set(TransferTask.taskName, proto => new TransferTask(proto));
-registry.set(UpgradeTask.taskName, proto => new UpgradeTask(proto));
-const instantiateTask = (creep, proto) => {
-    const factory = registry.get(proto.name);
-    if (!factory) {
-        return null;
-    }
-    const task = factory(proto);
-    task.assign(creep);
-    return task;
-};
-const installPrototypes = () => {
-    if (typeof Creep === "undefined") {
-        return;
-    }
-    const creepProto = Creep.prototype;
-    if (!Object.getOwnPropertyDescriptor(creepProto, "task")) {
-        Object.defineProperty(creepProto, "task", {
-            get() {
-                if (this._task) {
-                    return this._task;
-                }
-                const stored = this.memory.task;
-                if (!stored) {
-                    return null;
-                }
-                const task = instantiateTask(this, stored);
-                if (!task) {
-                    delete this.memory.task;
-                    return null;
-                }
-                return task;
-            },
-            set(task) {
-                if (!task) {
-                    clearTask(this);
-                    return;
-                }
-                task.assign(this);
-                this.memory.task = task.proto;
-            }
-        });
-    }
-    if (typeof creepProto.runTask !== "function") {
-        creepProto.runTask = function runTask() {
-            const task = this.task;
-            if (!task) {
-                return ERR_INVALID_TARGET;
-            }
-            return task.run();
-        };
-    }
-};
-installPrototypes();
-class TasksFacade {
-    chain(tasks = []) {
-        return tasks.length > 0 ? tasks[0] : null;
-    }
-    harvest(target) {
-        return new HarvestTask(target);
-    }
-    transfer(target, resourceType = RESOURCE_ENERGY, amount) {
-        return new TransferTask(target, resourceType, amount);
-    }
-    upgrade(target) {
-        return new UpgradeTask(target);
-    }
+
+function commonjsResolveImpl (path, originalModuleDir, testCache) {
+	const shouldTryNodeModules = isPossibleNodeModulesPath(path);
+	path = normalize(path);
+	let relPath;
+	if (path[0] === '/') {
+		originalModuleDir = '/';
+	}
+	while (true) {
+		if (!shouldTryNodeModules) {
+			relPath = originalModuleDir ? normalize(originalModuleDir + '/' + path) : path;
+		} else if (originalModuleDir) {
+			relPath = normalize(originalModuleDir + '/node_modules/' + path);
+		} else {
+			relPath = normalize(join('node_modules', path));
+		}
+
+		if (relPath.endsWith('/..')) {
+			break; // Travelled too far up, avoid infinite loop
+		}
+
+		for (let extensionIndex = 0; extensionIndex < CHECKED_EXTENSIONS.length; extensionIndex++) {
+			const resolvedPath = relPath + CHECKED_EXTENSIONS[extensionIndex];
+			if (DYNAMIC_REQUIRE_CACHE[resolvedPath]) {
+				return resolvedPath;
+			}
+			if (DYNAMIC_REQUIRE_SHORTS[resolvedPath]) {
+			  return resolvedPath;
+			}
+			if (DYNAMIC_REQUIRE_LOADERS[resolvedPath]) {
+				return resolvedPath;
+			}
+		}
+		if (!shouldTryNodeModules) break;
+		const nextDir = normalize(originalModuleDir + '/..');
+		if (nextDir === originalModuleDir) break;
+		originalModuleDir = nextDir;
+	}
+	return null;
 }
-const Tasks = new TasksFacade();
+
+function commonjsResolve (path, originalModuleDir) {
+	const resolvedPath = commonjsResolveImpl(path, originalModuleDir);
+	if (resolvedPath !== null) {
+		return resolvedPath;
+	}
+	return require.resolve(path);
+}
+
+function commonjsRequire (path, originalModuleDir) {
+	let resolvedPath = commonjsResolveImpl(path, originalModuleDir);
+	if (resolvedPath !== null) {
+    let cachedModule = DYNAMIC_REQUIRE_CACHE[resolvedPath];
+    if (cachedModule) return cachedModule.exports;
+    let shortTo = DYNAMIC_REQUIRE_SHORTS[resolvedPath];
+    if (shortTo) {
+      cachedModule = DYNAMIC_REQUIRE_CACHE[shortTo];
+      if (cachedModule)
+        return cachedModule.exports;
+      resolvedPath = commonjsResolveImpl(shortTo, null);
+    }
+    const loader = DYNAMIC_REQUIRE_LOADERS[resolvedPath];
+    if (loader) {
+      DYNAMIC_REQUIRE_CACHE[resolvedPath] = cachedModule = {
+        id: resolvedPath,
+        filename: resolvedPath,
+        path: dirname(resolvedPath),
+        exports: {},
+        parent: DEFAULT_PARENT_MODULE,
+        loaded: false,
+        children: [],
+        paths: [],
+        require: function (path, base) {
+          return commonjsRequire(path, (base === undefined || base === null) ? cachedModule.path : base);
+        }
+      };
+      try {
+        loader.call(commonjsGlobal, cachedModule, cachedModule.exports);
+      } catch (error) {
+        delete DYNAMIC_REQUIRE_CACHE[resolvedPath];
+        throw error;
+      }
+      cachedModule.loaded = true;
+      return cachedModule.exports;
+    }	}
+	throw new Error('Could not dynamically require "' + path + '". Please configure the dynamicRequireTargets or/and ignoreDynamicRequires option of @rollup/plugin-commonjs appropriately for this require call to work.');
+}
+
+commonjsRequire.cache = DYNAMIC_REQUIRE_CACHE;
+commonjsRequire.resolve = commonjsResolve;
+
+commonjsRequire("/$$rollup_base$$/src/vendor/creep-tasks/runtime/prototypes.js", "/$$rollup_base$$/src/vendor/creep-tasks/runtime");
+
+commonjsRequire("/$$rollup_base$$/src/vendor/creep-tasks/runtime/Task.js", "/$$rollup_base$$/src/vendor/creep-tasks/runtime");
+
+commonjsRequire("/$$rollup_base$$/src/vendor/creep-tasks/runtime/Tasks.js", "/$$rollup_base$$/src/vendor/creep-tasks/runtime");
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const runtimeTasks = require("./runtime/Tasks");
+const { Tasks } = runtimeTasks;
 
 const MIN_ENERGY_LOW = 200;
 const DEFAULT_HIGH_ENERGY = 10000;
@@ -1027,6 +943,17 @@ const compileBody = (_plan, _profile, _energyCap, _policy) => {
 const estimateSpawnTime = (body) => body.length * 3;
 const calculateBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
 
+const signatureForTask = (task) => {
+    var _a, _b, _c;
+    if (!task) {
+        return "IDLE";
+    }
+    const target = (_a = task.target) !== null && _a !== void 0 ? _a : null;
+    const proto = task.proto;
+    const protoTarget = Reflect.get(proto, "_target");
+    const ref = (_c = (_b = (target && "ref" in target ? target.ref : undefined)) !== null && _b !== void 0 ? _b : protoTarget === null || protoTarget === void 0 ? void 0 : protoTarget.ref) !== null && _c !== void 0 ? _c : "";
+    return `${task.name.toUpperCase()}:${ref}`;
+};
 const ensureHeapMaps = () => {
     if (!Heap.snap) {
         Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -1089,9 +1016,17 @@ const assignTask = (creep, room, snapshot, workerCount) => {
     const refillTarget = findRefillTarget(snapshot);
     const harvestTarget = pickHarvestTarget(snapshot);
     const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
+    const controllerId = controller === null || controller === void 0 ? void 0 : controller.id;
     let task = null;
     let signature = "IDLE";
-    if (!isFull && harvestTarget) {
+    const memory = creep.memory;
+    const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
+    const currentTask = creep.task;
+    if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
+        signature = signatureForTask(currentTask);
+        task = currentTask;
+    }
+    else if (!isFull && harvestTarget) {
         task = Tasks.harvest(harvestTarget);
         signature = `HARVEST:${harvestTarget.id}`;
     }
@@ -1099,12 +1034,10 @@ const assignTask = (creep, room, snapshot, workerCount) => {
         task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
         signature = `TRANSFER:${refillTarget.id}`;
     }
-    else if (!isEmpty && controller) {
+    else if (!isEmpty && controllerId) {
         task = Tasks.upgrade(controller);
-        signature = `UPGRADE:${controller.id}`;
+        signature = `UPGRADE:${controllerId}`;
     }
-    const memory = creep.memory;
-    const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
     const changed = signature !== previousSignature;
     memory.taskSignature = signature;
     memory.role = "worker";
@@ -1750,7 +1683,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "56acb58";
+global.__GIT_HASH__ = "e4a07d1";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
