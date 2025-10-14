@@ -817,7 +817,7 @@ const compileBody = (_plan, _profile, _energyCap, _policy) => {
 const estimateSpawnTime = (body) => body.length * 3;
 const calculateBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
 
-const orderSignature = (order) => { var _a; return `${order.type}:${(_a = order.targetId) !== null && _a !== void 0 ? _a : "none"}`; };
+const orderSignature = (order) => { var _a, _b; return `${order.type}:${(_a = order.targetId) !== null && _a !== void 0 ? _a : "none"}:${(_b = order.posKey) !== null && _b !== void 0 ? _b : "none"}`; };
 const ensureHeapMaps = () => {
     if (!Heap.snap) {
         Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -891,13 +891,15 @@ const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersCha
     snap.squads.set(squadName, entries);
 };
 const assignOrder = (creep, room, snapshot) => {
-    var _a;
+    var _a, _b;
     ensureHeapMaps();
     const isEmpty = creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0;
     const controller = room.controller;
     let orderType = "IDLE";
     let targetId;
     const refillTarget = findRefillTarget(snapshot);
+    const targetPos = refillTarget ? refillTarget.pos : controller === null || controller === void 0 ? void 0 : controller.pos;
+    const posKey = targetPos ? `${targetPos.x},${targetPos.y},${targetPos.roomName}` : undefined;
     if (isEmpty) {
         const source = snapshot.sources[0];
         if (source) {
@@ -913,7 +915,7 @@ const assignOrder = (creep, room, snapshot) => {
         orderType = "UPGRADE";
         targetId = controller.id;
     }
-    const signature = orderSignature({ type: orderType, targetId });
+    const signature = orderSignature({ type: orderType, targetId, posKey });
     const memory = creep.memory;
     const previousSignature = (_a = memory.orderId) !== null && _a !== void 0 ? _a : "";
     const changed = signature !== previousSignature;
@@ -924,6 +926,9 @@ const assignOrder = (creep, room, snapshot) => {
     };
     if (targetId) {
         order.targetId = targetId;
+    }
+    if (posKey) {
+        order.params = { ...((_b = order.params) !== null && _b !== void 0 ? _b : {}), posKey };
     }
     if (orderType === "TRANSFER") {
         order.res = RESOURCE_ENERGY;
@@ -1389,7 +1394,7 @@ const cleanupCreepMemory = () => {
         }
     }
 };
-global.__GIT_HASH__ = "0a928e5";
+global.__GIT_HASH__ = "e341339";
 const loop = () => {
     var _a;
     cleanupCreepMemory();

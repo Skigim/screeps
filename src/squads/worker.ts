@@ -22,8 +22,8 @@ export type WorkerSquadReport = {
   idlePct: number;
 };
 
-const orderSignature = (order: { type: string; targetId?: Id<any> }): string =>
-  `${order.type}:${order.targetId ?? "none"}`;
+const orderSignature = (order: { type: string; targetId?: Id<any>; posKey?: string }): string =>
+  `${order.type}:${order.targetId ?? "none"}:${order.posKey ?? "none"}`;
 
 const ensureHeapMaps = (): void => {
   if (!Heap.snap) {
@@ -121,6 +121,8 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
   let orderType = "IDLE";
   let targetId: Id<any> | undefined;
   const refillTarget = findRefillTarget(snapshot);
+  const targetPos = refillTarget ? refillTarget.pos : controller?.pos;
+  const posKey = targetPos ? `${targetPos.x},${targetPos.y},${targetPos.roomName}` : undefined;
 
   if (isEmpty) {
     const source = snapshot.sources[0];
@@ -136,7 +138,7 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
     targetId = controller.id as Id<any>;
   }
 
-  const signature = orderSignature({ type: orderType, targetId });
+  const signature = orderSignature({ type: orderType, targetId, posKey });
   const memory = creep.memory as CreepMemory & { orderId?: string; role?: string; squad?: string };
   const previousSignature = memory.orderId ?? "";
   const changed = signature !== previousSignature;
@@ -156,6 +158,9 @@ const assignOrder = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): { c
 
   if (targetId) {
     order.targetId = targetId;
+  }
+  if (posKey) {
+    order.params = { ...(order.params ?? {}), posKey };
   }
   if (orderType === "TRANSFER") {
     order.res = RESOURCE_ENERGY;
