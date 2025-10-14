@@ -7,6 +7,7 @@ import { RoleUpgrader } from "roles/upgrader";
 import { RoleBuilder } from "roles/builder";
 import { RoleHauler } from "roles/hauler";
 import { RoomStateManager } from "managers/RoomStateManager";
+import { ProgressionManager } from "managers/ProgressionManager";
 import { TrafficManager } from "managers/TrafficManager";
 import { PromotionManager } from "managers/PromotionManager";
 import { StatsCollector } from "utils/StatsCollector";
@@ -103,8 +104,9 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // Run promotion manager (upgrade creeps when economy allows)
     PromotionManager.run(room);
 
-    // Run room state manager (handles all room-level logic)
-    RoomStateManager.run(room);
+    // Run progression manager - PRIMARY ENTRY POINT
+    // This analyzes the room and delegates to RoomStateManager
+    ProgressionManager.run(room);
   }
 
   // Clean up stale promotions globally (every 100 ticks)

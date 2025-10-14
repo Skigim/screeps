@@ -4487,55 +4487,23 @@ class PromotionManager {
 }
 
 /**
- * Spawn Request System
+ * Spawn Request System - PURE FUNCTION
  * Generates spawn requests based on actual room conditions
- * Uses RCL configs for body parts and behaviors
- * Calculates counts dynamically based on room state
+ *
+ * This module NO LONGER reads from Game objects directly.
+ * All data is passed in from RoomStateManager.
  */
 class SpawnRequestGenerator {
     /**
-     * Determine if room should use aggressive scaling (spawn max-size creeps)
-     * Conditions:
-     * 1. Both sources have full harvester + hauler assignment load
-     * 2. All extensions are built (no construction sites for extensions)
-     *
-     * When these conditions are met, economy is stable enough to spawn largest creeps
+     * Generate all spawn requests for a room - PURE FUNCTION
+     * @param room - The room (used only for creep counts and basic state)
+     * @param config - The RCL configuration (passed from RoomStateManager)
+     * @param progressionState - The progression state (passed from RoomStateManager, may be null for RCL1)
+     * @returns Array of prioritized spawn requests
      */
-    static shouldUseAggressiveScaling(room) {
-        room.find(FIND_SOURCES);
-        const coverage = AssignmentManager.getSourceCoverage(room);
-        // Condition 1: Both sources fully assigned
-        // Each source needs at least 1 harvester + 1 hauler
-        const sourcesFullyAssigned = coverage.uncoveredByHarvesters.length === 0 &&
-            coverage.uncoveredByHaulers.length === 0;
-        // Condition 2: All extensions built (no extension construction sites)
-        const extensionSites = room.find(FIND_CONSTRUCTION_SITES, {
-            filter: site => site.structureType === STRUCTURE_EXTENSION
-        });
-        const allExtensionsBuilt = extensionSites.length === 0;
-        return sourcesFullyAssigned && allExtensionsBuilt;
-    }
-    /**
-     * Get energy capacity to use for body generation
-     * Uses energyCapacityAvailable when in aggressive mode, energyAvailable otherwise
-     */
-    static getEnergyForBodyGeneration(room) {
-        return this.shouldUseAggressiveScaling(room)
-            ? room.energyCapacityAvailable
-            : room.energyAvailable;
-    }
-    /**
-     * Generate all spawn requests for a room
-     */
-    static generateRequests(room) {
+    static generateRequests(room, config, progressionState) {
         var _a;
         const requests = [];
-        const config = RoomStateManager.getConfigForRoom(room);
-        // Null check - if no config available, return empty requests
-        if (!config) {
-            console.log(`[SpawnRequestGenerator] No config found for room ${room.name}`);
-            return requests;
-        }
         // HIGHEST PRIORITY: Check for pending promotions
         if (PromotionManager.hasPendingPromotions(room)) {
             const promotion = PromotionManager.getNextPromotion(room);
@@ -4590,7 +4558,7 @@ class SpawnRequestGenerator {
             return requests; // RCL1 only needs these 2 creeps
         }
         // RCL2+: Full spawn request system
-        const progressionState = RoomStateManager.getProgressionState(room.name);
+        // progressionState is passed in from RoomStateManager
         // Always generate harvester requests first
         requests.push(...this.requestHarvesters(room, config, progressionState));
         // CRITICAL: Always maintain 1 fallback upgrader to prevent downgrade
@@ -4619,6 +4587,37 @@ class SpawnRequestGenerator {
             }
         }
         return requests;
+    }
+    /**
+     * Determine if room should use aggressive scaling (spawn max-size creeps)
+     * Conditions:
+     * 1. Both sources have full harvester + hauler assignment load
+     * 2. All extensions are built (no construction sites for extensions)
+     *
+     * When these conditions are met, economy is stable enough to spawn largest creeps
+     */
+    static shouldUseAggressiveScaling(room) {
+        room.find(FIND_SOURCES);
+        const coverage = AssignmentManager.getSourceCoverage(room);
+        // Condition 1: Both sources fully assigned
+        // Each source needs at least 1 harvester + 1 hauler
+        const sourcesFullyAssigned = coverage.uncoveredByHarvesters.length === 0 &&
+            coverage.uncoveredByHaulers.length === 0;
+        // Condition 2: All extensions built (no extension construction sites)
+        const extensionSites = room.find(FIND_CONSTRUCTION_SITES, {
+            filter: site => site.structureType === STRUCTURE_EXTENSION
+        });
+        const allExtensionsBuilt = extensionSites.length === 0;
+        return sourcesFullyAssigned && allExtensionsBuilt;
+    }
+    /**
+     * Get energy capacity to use for body generation
+     * Uses energyCapacityAvailable when in aggressive mode, energyAvailable otherwise
+     */
+    static getEnergyForBodyGeneration(room) {
+        return this.shouldUseAggressiveScaling(room)
+            ? room.energyCapacityAvailable
+            : room.energyAvailable;
     }
     /**
      * Request harvesters based on source coverage (assignment-driven)
@@ -5035,33 +5034,100 @@ class SpawnRequestGenerator {
 }
 
 /**
- * Spawn Manager - Demand-Based Spawning
- * Evaluates spawn requests and spawns creeps based on actual room needs
+ * CreepBehaviorManager
+ *
+ * Single Responsibility: Define initial creep memory based on role and room state
+ *
+ * Input: Role name, progression state, room name
+ * Output: Initial memory object for creep
+ *
+ * This module determines what memory flags a new creep should start with,
+ * but doesn't perform any Game object reads - only uses passed data.
+ */
+class CreepBehaviorManager {
+    /**
+     * Get initial memory for a newly spawned creep
+     * @param role - The role name (harvester, hauler, upgrader, builder)
+     * @param roomName - The room the creep is spawning in
+     * @param progressionState - Current progression state (may be null for RCL1)
+     * @returns Initial memory object
+     */
+    static getInitialMemory(role, roomName, progressionState) {
+        const baseMemory = {
+            role: role,
+            room: roomName,
+            working: false
+        };
+        // Role-specific memory initialization
+        switch (role) {
+            case "harvester":
+                // Harvesters need source assignment (handled by AssignmentManager after spawn)
+                // No additional initial flags needed
+                break;
+            case "hauler":
+                // Haulers start not working (will pick up energy first)
+                // Source assignment handled by AssignmentManager after spawn
+                baseMemory.canTransport = true; // Default to true, TrafficManager may set false
+                break;
+            case "upgrader":
+                // Upgraders start not working (will pick up energy first)
+                break;
+            case "builder":
+                // Builders start not working (will pick up energy first)
+                break;
+            default:
+                console.log(`⚠️ Unknown role for initial memory: ${role}`);
+        }
+        return baseMemory;
+    }
+    /**
+     * Determine if a role should start in "working" state
+     * @param role - The role name
+     * @returns true if creep should start working, false if it should gather energy first
+     */
+    static shouldStartWorking(role) {
+        // Most roles start by gathering energy
+        // Only harvesters might start working immediately if they spawn next to a source
+        return role === "harvester";
+    }
+}
+
+/**
+ * Spawn Manager - Orchestrates Creep Spawning
+ *
+ * Receives data from RoomStateManager and orchestrates the spawn process:
+ * 1. Get spawn requests from SpawnRequestGenerator
+ * 2. Generate body parts via CreepBodyGenerator
+ * 3. Get initial memory via CreepBehaviorManager
+ * 4. Execute spawn
  */
 class SpawnManager {
     /**
-     * Main spawn logic - evaluates requests and spawns
+     * Main spawn logic - orchestrates the spawn process
+     * @param spawn - The spawn structure
+     * @param config - The RCL configuration (passed from RoomStateManager)
+     * @param progressionState - The progression state (passed from RoomStateManager, may be null for RCL1)
      */
-    static run(spawn) {
+    static run(spawn, config, progressionState) {
         // Don't spawn if already spawning
         if (spawn.spawning) {
             this.displaySpawningStatus(spawn);
             return;
         }
         const room = spawn.room;
-        // Generate spawn requests based on room conditions
-        const requests = SpawnRequestGenerator.generateRequests(room);
+        // Generate spawn requests - PASS DATA DOWN (config + progressionState)
+        const requests = SpawnRequestGenerator.generateRequests(room, config, progressionState);
         // Display status periodically
         if (Game.time % 10 === 0) {
             this.displayStatus(room, requests);
         }
         // Process requests by priority
-        this.processRequests(spawn, requests);
+        this.processRequests(spawn, requests, config, progressionState);
     }
     /**
      * Process spawn requests in priority order
      */
-    static processRequests(spawn, requests) {
+    static processRequests(spawn, requests, config, progressionState) {
         if (requests.length === 0) {
             return; // No requests
         }
@@ -5072,7 +5138,7 @@ class SpawnManager {
         if (totalCreeps === 0) {
             console.log("⚠️ CRITICAL: No creeps alive! Spawning emergency creep");
             const firstRequest = sortedRequests[0];
-            this.spawnFromRequest(spawn, firstRequest);
+            this.spawnFromRequest(spawn, firstRequest, config, progressionState);
             return;
         }
         // Process first viable request
@@ -5081,7 +5147,7 @@ class SpawnManager {
             const bodyCost = this.calculateBodyCost(request.body);
             const minEnergy = request.minEnergy || bodyCost;
             if (spawn.room.energyAvailable >= minEnergy) {
-                const result = this.spawnFromRequest(spawn, request);
+                const result = this.spawnFromRequest(spawn, request, config, progressionState);
                 if (result === OK) {
                     return; // Successfully spawned
                 }
@@ -5092,16 +5158,15 @@ class SpawnManager {
         }
     }
     /**
-     * Spawn a creep from a request
+     * Spawn a creep from a request - ORCHESTRATES the creation process
+     * Uses the new specialized managers to build the creep
      */
-    static spawnFromRequest(spawn, request) {
+    static spawnFromRequest(spawn, request, config, progressionState) {
         const name = this.generateCreepName(request.role);
+        // Get initial memory from BehaviorManager
+        const initialMemory = CreepBehaviorManager.getInitialMemory(request.role, spawn.room.name, progressionState);
         const result = spawn.spawnCreep(request.body, name, {
-            memory: {
-                role: request.role,
-                room: spawn.room.name,
-                working: false
-            }
+            memory: initialMemory
         });
         if (result === OK) {
             console.log(`✅ Spawning ${request.role}: ${name} (${request.reason})`);
@@ -5713,485 +5778,25 @@ class Architect {
 }
 
 /**
- * Progression Manager - Intelligent Phase Detection
+ * Room State Manager - Tactical Executor
  *
- * Detects room progression state and triggers appropriate transitions
- * Enables fully autonomous progression from RCL 1 → RCL 6+
+ * Receives analyzed state from ProgressionManager and executes room operations
  *
- * Phase detection is data-driven based on actual room state:
- * - Structure completion
- * - Container operational status
- * - Creep composition readiness
+ * Responsibilities:
+ * 1. Get RCL config
+ * 2. Execute managers (Spawn, Assignment, Architect)
+ * 3. Display status
  *
- * RCL 2 Progression Plan (OPTIMIZED):
- * Phase 1: Build source containers (mobile harvesters with drop mining, fast build)
- * Phase 2: Build extensions (haulers bring energy from containers, no walk time)
- * Phase 3: Build road network (stationary harvesters + full logistics)
- * Phase 4: Build controller container (convert builders to upgraders)
- */
-var RCL2Phase;
-(function (RCL2Phase) {
-    RCL2Phase["PHASE_1_CONTAINERS"] = "phase1_containers";
-    RCL2Phase["PHASE_2_EXTENSIONS"] = "phase2_extensions";
-    RCL2Phase["PHASE_3_ROADS"] = "phase3_roads";
-    RCL2Phase["PHASE_4_CONTROLLER"] = "phase4_controller";
-    RCL2Phase["COMPLETE"] = "complete"; // RCL 2 progression complete
-})(RCL2Phase || (RCL2Phase = {}));
-class ProgressionManager {
-    /**
-     * Convert upgraders to builders when construction is needed
-     * NO UPGRADERS during Phase 1-3 to prevent source traffic congestion
-     * Returns number of creeps converted
-     */
-    static convertUpgradersToBuilders(room) {
-        // Find all upgraders in the room
-        const upgraders = room.find(FIND_MY_CREEPS, {
-            filter: c => c.memory.role === "upgrader"
-        });
-        if (upgraders.length === 0) {
-            return 0; // No upgraders to convert
-        }
-        // CRITICAL: Always keep at least 1 upgrader to prevent controller downgrade!
-        if (upgraders.length === 1) {
-            return 0; // Don't convert the last upgrader
-        }
-        // Convert all upgraders EXCEPT ONE to builders
-        let converted = 0;
-        for (let i = 0; i < upgraders.length - 1; i++) {
-            const creep = upgraders[i];
-            creep.memory.role = "builder";
-            converted++;
-        }
-        if (converted > 0) {
-            console.log(`🔄 Converted ${converted} upgrader(s) to builders (kept 1 to prevent downgrade)`);
-        }
-        return converted;
-    }
-    /**
-     * Convert builders back to upgraders when infrastructure is complete (Phase 4)
-     * Returns number of creeps converted
-     */
-    static convertBuildersToUpgraders(room) {
-        // Only convert if there are no construction sites
-        const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
-        if (constructionSites.length > 0) {
-            return 0; // Still building
-        }
-        // Find all builders in the room
-        const builders = room.find(FIND_MY_CREEPS, {
-            filter: c => c.memory.role === "builder"
-        });
-        if (builders.length === 0) {
-            return 0; // No builders to convert
-        }
-        // Convert all builders to upgraders
-        let converted = 0;
-        for (const creep of builders) {
-            creep.memory.role = "upgrader";
-            converted++;
-        }
-        if (converted > 0) {
-            console.log(`🔄 Converted ${converted} builder(s) to upgraders (infrastructure complete)`);
-        }
-        return converted;
-    }
-    /**
-     * Detect current progression state for RCL 2
-     */
-    static detectRCL2State(room) {
-        const state = {
-            phase: RCL2Phase.PHASE_1_CONTAINERS,
-            containersOperational: false,
-            extensionsComplete: false,
-            sourceContainersBuilt: 0,
-            controllerContainerBuilt: false,
-            destContainerId: null,
-            roadsComplete: false,
-            useStationaryHarvesters: true,
-            useHaulers: false,
-            allowRCL1Bodies: true
-        };
-        // Count infrastructure
-        const extensions = room.find(FIND_MY_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_EXTENSION
-        });
-        const containers = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER
-        });
-        const roads = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_ROAD
-        });
-        const roadSites = room.find(FIND_CONSTRUCTION_SITES, {
-            filter: s => s.structureType === STRUCTURE_ROAD
-        });
-        const sources = room.find(FIND_SOURCES);
-        const controller = room.controller;
-        // Check extension completion (RCL 2 = 5 extensions)
-        state.extensionsComplete = extensions.length >= 5;
-        // Check source containers
-        for (const source of sources) {
-            const nearbyContainers = source.pos.findInRange(containers, 1);
-            if (nearbyContainers.length > 0) {
-                state.sourceContainersBuilt++;
-            }
-        }
-        // Check controller container
-        if (controller) {
-            const nearbyContainers = controller.pos.findInRange(containers, 3);
-            state.controllerContainerBuilt = nearbyContainers.length > 0;
-        }
-        // Check for destination container (spawn-adjacent container for builders/upgraders)
-        const spawns = room.find(FIND_MY_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_SPAWN
-        });
-        if (spawns.length > 0) {
-            const spawn = spawns[0];
-            const nearbyContainers = spawn.pos.findInRange(containers, 2);
-            if (nearbyContainers.length > 0) {
-                // Prefer container closest to spawn
-                const destContainer = spawn.pos.findClosestByRange(nearbyContainers);
-                state.destContainerId = destContainer ? destContainer.id : null;
-            }
-            else {
-                state.destContainerId = null;
-            }
-        }
-        else {
-            state.destContainerId = null;
-        }
-        // Check if roads are complete (no road construction sites remaining)
-        state.roadsComplete = roadSites.length === 0 && roads.length > 0;
-        // Determine if containers are operational (at least 1 source container built)
-        state.containersOperational = state.sourceContainersBuilt > 0;
-        // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
-        if (state.sourceContainersBuilt < sources.length) {
-            // Phase 1: Building source containers
-            // - Harvesters: [WORK, WORK, MOVE] = 250 energy (stationary drop mining)
-            // - Upgraders/Builders: Keep RCL1 bodies [WORK, CARRY, MOVE] (cheap 200 energy)
-            // - Drop energy near container sites for builders
-            // - NO regular upgraders (prevent source congestion, only fallback)
-            // - NO haulers yet (nothing to haul from)
-            state.phase = RCL2Phase.PHASE_1_CONTAINERS;
-            state.useStationaryHarvesters = true; // Stationary drop mining from start
-            state.useHaulers = false;
-            state.allowRCL1Bodies = true; // Upgraders/builders use cheap RCL1 bodies
-        }
-        else if (!state.extensionsComplete) {
-            // Phase 2: Building extensions
-            // - Source containers complete → Enable hauler spawning
-            // - Haulers spawn per-source as each source gets a harvester (sequential activation)
-            // - SpawnRequestGenerator handles per-source readiness checks
-            state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
-            state.useStationaryHarvesters = true; // All harvesters become stationary drop miners
-            state.useHaulers = true; // Enable hauler spawning (per-source activation handled by spawn logic)
-            state.allowRCL1Bodies = true; // Keep cheap bodies during extension construction
-        }
-        else if (!state.roadsComplete) {
-            // Phase 3: Building road network
-            // - All 5 extensions complete → 550 energy available
-            // - NOW spawn stationary harvesters [WORK×5, MOVE]
-            // - Full hauler logistics operational
-            // - Build road network
-            state.phase = RCL2Phase.PHASE_3_ROADS;
-            state.useStationaryHarvesters = true; // Extensions complete = 550 energy available
-            state.useHaulers = true;
-            state.allowRCL1Bodies = false;
-        }
-        else if (!state.controllerContainerBuilt) {
-            // Phase 4: Building controller container
-            // - Road network complete
-            // - Building controller container
-            state.phase = RCL2Phase.PHASE_4_CONTROLLER;
-            state.useStationaryHarvesters = true;
-            state.useHaulers = true;
-            state.allowRCL1Bodies = false;
-        }
-        else {
-            // Complete: All infrastructure built
-            state.phase = RCL2Phase.COMPLETE;
-            state.useStationaryHarvesters = true;
-            state.useHaulers = true;
-            state.containersOperational = true;
-            state.allowRCL1Bodies = false;
-        }
-        return state;
-    }
-    /**
-     * Check if at least one extension is built (triggers harvester filling)
-     */
-    static hasAnyExtensions(room) {
-        const extensions = room.find(FIND_MY_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_EXTENSION
-        });
-        return extensions.length > 0;
-    }
-    /**
-     * Get container under construction sites for stationary harvester targeting
-     */
-    static getContainerConstructionSites(room) {
-        return room.find(FIND_CONSTRUCTION_SITES, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER
-        });
-    }
-    /**
-     * Find the next source container construction site to work on
-     * Prioritizes sources closest to spawn
-     */
-    static getNextSourceContainerSite(room) {
-        var _a;
-        const spawn = room.find(FIND_MY_SPAWNS)[0];
-        if (!spawn)
-            return null;
-        const containerSites = this.getContainerConstructionSites(room);
-        const sources = room.find(FIND_SOURCES);
-        // Find container sites near sources
-        const sourceContainerSites = [];
-        for (const site of containerSites) {
-            for (const source of sources) {
-                if (site.pos.inRangeTo(source.pos, 1)) {
-                    const distance = spawn.pos.getRangeTo(site.pos);
-                    sourceContainerSites.push({ site, distance });
-                    break;
-                }
-            }
-        }
-        // Sort by distance from spawn (closest first)
-        sourceContainerSites.sort((a, b) => a.distance - b.distance);
-        return ((_a = sourceContainerSites[0]) === null || _a === void 0 ? void 0 : _a.site) || null;
-    }
-    /**
-     * Display progression status
-     */
-    static displayStatus(room, state) {
-        console.log(`\n╔═════════════════════════════════════════╗`);
-        console.log(`║ RCL 2 Progression Status                ║`);
-        console.log(`╠═════════════════════════════════════════╣`);
-        console.log(`║ Phase: ${state.phase.padEnd(32)} ║`);
-        console.log(`║ Extensions: ${state.extensionsComplete ? '✅ Complete (5/5)' : '⏳ Building'.padEnd(21)} ║`);
-        console.log(`║ Source Containers: ${state.sourceContainersBuilt}/2 ${state.sourceContainersBuilt === 2 ? '✅' : '⏳'}           ║`);
-        console.log(`║ Roads: ${state.roadsComplete ? '✅ Complete' : '⏳ Building'.padEnd(29)} ║`);
-        console.log(`║ Controller Container: ${state.controllerContainerBuilt ? '✅' : '❌'}          ║`);
-        console.log(`║ Stationary Harvesters: ${state.useStationaryHarvesters ? '✅ Enabled ' : '❌ Disabled'}       ║`);
-        console.log(`║ Hauler Logistics: ${state.useHaulers ? '✅ Enabled ' : '❌ Disabled'}           ║`);
-        console.log(`║ RCL1 Bodies: ${state.allowRCL1Bodies ? '✅ Allowed ' : '🛑 Die Off'.padEnd(14)}           ║`);
-        console.log(`╚═════════════════════════════════════════╝`);
-    }
-}
-
-/**
- * Stats Tracker - Records progression metrics for analysis
- *
- * Tracks:
- * - Phase transitions and durations
- * - Milestone achievements (first extension, first hauler, etc.)
- * - Periodic snapshots of room state
- * - Performance metrics
- */
-class StatsTracker {
-    /**
-     * Initialize stats tracking for a room
-     */
-    static initializeRoom(roomName) {
-        if (!Memory.progressionStats) {
-            Memory.progressionStats = {};
-        }
-        if (!Memory.progressionStats[roomName]) {
-            Memory.progressionStats[roomName] = {
-                startTime: Game.time,
-                currentPhase: RCL2Phase.PHASE_1_CONTAINERS,
-                phaseStartTime: Game.time,
-                phaseHistory: [],
-                milestones: {},
-                snapshots: []
-            };
-            console.log(`📊 Stats tracking initialized for ${roomName} at tick ${Game.time}`);
-        }
-    }
-    /**
-     * Record phase transition
-     */
-    static recordPhaseTransition(roomName, newPhase) {
-        this.initializeRoom(roomName);
-        const stats = Memory.progressionStats[roomName];
-        // Close out previous phase
-        if (stats.currentPhase !== newPhase) {
-            const previousPhase = stats.currentPhase;
-            const duration = Game.time - stats.phaseStartTime;
-            stats.phaseHistory.push({
-                phase: previousPhase,
-                startTick: stats.phaseStartTime,
-                endTick: Game.time,
-                duration: duration
-            });
-            // Start new phase
-            stats.currentPhase = newPhase;
-            stats.phaseStartTime = Game.time;
-            console.log(`📈 Phase Transition: ${previousPhase} → ${newPhase} (${duration} ticks)`);
-        }
-    }
-    /**
-     * Record milestones
-     */
-    static recordMilestones(room, progressionState) {
-        this.initializeRoom(room.name);
-        const stats = Memory.progressionStats[room.name];
-        // First extension
-        if (!stats.milestones.firstExtension) {
-            const extensions = room.find(FIND_MY_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_EXTENSION
-            });
-            if (extensions.length > 0) {
-                stats.milestones.firstExtension = Game.time;
-                console.log(`🎯 MILESTONE: First extension complete at tick ${Game.time}`);
-            }
-        }
-        // All extensions complete
-        if (!stats.milestones.allExtensionsComplete && progressionState.extensionsComplete) {
-            stats.milestones.allExtensionsComplete = Game.time;
-            const duration = Game.time - stats.startTime;
-            console.log(`🎯 MILESTONE: All extensions complete at tick ${Game.time} (${duration} ticks from start)`);
-        }
-        // First container
-        if (!stats.milestones.firstContainer) {
-            const containers = room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER
-            });
-            if (containers.length > 0) {
-                stats.milestones.firstContainer = Game.time;
-                console.log(`🎯 MILESTONE: First container complete at tick ${Game.time}`);
-            }
-        }
-        // All containers complete
-        if (!stats.milestones.allContainersComplete) {
-            const sources = room.find(FIND_SOURCES);
-            if (progressionState.sourceContainersBuilt === sources.length && progressionState.controllerContainerBuilt) {
-                stats.milestones.allContainersComplete = Game.time;
-                console.log(`🎯 MILESTONE: All containers complete at tick ${Game.time}`);
-            }
-        }
-        // First stationary harvester
-        if (!stats.milestones.firstStationaryHarvester && progressionState.useStationaryHarvesters) {
-            const creeps = room.find(FIND_MY_CREEPS, {
-                filter: c => c.memory.role === "harvester" && c.body.filter(p => p.type === WORK).length >= 5
-            });
-            if (creeps.length > 0) {
-                stats.milestones.firstStationaryHarvester = Game.time;
-                console.log(`🎯 MILESTONE: First stationary harvester spawned at tick ${Game.time}`);
-            }
-        }
-        // First hauler
-        if (!stats.milestones.firstHauler) {
-            const haulers = room.find(FIND_MY_CREEPS, {
-                filter: c => c.memory.role === "hauler"
-            });
-            if (haulers.length > 0) {
-                stats.milestones.firstHauler = Game.time;
-                console.log(`🎯 MILESTONE: First hauler spawned at tick ${Game.time}`);
-            }
-        }
-        // RCL 2 Complete
-        if (!stats.milestones.rcl2Complete && progressionState.phase === RCL2Phase.COMPLETE) {
-            stats.milestones.rcl2Complete = Game.time;
-            const duration = Game.time - stats.startTime;
-            console.log(`🎯 MILESTONE: RCL 2 progression complete at tick ${Game.time} (${duration} ticks total)`);
-        }
-    }
-    /**
-     * Take periodic snapshots of room state
-     */
-    static takeSnapshot(room, progressionState) {
-        var _a;
-        this.initializeRoom(room.name);
-        const stats = Memory.progressionStats[room.name];
-        // Take snapshots every 50 ticks
-        if (Game.time % 50 === 0) {
-            const extensions = room.find(FIND_MY_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_EXTENSION
-            }).length;
-            const containers = room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER
-            }).length;
-            const creeps = room.find(FIND_MY_CREEPS).length;
-            stats.snapshots.push({
-                tick: Game.time,
-                phase: progressionState.phase,
-                creepCount: creeps,
-                energy: room.energyAvailable,
-                energyCapacity: room.energyCapacityAvailable,
-                controllerProgress: ((_a = room.controller) === null || _a === void 0 ? void 0 : _a.progress) || 0,
-                extensions: extensions,
-                containers: containers
-            });
-            // Limit snapshot history to last 100 entries (5000 ticks)
-            if (stats.snapshots.length > 100) {
-                stats.snapshots.shift();
-            }
-        }
-    }
-    /**
-     * Display comprehensive stats report
-     */
-    static displayReport(roomName) {
-        var _a;
-        const stats = (_a = Memory.progressionStats) === null || _a === void 0 ? void 0 : _a[roomName];
-        if (!stats) {
-            console.log(`No stats available for ${roomName}`);
-            return;
-        }
-        const totalDuration = Game.time - stats.startTime;
-        console.log(`\n╔════════════════════════════════════════════════════════╗`);
-        console.log(`║         PROGRESSION STATS - ${roomName.padEnd(20)}       ║`);
-        console.log(`╚════════════════════════════════════════════════════════╝`);
-        console.log(`\n📊 Overview:`);
-        console.log(`  Start Time: ${stats.startTime}`);
-        console.log(`  Current Tick: ${Game.time}`);
-        console.log(`  Total Duration: ${totalDuration} ticks`);
-        console.log(`  Current Phase: ${stats.currentPhase}`);
-        console.log(`\n🎯 Milestones:`);
-        if (stats.milestones.firstExtension) {
-            console.log(`  First Extension: Tick ${stats.milestones.firstExtension} (+${stats.milestones.firstExtension - stats.startTime})`);
-        }
-        if (stats.milestones.allExtensionsComplete) {
-            console.log(`  All Extensions: Tick ${stats.milestones.allExtensionsComplete} (+${stats.milestones.allExtensionsComplete - stats.startTime})`);
-        }
-        if (stats.milestones.firstContainer) {
-            console.log(`  First Container: Tick ${stats.milestones.firstContainer} (+${stats.milestones.firstContainer - stats.startTime})`);
-        }
-        if (stats.milestones.allContainersComplete) {
-            console.log(`  All Containers: Tick ${stats.milestones.allContainersComplete} (+${stats.milestones.allContainersComplete - stats.startTime})`);
-        }
-        if (stats.milestones.firstStationaryHarvester) {
-            console.log(`  First Stationary Harvester: Tick ${stats.milestones.firstStationaryHarvester} (+${stats.milestones.firstStationaryHarvester - stats.startTime})`);
-        }
-        if (stats.milestones.firstHauler) {
-            console.log(`  First Hauler: Tick ${stats.milestones.firstHauler} (+${stats.milestones.firstHauler - stats.startTime})`);
-        }
-        if (stats.milestones.rcl2Complete) {
-            console.log(`  RCL 2 Complete: Tick ${stats.milestones.rcl2Complete} (+${stats.milestones.rcl2Complete - stats.startTime})`);
-        }
-        console.log(`\n📈 Phase History:`);
-        for (const phase of stats.phaseHistory) {
-            console.log(`  ${phase.phase}: ${phase.duration} ticks (${phase.startTick} → ${phase.endTick})`);
-        }
-        console.log(`\n📸 Recent Snapshots (last 5):`);
-        const recentSnapshots = stats.snapshots.slice(-5);
-        for (const snap of recentSnapshots) {
-            console.log(`  Tick ${snap.tick}: ${snap.phase} | Creeps: ${snap.creepCount} | Energy: ${snap.energy}/${snap.energyCapacity} | Ext: ${snap.extensions} | Con: ${snap.containers}`);
-        }
-        console.log(`\n`);
-    }
-}
-
-/**
- * Room State Manager - RCL-based state machine
- * Orchestrates all room-level managers based on RCL configuration
+ * This manager is the "executor" that carries out tasks based on the
+ * progression state determined by ProgressionManager.
  */
 class RoomStateManager {
     /**
-     * Main state machine - runs all managers for a room
+     * Main executor - runs all managers for a room
+     * @param room - The room to manage
+     * @param progressionState - The progression state (passed from ProgressionManager, may be null for RCL1)
      */
-    static run(room) {
-        var _a;
+    static run(room, progressionState) {
         if (!room.controller || !room.controller.my)
             return;
         const config = this.getConfigForRoom(room);
@@ -6199,42 +5804,16 @@ class RoomStateManager {
             console.log(`⚠️ No config available for room ${room.name}`);
             return;
         }
-        // Cache config for creeps to access
+        // Cache config and state for creeps to access
         this.roomConfigs.set(room.name, config);
-        // Detect and cache progression state (RCL 2+)
-        const rcl = room.controller.level;
-        let progressionState;
-        if (rcl >= 2) {
-            progressionState = ProgressionManager.detectRCL2State(room);
-            this.progressionStates.set(room.name, progressionState);
-            // Initialize stats tracking on first run
-            StatsTracker.initializeRoom(room.name);
-            // Track phase transitions
-            const stats = (_a = Memory.progressionStats) === null || _a === void 0 ? void 0 : _a[room.name];
-            if (stats && stats.currentPhase !== progressionState.phase) {
-                StatsTracker.recordPhaseTransition(room.name, progressionState.phase);
-            }
-            // Record milestones and take snapshots
-            StatsTracker.recordMilestones(room, progressionState);
-            StatsTracker.takeSnapshot(room, progressionState);
-            // Convert upgraders to builders during Phase 1-3 (prevent source congestion)
-            if (progressionState.phase === RCL2Phase.PHASE_1_CONTAINERS ||
-                progressionState.phase === RCL2Phase.PHASE_2_EXTENSIONS ||
-                progressionState.phase === RCL2Phase.PHASE_3_ROADS) {
-                ProgressionManager.convertUpgradersToBuilders(room);
-            }
-            // Convert builders back to upgraders in Phase 4+ (infrastructure complete)
-            if (progressionState.phase === RCL2Phase.COMPLETE) {
-                ProgressionManager.convertBuildersToUpgraders(room);
-            }
-        }
+        this.progressionStates.set(room.name, progressionState);
         // Get primary spawn
         const spawns = room.find(FIND_MY_SPAWNS);
         if (spawns.length === 0)
             return;
         const spawn = spawns[0];
-        // Run spawn manager (demand-based, no config needed)
-        SpawnManager.run(spawn);
+        // Run spawn manager - PASS DATA DOWN (config + progressionState)
+        SpawnManager.run(spawn, config, progressionState);
         // Run assignment manager
         AssignmentManager.run(room, config);
         // Run architect (automatic infrastructure planning)
@@ -6242,10 +5821,6 @@ class RoomStateManager {
         // Display status periodically
         if (Game.time % 50 === 0) {
             this.displayRoomStatus(room, config);
-            // Display progression status for RCL 2+
-            if (progressionState) {
-                ProgressionManager.displayStatus(room, progressionState);
-            }
         }
     }
     /**
@@ -6312,7 +5887,7 @@ RoomStateManager.RCL_CONFIGS = {
 };
 // Cache configs by room name for creep access
 RoomStateManager.roomConfigs = new Map();
-// Cache progression states for each room
+// Cache progression states for each room (for creep access)
 RoomStateManager.progressionStates = new Map();
 
 class RoleHarvester {
@@ -6632,6 +6207,527 @@ class RoleUpgrader {
                 }
             }
         }
+    }
+}
+
+/**
+ * Stats Tracker - Records progression metrics for analysis
+ *
+ * Tracks:
+ * - Phase transitions and durations
+ * - Milestone achievements (first extension, first hauler, etc.)
+ * - Periodic snapshots of room state
+ * - Performance metrics
+ */
+class StatsTracker {
+    /**
+     * Initialize stats tracking for a room
+     */
+    static initializeRoom(roomName) {
+        if (!Memory.progressionStats) {
+            Memory.progressionStats = {};
+        }
+        if (!Memory.progressionStats[roomName]) {
+            Memory.progressionStats[roomName] = {
+                startTime: Game.time,
+                currentPhase: RCL2Phase.PHASE_1_CONTAINERS,
+                phaseStartTime: Game.time,
+                phaseHistory: [],
+                milestones: {},
+                snapshots: []
+            };
+            console.log(`📊 Stats tracking initialized for ${roomName} at tick ${Game.time}`);
+        }
+    }
+    /**
+     * Record phase transition
+     */
+    static recordPhaseTransition(roomName, newPhase) {
+        this.initializeRoom(roomName);
+        const stats = Memory.progressionStats[roomName];
+        // Close out previous phase
+        if (stats.currentPhase !== newPhase) {
+            const previousPhase = stats.currentPhase;
+            const duration = Game.time - stats.phaseStartTime;
+            stats.phaseHistory.push({
+                phase: previousPhase,
+                startTick: stats.phaseStartTime,
+                endTick: Game.time,
+                duration: duration
+            });
+            // Start new phase
+            stats.currentPhase = newPhase;
+            stats.phaseStartTime = Game.time;
+            console.log(`📈 Phase Transition: ${previousPhase} → ${newPhase} (${duration} ticks)`);
+        }
+    }
+    /**
+     * Record milestones
+     */
+    static recordMilestones(room, progressionState) {
+        this.initializeRoom(room.name);
+        const stats = Memory.progressionStats[room.name];
+        // First extension
+        if (!stats.milestones.firstExtension) {
+            const extensions = room.find(FIND_MY_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_EXTENSION
+            });
+            if (extensions.length > 0) {
+                stats.milestones.firstExtension = Game.time;
+                console.log(`🎯 MILESTONE: First extension complete at tick ${Game.time}`);
+            }
+        }
+        // All extensions complete
+        if (!stats.milestones.allExtensionsComplete && progressionState.extensionsComplete) {
+            stats.milestones.allExtensionsComplete = Game.time;
+            const duration = Game.time - stats.startTime;
+            console.log(`🎯 MILESTONE: All extensions complete at tick ${Game.time} (${duration} ticks from start)`);
+        }
+        // First container
+        if (!stats.milestones.firstContainer) {
+            const containers = room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER
+            });
+            if (containers.length > 0) {
+                stats.milestones.firstContainer = Game.time;
+                console.log(`🎯 MILESTONE: First container complete at tick ${Game.time}`);
+            }
+        }
+        // All containers complete
+        if (!stats.milestones.allContainersComplete) {
+            const sources = room.find(FIND_SOURCES);
+            if (progressionState.sourceContainersBuilt === sources.length && progressionState.controllerContainerBuilt) {
+                stats.milestones.allContainersComplete = Game.time;
+                console.log(`🎯 MILESTONE: All containers complete at tick ${Game.time}`);
+            }
+        }
+        // First stationary harvester
+        if (!stats.milestones.firstStationaryHarvester && progressionState.useStationaryHarvesters) {
+            const creeps = room.find(FIND_MY_CREEPS, {
+                filter: c => c.memory.role === "harvester" && c.body.filter(p => p.type === WORK).length >= 5
+            });
+            if (creeps.length > 0) {
+                stats.milestones.firstStationaryHarvester = Game.time;
+                console.log(`🎯 MILESTONE: First stationary harvester spawned at tick ${Game.time}`);
+            }
+        }
+        // First hauler
+        if (!stats.milestones.firstHauler) {
+            const haulers = room.find(FIND_MY_CREEPS, {
+                filter: c => c.memory.role === "hauler"
+            });
+            if (haulers.length > 0) {
+                stats.milestones.firstHauler = Game.time;
+                console.log(`🎯 MILESTONE: First hauler spawned at tick ${Game.time}`);
+            }
+        }
+        // RCL 2 Complete
+        if (!stats.milestones.rcl2Complete && progressionState.phase === RCL2Phase.COMPLETE) {
+            stats.milestones.rcl2Complete = Game.time;
+            const duration = Game.time - stats.startTime;
+            console.log(`🎯 MILESTONE: RCL 2 progression complete at tick ${Game.time} (${duration} ticks total)`);
+        }
+    }
+    /**
+     * Take periodic snapshots of room state
+     */
+    static takeSnapshot(room, progressionState) {
+        var _a;
+        this.initializeRoom(room.name);
+        const stats = Memory.progressionStats[room.name];
+        // Take snapshots every 50 ticks
+        if (Game.time % 50 === 0) {
+            const extensions = room.find(FIND_MY_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_EXTENSION
+            }).length;
+            const containers = room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER
+            }).length;
+            const creeps = room.find(FIND_MY_CREEPS).length;
+            stats.snapshots.push({
+                tick: Game.time,
+                phase: progressionState.phase,
+                creepCount: creeps,
+                energy: room.energyAvailable,
+                energyCapacity: room.energyCapacityAvailable,
+                controllerProgress: ((_a = room.controller) === null || _a === void 0 ? void 0 : _a.progress) || 0,
+                extensions: extensions,
+                containers: containers
+            });
+            // Limit snapshot history to last 100 entries (5000 ticks)
+            if (stats.snapshots.length > 100) {
+                stats.snapshots.shift();
+            }
+        }
+    }
+    /**
+     * Display comprehensive stats report
+     */
+    static displayReport(roomName) {
+        var _a;
+        const stats = (_a = Memory.progressionStats) === null || _a === void 0 ? void 0 : _a[roomName];
+        if (!stats) {
+            console.log(`No stats available for ${roomName}`);
+            return;
+        }
+        const totalDuration = Game.time - stats.startTime;
+        console.log(`\n╔════════════════════════════════════════════════════════╗`);
+        console.log(`║         PROGRESSION STATS - ${roomName.padEnd(20)}       ║`);
+        console.log(`╚════════════════════════════════════════════════════════╝`);
+        console.log(`\n📊 Overview:`);
+        console.log(`  Start Time: ${stats.startTime}`);
+        console.log(`  Current Tick: ${Game.time}`);
+        console.log(`  Total Duration: ${totalDuration} ticks`);
+        console.log(`  Current Phase: ${stats.currentPhase}`);
+        console.log(`\n🎯 Milestones:`);
+        if (stats.milestones.firstExtension) {
+            console.log(`  First Extension: Tick ${stats.milestones.firstExtension} (+${stats.milestones.firstExtension - stats.startTime})`);
+        }
+        if (stats.milestones.allExtensionsComplete) {
+            console.log(`  All Extensions: Tick ${stats.milestones.allExtensionsComplete} (+${stats.milestones.allExtensionsComplete - stats.startTime})`);
+        }
+        if (stats.milestones.firstContainer) {
+            console.log(`  First Container: Tick ${stats.milestones.firstContainer} (+${stats.milestones.firstContainer - stats.startTime})`);
+        }
+        if (stats.milestones.allContainersComplete) {
+            console.log(`  All Containers: Tick ${stats.milestones.allContainersComplete} (+${stats.milestones.allContainersComplete - stats.startTime})`);
+        }
+        if (stats.milestones.firstStationaryHarvester) {
+            console.log(`  First Stationary Harvester: Tick ${stats.milestones.firstStationaryHarvester} (+${stats.milestones.firstStationaryHarvester - stats.startTime})`);
+        }
+        if (stats.milestones.firstHauler) {
+            console.log(`  First Hauler: Tick ${stats.milestones.firstHauler} (+${stats.milestones.firstHauler - stats.startTime})`);
+        }
+        if (stats.milestones.rcl2Complete) {
+            console.log(`  RCL 2 Complete: Tick ${stats.milestones.rcl2Complete} (+${stats.milestones.rcl2Complete - stats.startTime})`);
+        }
+        console.log(`\n📈 Phase History:`);
+        for (const phase of stats.phaseHistory) {
+            console.log(`  ${phase.phase}: ${phase.duration} ticks (${phase.startTick} → ${phase.endTick})`);
+        }
+        console.log(`\n📸 Recent Snapshots (last 5):`);
+        const recentSnapshots = stats.snapshots.slice(-5);
+        for (const snap of recentSnapshots) {
+            console.log(`  Tick ${snap.tick}: ${snap.phase} | Creeps: ${snap.creepCount} | Energy: ${snap.energy}/${snap.energyCapacity} | Ext: ${snap.extensions} | Con: ${snap.containers}`);
+        }
+        console.log(`\n`);
+    }
+}
+
+/**
+ * Progression Manager - Strategic Orchestrator
+ *
+ * PRIMARY ENTRY POINT for each room's tick
+ *
+ * Responsibilities:
+ * 1. Analyze room state and determine progression phase
+ * 2. Pass analysis down to RoomStateManager for execution
+ *
+ * This manager is the "brain" that decides what phase the room is in,
+ * then delegates the execution to RoomStateManager.
+ *
+ * Phase detection is data-driven based on actual room state:
+ * - Structure completion
+ * - Container operational status
+ * - Creep composition readiness
+ *
+ * RCL 2 Progression Plan (OPTIMIZED):
+ * Phase 1: Build source containers (mobile harvesters with drop mining, fast build)
+ * Phase 2: Build extensions (haulers bring energy from containers, no walk time)
+ * Phase 3: Build road network (stationary harvesters + full logistics)
+ * Phase 4: Build controller container (convert builders to upgraders)
+ */
+var RCL2Phase;
+(function (RCL2Phase) {
+    RCL2Phase["PHASE_1_CONTAINERS"] = "phase1_containers";
+    RCL2Phase["PHASE_2_EXTENSIONS"] = "phase2_extensions";
+    RCL2Phase["PHASE_3_ROADS"] = "phase3_roads";
+    RCL2Phase["PHASE_4_CONTROLLER"] = "phase4_controller";
+    RCL2Phase["COMPLETE"] = "complete"; // RCL 2 progression complete
+})(RCL2Phase || (RCL2Phase = {}));
+class ProgressionManager {
+    /**
+     * MAIN ORCHESTRATOR - Entry point for each room's tick
+     *
+     * Analyzes room state, determines progression phase,
+     * then delegates execution to RoomStateManager
+     */
+    static run(room) {
+        var _a;
+        if (!room.controller || !room.controller.my)
+            return;
+        const rcl = room.controller.level;
+        // RCL1: No progression state, just pass null to RoomStateManager
+        if (rcl === 1) {
+            RoomStateManager.run(room, null);
+            return;
+        }
+        // RCL2+: Analyze progression state
+        const progressionState = this.detectRCL2State(room);
+        // Initialize stats tracking on first run
+        StatsTracker.initializeRoom(room.name);
+        // Track phase transitions
+        const stats = (_a = Memory.progressionStats) === null || _a === void 0 ? void 0 : _a[room.name];
+        if (stats && stats.currentPhase !== progressionState.phase) {
+            StatsTracker.recordPhaseTransition(room.name, progressionState.phase);
+        }
+        // Record milestones and take snapshots
+        StatsTracker.recordMilestones(room, progressionState);
+        StatsTracker.takeSnapshot(room, progressionState);
+        // Convert upgraders to builders during Phase 1-3 (prevent source congestion)
+        if (progressionState.phase === RCL2Phase.PHASE_1_CONTAINERS ||
+            progressionState.phase === RCL2Phase.PHASE_2_EXTENSIONS ||
+            progressionState.phase === RCL2Phase.PHASE_3_ROADS) {
+            this.convertUpgradersToBuilders(room);
+        }
+        // Convert builders back to upgraders in Phase 4+ (infrastructure complete)
+        if (progressionState.phase === RCL2Phase.COMPLETE) {
+            this.convertBuildersToUpgraders(room);
+        }
+        // Display progression status periodically
+        if (Game.time % 50 === 0) {
+            this.displayStatus(room, progressionState);
+        }
+        // Delegate execution to RoomStateManager
+        RoomStateManager.run(room, progressionState);
+    }
+    /**
+     * Convert upgraders to builders when construction is needed
+     * NO UPGRADERS during Phase 1-3 to prevent source traffic congestion
+     * Returns number of creeps converted
+     */
+    static convertUpgradersToBuilders(room) {
+        // Find all upgraders in the room
+        const upgraders = room.find(FIND_MY_CREEPS, {
+            filter: c => c.memory.role === "upgrader"
+        });
+        if (upgraders.length === 0) {
+            return 0; // No upgraders to convert
+        }
+        // CRITICAL: Always keep at least 1 upgrader to prevent controller downgrade!
+        if (upgraders.length === 1) {
+            return 0; // Don't convert the last upgrader
+        }
+        // Convert all upgraders EXCEPT ONE to builders
+        let converted = 0;
+        for (let i = 0; i < upgraders.length - 1; i++) {
+            const creep = upgraders[i];
+            creep.memory.role = "builder";
+            converted++;
+        }
+        if (converted > 0) {
+            console.log(`🔄 Converted ${converted} upgrader(s) to builders (kept 1 to prevent downgrade)`);
+        }
+        return converted;
+    }
+    /**
+     * Convert builders back to upgraders when infrastructure is complete (Phase 4)
+     * Returns number of creeps converted
+     */
+    static convertBuildersToUpgraders(room) {
+        // Only convert if there are no construction sites
+        const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+        if (constructionSites.length > 0) {
+            return 0; // Still building
+        }
+        // Find all builders in the room
+        const builders = room.find(FIND_MY_CREEPS, {
+            filter: c => c.memory.role === "builder"
+        });
+        if (builders.length === 0) {
+            return 0; // No builders to convert
+        }
+        // Convert all builders to upgraders
+        let converted = 0;
+        for (const creep of builders) {
+            creep.memory.role = "upgrader";
+            converted++;
+        }
+        if (converted > 0) {
+            console.log(`🔄 Converted ${converted} builder(s) to upgraders (infrastructure complete)`);
+        }
+        return converted;
+    }
+    /**
+     * Detect current progression state for RCL 2
+     */
+    static detectRCL2State(room) {
+        const state = {
+            phase: RCL2Phase.PHASE_1_CONTAINERS,
+            containersOperational: false,
+            extensionsComplete: false,
+            sourceContainersBuilt: 0,
+            controllerContainerBuilt: false,
+            destContainerId: null,
+            roadsComplete: false,
+            useStationaryHarvesters: true,
+            useHaulers: false,
+            allowRCL1Bodies: true
+        };
+        // Count infrastructure
+        const extensions = room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTENSION
+        });
+        const containers = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+        const roads = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_ROAD
+        });
+        const roadSites = room.find(FIND_CONSTRUCTION_SITES, {
+            filter: s => s.structureType === STRUCTURE_ROAD
+        });
+        const sources = room.find(FIND_SOURCES);
+        const controller = room.controller;
+        // Check extension completion (RCL 2 = 5 extensions)
+        state.extensionsComplete = extensions.length >= 5;
+        // Check source containers
+        for (const source of sources) {
+            const nearbyContainers = source.pos.findInRange(containers, 1);
+            if (nearbyContainers.length > 0) {
+                state.sourceContainersBuilt++;
+            }
+        }
+        // Check controller container
+        if (controller) {
+            const nearbyContainers = controller.pos.findInRange(containers, 3);
+            state.controllerContainerBuilt = nearbyContainers.length > 0;
+        }
+        // Check for destination container (spawn-adjacent container for builders/upgraders)
+        const spawns = room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_SPAWN
+        });
+        if (spawns.length > 0) {
+            const spawn = spawns[0];
+            const nearbyContainers = spawn.pos.findInRange(containers, 2);
+            if (nearbyContainers.length > 0) {
+                // Prefer container closest to spawn
+                const destContainer = spawn.pos.findClosestByRange(nearbyContainers);
+                state.destContainerId = destContainer ? destContainer.id : null;
+            }
+            else {
+                state.destContainerId = null;
+            }
+        }
+        else {
+            state.destContainerId = null;
+        }
+        // Check if roads are complete (no road construction sites remaining)
+        state.roadsComplete = roadSites.length === 0 && roads.length > 0;
+        // Determine if containers are operational (at least 1 source container built)
+        state.containersOperational = state.sourceContainersBuilt > 0;
+        // Phase detection logic (NEW ORDER: Containers → Extensions → Roads → Controller)
+        if (state.sourceContainersBuilt < sources.length) {
+            // Phase 1: Building source containers
+            // - Harvesters: [WORK, WORK, MOVE] = 250 energy (stationary drop mining)
+            // - Upgraders/Builders: Keep RCL1 bodies [WORK, CARRY, MOVE] (cheap 200 energy)
+            // - Drop energy near container sites for builders
+            // - NO regular upgraders (prevent source congestion, only fallback)
+            // - NO haulers yet (nothing to haul from)
+            state.phase = RCL2Phase.PHASE_1_CONTAINERS;
+            state.useStationaryHarvesters = true; // Stationary drop mining from start
+            state.useHaulers = false;
+            state.allowRCL1Bodies = true; // Upgraders/builders use cheap RCL1 bodies
+        }
+        else if (!state.extensionsComplete) {
+            // Phase 2: Building extensions
+            // - Source containers complete → Enable hauler spawning
+            // - Haulers spawn per-source as each source gets a harvester (sequential activation)
+            // - SpawnRequestGenerator handles per-source readiness checks
+            state.phase = RCL2Phase.PHASE_2_EXTENSIONS;
+            state.useStationaryHarvesters = true; // All harvesters become stationary drop miners
+            state.useHaulers = true; // Enable hauler spawning (per-source activation handled by spawn logic)
+            state.allowRCL1Bodies = true; // Keep cheap bodies during extension construction
+        }
+        else if (!state.roadsComplete) {
+            // Phase 3: Building road network
+            // - All 5 extensions complete → 550 energy available
+            // - NOW spawn stationary harvesters [WORK×5, MOVE]
+            // - Full hauler logistics operational
+            // - Build road network
+            state.phase = RCL2Phase.PHASE_3_ROADS;
+            state.useStationaryHarvesters = true; // Extensions complete = 550 energy available
+            state.useHaulers = true;
+            state.allowRCL1Bodies = false;
+        }
+        else if (!state.controllerContainerBuilt) {
+            // Phase 4: Building controller container
+            // - Road network complete
+            // - Building controller container
+            state.phase = RCL2Phase.PHASE_4_CONTROLLER;
+            state.useStationaryHarvesters = true;
+            state.useHaulers = true;
+            state.allowRCL1Bodies = false;
+        }
+        else {
+            // Complete: All infrastructure built
+            state.phase = RCL2Phase.COMPLETE;
+            state.useStationaryHarvesters = true;
+            state.useHaulers = true;
+            state.containersOperational = true;
+            state.allowRCL1Bodies = false;
+        }
+        return state;
+    }
+    /**
+     * Check if at least one extension is built (triggers harvester filling)
+     */
+    static hasAnyExtensions(room) {
+        const extensions = room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTENSION
+        });
+        return extensions.length > 0;
+    }
+    /**
+     * Get container under construction sites for stationary harvester targeting
+     */
+    static getContainerConstructionSites(room) {
+        return room.find(FIND_CONSTRUCTION_SITES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+    }
+    /**
+     * Find the next source container construction site to work on
+     * Prioritizes sources closest to spawn
+     */
+    static getNextSourceContainerSite(room) {
+        var _a;
+        const spawn = room.find(FIND_MY_SPAWNS)[0];
+        if (!spawn)
+            return null;
+        const containerSites = this.getContainerConstructionSites(room);
+        const sources = room.find(FIND_SOURCES);
+        // Find container sites near sources
+        const sourceContainerSites = [];
+        for (const site of containerSites) {
+            for (const source of sources) {
+                if (site.pos.inRangeTo(source.pos, 1)) {
+                    const distance = spawn.pos.getRangeTo(site.pos);
+                    sourceContainerSites.push({ site, distance });
+                    break;
+                }
+            }
+        }
+        // Sort by distance from spawn (closest first)
+        sourceContainerSites.sort((a, b) => a.distance - b.distance);
+        return ((_a = sourceContainerSites[0]) === null || _a === void 0 ? void 0 : _a.site) || null;
+    }
+    /**
+     * Display progression status
+     */
+    static displayStatus(room, state) {
+        console.log(`\n╔═════════════════════════════════════════╗`);
+        console.log(`║ RCL 2 Progression Status                ║`);
+        console.log(`╠═════════════════════════════════════════╣`);
+        console.log(`║ Phase: ${state.phase.padEnd(32)} ║`);
+        console.log(`║ Extensions: ${state.extensionsComplete ? '✅ Complete (5/5)' : '⏳ Building'.padEnd(21)} ║`);
+        console.log(`║ Source Containers: ${state.sourceContainersBuilt}/2 ${state.sourceContainersBuilt === 2 ? '✅' : '⏳'}           ║`);
+        console.log(`║ Roads: ${state.roadsComplete ? '✅ Complete' : '⏳ Building'.padEnd(29)} ║`);
+        console.log(`║ Controller Container: ${state.controllerContainerBuilt ? '✅' : '❌'}          ║`);
+        console.log(`║ Stationary Harvesters: ${state.useStationaryHarvesters ? '✅ Enabled ' : '❌ Disabled'}       ║`);
+        console.log(`║ Hauler Logistics: ${state.useHaulers ? '✅ Enabled ' : '❌ Disabled'}           ║`);
+        console.log(`║ RCL1 Bodies: ${state.allowRCL1Bodies ? '✅ Allowed ' : '🛑 Die Off'.padEnd(14)}           ║`);
+        console.log(`╚═════════════════════════════════════════╝`);
     }
 }
 
@@ -8298,7 +8394,7 @@ global.checkHaulers = ConsoleCommands.checkHaulers.bind(ConsoleCommands);
 global.showPlan = ConsoleCommands.showPlan.bind(ConsoleCommands);
 
 /// <reference types="screeps" />
-global.__GIT_HASH__ = "5c3685a";
+global.__GIT_HASH__ = "f5e6c6c";
 // This comment is replaced by rollup with: global.__GIT_HASH__ = "abc123";
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
@@ -8338,8 +8434,9 @@ const loop = ErrorMapper.wrapLoop(() => {
         TrafficManager.cleanupAssignments(room);
         // Run promotion manager (upgrade creeps when economy allows)
         PromotionManager.run(room);
-        // Run room state manager (handles all room-level logic)
-        RoomStateManager.run(room);
+        // Run progression manager - PRIMARY ENTRY POINT
+        // This analyzes the room and delegates to RoomStateManager
+        ProgressionManager.run(room);
     }
     // Clean up stale promotions globally (every 100 ticks)
     if (Game.time % 100 === 0) {

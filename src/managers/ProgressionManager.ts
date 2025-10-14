@@ -1,8 +1,14 @@
 /**
- * Progression Manager - Intelligent Phase Detection
+ * Progression Manager - Strategic Orchestrator
  *
- * Detects room progression state and triggers appropriate transitions
- * Enables fully autonomous progression from RCL 1 → RCL 6+
+ * PRIMARY ENTRY POINT for each room's tick
+ *
+ * Responsibilities:
+ * 1. Analyze room state and determine progression phase
+ * 2. Pass analysis down to RoomStateManager for execution
+ *
+ * This manager is the "brain" that decides what phase the room is in,
+ * then delegates the execution to RoomStateManager.
  *
  * Phase detection is data-driven based on actual room state:
  * - Structure completion
@@ -15,6 +21,9 @@
  * Phase 3: Build road network (stationary harvesters + full logistics)
  * Phase 4: Build controller container (convert builders to upgraders)
  */
+
+import { RoomStateManager } from "./RoomStateManager";
+import { StatsTracker } from "./StatsTracker";
 
 export enum RCL2Phase {
   PHASE_1_CONTAINERS = "phase1_containers",      // Building source containers, drop mining
@@ -38,6 +47,60 @@ export interface ProgressionState {
 }
 
 export class ProgressionManager {
+  /**
+   * MAIN ORCHESTRATOR - Entry point for each room's tick
+   *
+   * Analyzes room state, determines progression phase,
+   * then delegates execution to RoomStateManager
+   */
+  public static run(room: Room): void {
+    if (!room.controller || !room.controller.my) return;
+
+    const rcl = room.controller.level;
+
+    // RCL1: No progression state, just pass null to RoomStateManager
+    if (rcl === 1) {
+      RoomStateManager.run(room, null);
+      return;
+    }
+
+    // RCL2+: Analyze progression state
+    const progressionState = this.detectRCL2State(room);
+
+    // Initialize stats tracking on first run
+    StatsTracker.initializeRoom(room.name);
+
+    // Track phase transitions
+    const stats = Memory.progressionStats?.[room.name];
+    if (stats && stats.currentPhase !== progressionState.phase) {
+      StatsTracker.recordPhaseTransition(room.name, progressionState.phase);
+    }
+
+    // Record milestones and take snapshots
+    StatsTracker.recordMilestones(room, progressionState);
+    StatsTracker.takeSnapshot(room, progressionState);
+
+    // Convert upgraders to builders during Phase 1-3 (prevent source congestion)
+    if (progressionState.phase === RCL2Phase.PHASE_1_CONTAINERS ||
+        progressionState.phase === RCL2Phase.PHASE_2_EXTENSIONS ||
+        progressionState.phase === RCL2Phase.PHASE_3_ROADS) {
+      this.convertUpgradersToBuilders(room);
+    }
+
+    // Convert builders back to upgraders in Phase 4+ (infrastructure complete)
+    if (progressionState.phase === RCL2Phase.COMPLETE) {
+      this.convertBuildersToUpgraders(room);
+    }
+
+    // Display progression status periodically
+    if (Game.time % 50 === 0) {
+      this.displayStatus(room, progressionState);
+    }
+
+    // Delegate execution to RoomStateManager
+    RoomStateManager.run(room, progressionState);
+  }
+
   /**
    * Convert upgraders to builders when construction is needed
    * NO UPGRADERS during Phase 1-3 to prevent source traffic congestion

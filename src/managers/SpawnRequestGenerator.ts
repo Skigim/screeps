@@ -1,14 +1,14 @@
 /**
- * Spawn Request System
+ * Spawn Request System - PURE FUNCTION
  * Generates spawn requests based on actual room conditions
- * Uses RCL configs for body parts and behaviors
- * Calculates counts dynamically based on room state
+ *
+ * This module NO LONGER reads from Game objects directly.
+ * All data is passed in from RoomStateManager.
  */
 
 import type { RCLConfig } from "configs/RCL1Config";
 import { AssignmentManager } from "./AssignmentManager";
-import { RoomStateManager } from "./RoomStateManager";
-import { ProgressionManager } from "./ProgressionManager";
+import type { ProgressionState } from "./ProgressionManager";
 import { PromotionManager } from "./PromotionManager";
 
 export interface SpawnRequest {
@@ -21,53 +21,18 @@ export interface SpawnRequest {
 
 export class SpawnRequestGenerator {
   /**
-   * Determine if room should use aggressive scaling (spawn max-size creeps)
-   * Conditions:
-   * 1. Both sources have full harvester + hauler assignment load
-   * 2. All extensions are built (no construction sites for extensions)
-   *
-   * When these conditions are met, economy is stable enough to spawn largest creeps
+   * Generate all spawn requests for a room - PURE FUNCTION
+   * @param room - The room (used only for creep counts and basic state)
+   * @param config - The RCL configuration (passed from RoomStateManager)
+   * @param progressionState - The progression state (passed from RoomStateManager, may be null for RCL1)
+   * @returns Array of prioritized spawn requests
    */
-  private static shouldUseAggressiveScaling(room: Room): boolean {
-    const sources = room.find(FIND_SOURCES);
-    const coverage = AssignmentManager.getSourceCoverage(room);
-
-    // Condition 1: Both sources fully assigned
-    // Each source needs at least 1 harvester + 1 hauler
-    const sourcesFullyAssigned = coverage.uncoveredByHarvesters.length === 0 &&
-                                 coverage.uncoveredByHaulers.length === 0;
-
-    // Condition 2: All extensions built (no extension construction sites)
-    const extensionSites = room.find(FIND_CONSTRUCTION_SITES, {
-      filter: site => site.structureType === STRUCTURE_EXTENSION
-    });
-    const allExtensionsBuilt = extensionSites.length === 0;
-
-    return sourcesFullyAssigned && allExtensionsBuilt;
-  }
-
-  /**
-   * Get energy capacity to use for body generation
-   * Uses energyCapacityAvailable when in aggressive mode, energyAvailable otherwise
-   */
-  private static getEnergyForBodyGeneration(room: Room): number {
-    return this.shouldUseAggressiveScaling(room)
-      ? room.energyCapacityAvailable
-      : room.energyAvailable;
-  }
-
-  /**
-   * Generate all spawn requests for a room
-   */
-  public static generateRequests(room: Room): SpawnRequest[] {
+  public static generateRequests(
+    room: Room,
+    config: RCLConfig,
+    progressionState: ProgressionState | null
+  ): SpawnRequest[] {
     const requests: SpawnRequest[] = [];
-    const config = RoomStateManager.getConfigForRoom(room);
-
-    // Null check - if no config available, return empty requests
-    if (!config) {
-      console.log(`[SpawnRequestGenerator] No config found for room ${room.name}`);
-      return requests;
-    }
 
     // HIGHEST PRIORITY: Check for pending promotions
     if (PromotionManager.hasPendingPromotions(room)) {
@@ -131,7 +96,7 @@ export class SpawnRequestGenerator {
     }
 
     // RCL2+: Full spawn request system
-    const progressionState = RoomStateManager.getProgressionState(room.name);
+    // progressionState is passed in from RoomStateManager
 
     // Always generate harvester requests first
     requests.push(...this.requestHarvesters(room, config, progressionState));
@@ -166,6 +131,42 @@ export class SpawnRequestGenerator {
     }
 
     return requests;
+  }
+
+  /**
+   * Determine if room should use aggressive scaling (spawn max-size creeps)
+   * Conditions:
+   * 1. Both sources have full harvester + hauler assignment load
+   * 2. All extensions are built (no construction sites for extensions)
+   *
+   * When these conditions are met, economy is stable enough to spawn largest creeps
+   */
+  private static shouldUseAggressiveScaling(room: Room): boolean {
+    const sources = room.find(FIND_SOURCES);
+    const coverage = AssignmentManager.getSourceCoverage(room);
+
+    // Condition 1: Both sources fully assigned
+    // Each source needs at least 1 harvester + 1 hauler
+    const sourcesFullyAssigned = coverage.uncoveredByHarvesters.length === 0 &&
+                                 coverage.uncoveredByHaulers.length === 0;
+
+    // Condition 2: All extensions built (no extension construction sites)
+    const extensionSites = room.find(FIND_CONSTRUCTION_SITES, {
+      filter: site => site.structureType === STRUCTURE_EXTENSION
+    });
+    const allExtensionsBuilt = extensionSites.length === 0;
+
+    return sourcesFullyAssigned && allExtensionsBuilt;
+  }
+
+  /**
+   * Get energy capacity to use for body generation
+   * Uses energyCapacityAvailable when in aggressive mode, energyAvailable otherwise
+   */
+  private static getEnergyForBodyGeneration(room: Room): number {
+    return this.shouldUseAggressiveScaling(room)
+      ? room.energyCapacityAvailable
+      : room.energyAvailable;
   }
 
   /**

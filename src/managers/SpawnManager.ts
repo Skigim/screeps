@@ -1,16 +1,32 @@
 import type { SpawnRequest } from "./SpawnRequestGenerator";
 import { SpawnRequestGenerator } from "./SpawnRequestGenerator";
 import { PromotionManager } from "./PromotionManager";
+import { CreepBodyGenerator } from "./CreepBodyGenerator";
+import { CreepBehaviorManager } from "./CreepBehaviorManager";
+import type { RCLConfig } from "configs/RCL1Config";
+import type { ProgressionState } from "./ProgressionManager";
 
 /**
- * Spawn Manager - Demand-Based Spawning
- * Evaluates spawn requests and spawns creeps based on actual room needs
+ * Spawn Manager - Orchestrates Creep Spawning
+ *
+ * Receives data from RoomStateManager and orchestrates the spawn process:
+ * 1. Get spawn requests from SpawnRequestGenerator
+ * 2. Generate body parts via CreepBodyGenerator
+ * 3. Get initial memory via CreepBehaviorManager
+ * 4. Execute spawn
  */
 export class SpawnManager {
   /**
-   * Main spawn logic - evaluates requests and spawns
+   * Main spawn logic - orchestrates the spawn process
+   * @param spawn - The spawn structure
+   * @param config - The RCL configuration (passed from RoomStateManager)
+   * @param progressionState - The progression state (passed from RoomStateManager, may be null for RCL1)
    */
-  public static run(spawn: StructureSpawn): void {
+  public static run(
+    spawn: StructureSpawn,
+    config: RCLConfig,
+    progressionState: ProgressionState | null
+  ): void {
     // Don't spawn if already spawning
     if (spawn.spawning) {
       this.displaySpawningStatus(spawn);
@@ -19,8 +35,8 @@ export class SpawnManager {
 
     const room = spawn.room;
 
-    // Generate spawn requests based on room conditions
-    const requests = SpawnRequestGenerator.generateRequests(room);
+    // Generate spawn requests - PASS DATA DOWN (config + progressionState)
+    const requests = SpawnRequestGenerator.generateRequests(room, config, progressionState);
 
     // Display status periodically
     if (Game.time % 10 === 0) {
@@ -28,13 +44,18 @@ export class SpawnManager {
     }
 
     // Process requests by priority
-    this.processRequests(spawn, requests);
+    this.processRequests(spawn, requests, config, progressionState);
   }
 
   /**
    * Process spawn requests in priority order
    */
-  private static processRequests(spawn: StructureSpawn, requests: SpawnRequest[]): void {
+  private static processRequests(
+    spawn: StructureSpawn,
+    requests: SpawnRequest[],
+    config: RCLConfig,
+    progressionState: ProgressionState | null
+  ): void {
     if (requests.length === 0) {
       return; // No requests
     }
@@ -50,7 +71,7 @@ export class SpawnManager {
     if (totalCreeps === 0) {
       console.log("⚠️ CRITICAL: No creeps alive! Spawning emergency creep");
       const firstRequest = sortedRequests[0];
-      this.spawnFromRequest(spawn, firstRequest);
+      this.spawnFromRequest(spawn, firstRequest, config, progressionState);
       return;
     }
 
@@ -61,7 +82,7 @@ export class SpawnManager {
       const minEnergy = request.minEnergy || bodyCost;
 
       if (spawn.room.energyAvailable >= minEnergy) {
-        const result = this.spawnFromRequest(spawn, request);
+        const result = this.spawnFromRequest(spawn, request, config, progressionState);
 
         if (result === OK) {
           return; // Successfully spawned
@@ -73,17 +94,26 @@ export class SpawnManager {
   }
 
   /**
-   * Spawn a creep from a request
+   * Spawn a creep from a request - ORCHESTRATES the creation process
+   * Uses the new specialized managers to build the creep
    */
-  private static spawnFromRequest(spawn: StructureSpawn, request: SpawnRequest): ScreepsReturnCode {
+  private static spawnFromRequest(
+    spawn: StructureSpawn,
+    request: SpawnRequest,
+    config: RCLConfig,
+    progressionState: ProgressionState | null
+  ): ScreepsReturnCode {
     const name = this.generateCreepName(request.role);
 
+    // Get initial memory from BehaviorManager
+    const initialMemory = CreepBehaviorManager.getInitialMemory(
+      request.role,
+      spawn.room.name,
+      progressionState
+    );
+
     const result = spawn.spawnCreep(request.body, name, {
-      memory: {
-        role: request.role,
-        room: spawn.room.name,
-        working: false
-      }
+      memory: initialMemory
     });
 
     if (result === OK) {

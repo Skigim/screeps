@@ -8,8 +8,17 @@ import { ProgressionManager, RCL2Phase, type ProgressionState } from "./Progress
 import { StatsTracker } from "./StatsTracker";
 
 /**
- * Room State Manager - RCL-based state machine
- * Orchestrates all room-level managers based on RCL configuration
+ * Room State Manager - Tactical Executor
+ *
+ * Receives analyzed state from ProgressionManager and executes room operations
+ *
+ * Responsibilities:
+ * 1. Get RCL config
+ * 2. Execute managers (Spawn, Assignment, Architect)
+ * 3. Display status
+ *
+ * This manager is the "executor" that carries out tasks based on the
+ * progression state determined by ProgressionManager.
  */
 export class RoomStateManager {
   // Map of RCL configs (centralized here instead of SpawnManager)
@@ -22,13 +31,15 @@ export class RoomStateManager {
   // Cache configs by room name for creep access
   private static roomConfigs: Map<string, RCLConfig> = new Map();
 
-  // Cache progression states for each room
-  private static progressionStates: Map<string, ProgressionState> = new Map();
+  // Cache progression states for each room (for creep access)
+  private static progressionStates: Map<string, ProgressionState | null> = new Map();
 
   /**
-   * Main state machine - runs all managers for a room
+   * Main executor - runs all managers for a room
+   * @param room - The room to manage
+   * @param progressionState - The progression state (passed from ProgressionManager, may be null for RCL1)
    */
-  public static run(room: Room): void {
+  public static run(room: Room, progressionState: ProgressionState | null): void {
     if (!room.controller || !room.controller.my) return;
 
     const config = this.getConfigForRoom(room);
@@ -37,49 +48,17 @@ export class RoomStateManager {
       return;
     }
 
-    // Cache config for creeps to access
+    // Cache config and state for creeps to access
     this.roomConfigs.set(room.name, config);
-
-    // Detect and cache progression state (RCL 2+)
-    const rcl = room.controller.level;
-    let progressionState: ProgressionState | undefined;
-    if (rcl >= 2) {
-      progressionState = ProgressionManager.detectRCL2State(room);
-      this.progressionStates.set(room.name, progressionState);
-
-      // Initialize stats tracking on first run
-      StatsTracker.initializeRoom(room.name);
-
-      // Track phase transitions
-      const stats = Memory.progressionStats?.[room.name];
-      if (stats && stats.currentPhase !== progressionState.phase) {
-        StatsTracker.recordPhaseTransition(room.name, progressionState.phase);
-      }
-
-      // Record milestones and take snapshots
-      StatsTracker.recordMilestones(room, progressionState);
-      StatsTracker.takeSnapshot(room, progressionState);
-
-      // Convert upgraders to builders during Phase 1-3 (prevent source congestion)
-      if (progressionState.phase === RCL2Phase.PHASE_1_CONTAINERS ||
-          progressionState.phase === RCL2Phase.PHASE_2_EXTENSIONS ||
-          progressionState.phase === RCL2Phase.PHASE_3_ROADS) {
-        ProgressionManager.convertUpgradersToBuilders(room);
-      }
-
-      // Convert builders back to upgraders in Phase 4+ (infrastructure complete)
-      if (progressionState.phase === RCL2Phase.COMPLETE) {
-        ProgressionManager.convertBuildersToUpgraders(room);
-      }
-    }
+    this.progressionStates.set(room.name, progressionState);
 
     // Get primary spawn
     const spawns = room.find(FIND_MY_SPAWNS);
     if (spawns.length === 0) return;
     const spawn = spawns[0];
 
-    // Run spawn manager (demand-based, no config needed)
-    SpawnManager.run(spawn);
+    // Run spawn manager - PASS DATA DOWN (config + progressionState)
+    SpawnManager.run(spawn, config, progressionState);
 
     // Run assignment manager
     AssignmentManager.run(room, config);
@@ -90,11 +69,6 @@ export class RoomStateManager {
     // Display status periodically
     if (Game.time % 50 === 0) {
       this.displayRoomStatus(room, config);
-
-      // Display progression status for RCL 2+
-      if (progressionState) {
-        ProgressionManager.displayStatus(room, progressionState);
-      }
     }
   }
 
