@@ -129,24 +129,25 @@ const assignOrder = (
   snapshot: RoomSenseSnapshot
 ): { changed: boolean; idle: boolean; order: BasicOrder } => {
   ensureHeapMaps();
-  const isEmpty = creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0;
+  const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+  const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+  const isEmpty = used === 0;
+  const isFull = free === 0;
   const controller = room.controller;
   let orderType = "IDLE";
   let targetId: Id<any> | undefined;
   const refillTarget = findRefillTarget(snapshot);
   const targetPos = refillTarget ? refillTarget.pos : controller?.pos;
   const posKey = targetPos ? `${targetPos.x},${targetPos.y},${targetPos.roomName}` : undefined;
+  const harvestTarget = snapshot.sources.find(source => source.energy > 0);
 
-  if (isEmpty) {
-    const source = snapshot.sources[0];
-    if (source) {
-      orderType = "HARVEST";
-      targetId = source.id;
-    }
-  } else if (refillTarget) {
+  if (!isFull && harvestTarget) {
+    orderType = "HARVEST";
+    targetId = harvestTarget.id;
+  } else if (!isEmpty && refillTarget) {
     orderType = "TRANSFER";
     targetId = refillTarget.id as Id<any>;
-  } else if (controller) {
+  } else if (!isEmpty && controller) {
     orderType = "UPGRADE";
     targetId = controller.id as Id<any>;
   }

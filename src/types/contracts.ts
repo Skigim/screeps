@@ -65,4 +65,6 @@ export type RoomEngineMemory = {
   lastStartCommandTick?: number;
   lastStopCommandTick?: number;
   lastStatusLogTick?: number;
+  logBuffer?: string[];
+  lastLogSignature?: string;
 };

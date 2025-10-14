@@ -92,13 +92,53 @@ const decide = (room: Room, policy: Policy): Directives => {
   return directives;
 };
 
+const appendLog = (room: Room, tag: string, body: string): void => {
+  const memory = room.memory as RoomMemory & { engine?: RoomEngineMemory };
+  if (!memory.engine) {
+    memory.engine = { enabled: false };
+  }
+
+  if (!memory.engine.logBuffer) {
+    memory.engine.logBuffer = [];
+  }
+
+  const line = `[${tag} ${room.name}] ${body}`;
+  const signature = `${tag}:${body}`;
+
+  if (memory.engine.lastLogSignature === signature) {
+    return;
+  }
+
+  memory.engine.lastLogSignature = signature;
+  memory.engine.logBuffer.push(line);
+
+  if (memory.engine.logBuffer.length > 12) {
+    memory.engine.logBuffer.splice(0, memory.engine.logBuffer.length - 12);
+  }
+};
+
+const flushLogs = (room: Room): void => {
+  const memory = room.memory as RoomMemory & { engine?: RoomEngineMemory };
+  const engine = memory.engine;
+  if (!engine || !engine.logBuffer || engine.logBuffer.length === 0) {
+    return;
+  }
+
+  for (const line of engine.logBuffer) {
+    console.log(line);
+  }
+
+  engine.logBuffer = [];
+  engine.lastLogSignature = undefined;
+};
+
 const logSense = (room: Room, snapshot: RoomSenseSnapshot): void => {
   const metrics = [
     `energy=${snapshot.energyAvailable}/${snapshot.energyCapacityAvailable}`,
     `workers=${snapshot.myCreeps.length}`,
     `hostiles=${snapshot.hostiles.length}`
   ].join(" ");
-  console.log(`[Survey ${room.name}] ${metrics}`);
+  appendLog(room, "Survey", metrics);
 };
 
 const logSynthesize = (room: Room, policy: Policy): void => {
@@ -107,13 +147,11 @@ const logSynthesize = (room: Room, policy: Policy): void => {
     `threat=${policy.threatLevel}`,
     `nav.move=${policy.nav.moveRatioHint}`
   ].join(" ");
-  console.log(`[Council ${room.name}] policy: ${summary}`);
+  appendLog(room, "Council", `policy: ${summary}`);
 };
 
 const logDecide = (room: Room, directives: Directives): void => {
-  console.log(
-    `[Mayor ${room.name}] directives: refill=${directives.refill.slaTicks} upgrade=${directives.upgrade.mode}`
-  );
+  appendLog(room, "Mayor", `directives: refill=${directives.refill.slaTicks} upgrade=${directives.upgrade.mode}`);
 };
 
 const logAct = (room: Room, report: WorkerSquadReport): void => {
@@ -124,7 +162,7 @@ const logAct = (room: Room, report: WorkerSquadReport): void => {
     `ordersChanged=${report.ordersChanged}`,
     `idlePct=${report.idlePct.toFixed(2)}`
   ].join(" ");
-  console.log(`[Foreman ${room.name}] ${details}`);
+  appendLog(room, "Foreman", details);
 };
 
 const logChronicler = (room: Room, context: TickContext, report: WorkerSquadReport): void => {
@@ -141,7 +179,7 @@ const logChronicler = (room: Room, context: TickContext, report: WorkerSquadRepo
     `refillSLA.median=${refillMedian}`,
     `alerts=${alerts.length}`
   ].join(" ");
-  console.log(`[Chronicler ${room.name}] ${chronicle}`);
+  appendLog(room, "Chronicler", chronicle);
 };
 
 const act = (room: Room, context: TickContext): WorkerSquadReport => {
@@ -212,6 +250,10 @@ export const runTick = (): void => {
 
     if (Game.time % 100 === 0) {
       logChronicler(room, tickContext, report);
+    }
+
+    if (Game.time % 25 === 0) {
+      flushLogs(room);
     }
   }
 };
