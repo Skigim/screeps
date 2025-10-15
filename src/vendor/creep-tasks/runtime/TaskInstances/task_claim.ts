@@ -5,7 +5,10 @@ export type claimTargetType = StructureController;
 
 export class TaskClaim extends Task {
     public static taskName = 'claim';
-    public target: claimTargetType | null = null;
+
+    public get target(): claimTargetType | null {
+        return super.target as claimTargetType | null;
+    }
 
     constructor(target: claimTargetType, options: TaskOptions = {}) {
         super(TaskClaim.taskName, target, options);

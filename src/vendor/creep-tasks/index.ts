@@ -3,6 +3,9 @@
  * Provides a small subset of task functionality tailored for the RCL1 worker squad.
  */
 
+import type { Task as RuntimeTask } from "./runtime/Task";
+import { initializeTask } from "./runtime/utilities/initializer";
+
 type TaskName = "harvest" | "transfer" | "upgrade" | "goTo";
 
 export type TaskMemory = {
@@ -22,6 +25,8 @@ export interface TaskInstance<TTarget = any> {
 
 type TaskFactory = (proto: TaskMemory) => TaskInstance;
 
+type AnyTaskInstance = TaskInstance | RuntimeTask | ITask;
+
 const isRoomObject = (value: unknown): value is RoomObject => {
 	return typeof value === "object" && value !== null && "pos" in (value as Record<string, unknown>);
 };
@@ -29,6 +34,10 @@ const isRoomObject = (value: unknown): value is RoomObject => {
 const MOVE_OPTS: MoveToOpts = { reusePath: 5, visualizePathStyle: { stroke: "#ffaa00" } };
 
 const registry = new Map<TaskName, TaskFactory>();
+
+const isRuntimeProto = (value: TaskMemory | protoTask): value is protoTask => {
+	return value !== null && typeof value === "object" && "_creep" in value && "_target" in value;
+};
 
 const getTargetById = <T extends _HasId>(id?: Id<T>): T | null => {
 	if (typeof Game === "undefined" || !id) {
@@ -38,12 +47,12 @@ const getTargetById = <T extends _HasId>(id?: Id<T>): T | null => {
 };
 
 const clearTask = (creep: Creep): void => {
-	delete (creep.memory as CreepMemory & { task?: TaskMemory }).task;
-	(creep as Creep & { _task?: TaskInstance | null })._task = null;
+	delete (creep.memory as CreepMemory & { task?: TaskMemory | protoTask }).task;
+	(creep as Creep & { _task?: AnyTaskInstance | null })._task = null;
 };
 
 abstract class BaseTask<TTarget extends RoomObject | RoomPosition> implements TaskInstance<TTarget> {
-	protected creep: (Creep & { _task?: TaskInstance | null }) | null = null;
+	protected creep: (Creep & { _task?: AnyTaskInstance | null }) | null = null;
 
 	public constructor(public readonly proto: TaskMemory) {}
 
@@ -52,7 +61,7 @@ abstract class BaseTask<TTarget extends RoomObject | RoomPosition> implements Ta
 	}
 
 	public assign(creep: Creep): void {
-		this.creep = creep as Creep & { _task?: TaskInstance | null };
+		this.creep = creep as Creep & { _task?: AnyTaskInstance | null };
 		this.creep._task = this;
 	}
 
@@ -297,42 +306,54 @@ const installPrototypes = (): void => {
 		return;
 	}
 
-	const creepProto = Creep.prototype as Creep & { _task?: TaskInstance | null; runTask?: () => ScreepsReturnCode };
+	const creepProto = Creep.prototype as Creep & { _task?: AnyTaskInstance | null; runTask?: () => ScreepsReturnCode };
 	if (!Object.getOwnPropertyDescriptor(creepProto, "task")) {
 		Object.defineProperty(creepProto, "task", {
-			get(this: Creep & { _task?: TaskInstance | null }): TaskInstance | null {
+				get(this: Creep & { _task?: AnyTaskInstance | null }): AnyTaskInstance | null {
 				if (this._task) {
 					return this._task;
 				}
-				const stored = (this.memory as CreepMemory & { task?: TaskMemory }).task;
+					const stored = (this.memory as CreepMemory & { task?: TaskMemory | protoTask }).task;
 				if (!stored) {
 					return null;
 				}
-				const task = instantiateTask(this, stored);
+					if (isRuntimeProto(stored)) {
+						const runtimeTask = initializeTask(stored);
+						runtimeTask.creep = this;
+						this._task = runtimeTask;
+						return runtimeTask;
+					}
+					const task = instantiateTask(this, stored as TaskMemory);
 				if (!task) {
-					delete (this.memory as CreepMemory & { task?: TaskMemory }).task;
+						delete (this.memory as CreepMemory & { task?: TaskMemory | protoTask }).task;
 					return null;
 				}
 				return task;
 			},
-			set(this: Creep & { _task?: TaskInstance | null }, task: TaskInstance | null) {
+				set(this: Creep & { _task?: AnyTaskInstance | null }, task: AnyTaskInstance | null) {
 				if (!task) {
 					clearTask(this);
 					return;
 				}
-				task.assign(this);
-				(this.memory as CreepMemory & { task?: TaskMemory }).task = task.proto;
+					if (typeof (task as TaskInstance).assign === "function") {
+						(task as TaskInstance).assign(this);
+					} else if ((task as RuntimeTask).creep !== this) {
+						(task as RuntimeTask).creep = this;
+					}
+					(this.memory as CreepMemory & { task?: TaskMemory | protoTask }).task = task.proto as TaskMemory | protoTask;
+					this._task = task;
 			}
 		});
 	}
 
 	if (typeof creepProto.runTask !== "function") {
-		creepProto.runTask = function runTask(this: Creep & { task?: TaskInstance | null }): ScreepsReturnCode {
+			creepProto.runTask = function runTask(this: Creep & { task?: AnyTaskInstance | null }): ScreepsReturnCode {
 			const task = this.task;
 			if (!task) {
 				return ERR_INVALID_TARGET;
 			}
-			return task.run();
+				const result = task.run();
+				return typeof result === "number" ? (result as ScreepsReturnCode) : OK;
 		};
 	}
 };

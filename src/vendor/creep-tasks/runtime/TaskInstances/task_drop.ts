@@ -1,10 +1,26 @@
 // TaskDrop: drops a resource at a position
 import { Task } from '../Task';
+import { derefRoomPosition } from '../utilities/helpers';
 
 export type dropTargetType = { pos: RoomPosition } | RoomPosition;
+type dropResolvedTarget = RoomPosition;
 
 export class TaskDrop extends Task {
     public static taskName = 'drop';
+
+    public get target(): dropResolvedTarget | null {
+        const resolvedTarget = super.target;
+        if (resolvedTarget instanceof RoomPosition) {
+            return resolvedTarget;
+        }
+        if (resolvedTarget) {
+            return resolvedTarget.pos;
+        }
+        if (!this._target._pos.roomName) {
+            return null;
+        }
+        return derefRoomPosition(this._target._pos);
+    }
 
     constructor(target: dropTargetType, resourceType: ResourceConstant = RESOURCE_ENERGY, amount: number | undefined = undefined, options: TaskOptions = {}) {
         if (target instanceof RoomPosition) {

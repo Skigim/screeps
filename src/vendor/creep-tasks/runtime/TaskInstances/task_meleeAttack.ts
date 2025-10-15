@@ -4,7 +4,10 @@ export type meleeAttackTargetType = Creep | Structure;
 
 export class TaskMeleeAttack extends Task {
     public static taskName = 'meleeAttack';
-    public target: meleeAttackTargetType | null = null;
+
+    public get target(): meleeAttackTargetType | null {
+        return super.target as meleeAttackTargetType | null;
+    }
 
     constructor(target: meleeAttackTargetType, options: TaskOptions = {}) {
         super(TaskMeleeAttack.taskName, target, options);

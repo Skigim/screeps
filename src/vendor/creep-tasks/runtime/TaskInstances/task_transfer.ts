@@ -5,7 +5,10 @@ export type transferTargetType = Structure | Creep;
 
 export class TaskTransfer extends Task {
     public static taskName = 'transfer';
-    public target: transferTargetType | null = null;
+
+    public get target(): transferTargetType | null {
+        return super.target as transferTargetType | null;
+    }
 
     constructor(target: transferTargetType, resourceType: ResourceConstant = RESOURCE_ENERGY, amount: number | undefined = undefined, options: TaskOptions = {}) {
         super(TaskTransfer.taskName, target, options);
@@ -27,9 +30,11 @@ export class TaskTransfer extends Task {
         if (!target) return false;
 
         if (target instanceof Creep) {
-            return _.sum(target.carry) <= target.carryCapacity - amount;
+            const freeCapacity = target.store.getFreeCapacity(this.data.resourceType as ResourceConstant);
+            return (freeCapacity ?? 0) >= amount;
         } else if (isStoreStructure(target)) {
-            return _.sum(target.store) <= target.storeCapacity - amount;
+            const freeCapacity = target.store.getFreeCapacity(this.data.resourceType as ResourceConstant);
+            return (freeCapacity ?? 0) >= amount;
         } else if (isEnergyStructure(target) && this.data.resourceType === RESOURCE_ENERGY) {
             return target.energy <= target.energyCapacity - amount;
         } else {

@@ -4,7 +4,10 @@ export type signControllerTargetType = StructureController;
 
 export class TaskSignController extends Task {
     public static taskName = 'signController';
-    public target: signControllerTargetType | null = null;
+
+    public get target(): signControllerTargetType | null {
+        return super.target as signControllerTargetType | null;
+    }
 
     constructor(target: signControllerTargetType, signature = 'Your signature here', options: TaskOptions = {}) {
         super(TaskSignController.taskName, target, options);
@@ -17,10 +20,11 @@ export class TaskSignController extends Task {
 
     isValidTarget(): boolean {
         const controller = this.target;
-        return !!(controller && (!controller.sign || controller.sign.text !== this.data.signature));
+        const signature = this.data.signature as string | undefined;
+        return !!(controller && (!controller.sign || controller.sign.text !== signature));
     }
 
     work(): number {
-        return this.creep.signController(this.target!, this.data.signature!);
+        return this.creep.signController(this.target!, this.data.signature as string);
     }
 }

@@ -4,7 +4,10 @@ export type repairTargetType = Structure;
 
 export class TaskRepair extends Task {
     public static taskName = 'repair';
-    public target: repairTargetType | null = null;
+
+    public get target(): repairTargetType | null {
+        return super.target as repairTargetType | null;
+    }
 
     constructor(target: repairTargetType, options: TaskOptions = {}) {
         super(TaskRepair.taskName, target, options);

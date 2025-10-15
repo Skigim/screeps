@@ -4,7 +4,10 @@ export type pickupTargetType = Resource;
 
 export class TaskPickup extends Task {
     public static taskName = 'pickup';
-    public target: pickupTargetType | null = null;
+
+    public get target(): pickupTargetType | null {
+        return super.target as pickupTargetType | null;
+    }
 
     constructor(target: pickupTargetType, options: TaskOptions = {}) {
         super(TaskPickup.taskName, target, options);
@@ -12,7 +15,7 @@ export class TaskPickup extends Task {
     }
 
     isValidTask(): boolean {
-        return _.sum(this.creep.carry) < this.creep.carryCapacity;
+        return this.creep.store.getFreeCapacity() > 0;
     }
 
     isValidTarget(): boolean {

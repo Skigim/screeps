@@ -4,7 +4,10 @@ export type rangedAttackTargetType = Creep | Structure;
 
 export class TaskRangedAttack extends Task {
     public static taskName = 'rangedAttack';
-    public target: rangedAttackTargetType | null = null;
+
+    public get target(): rangedAttackTargetType | null {
+        return super.target as rangedAttackTargetType | null;
+    }
 
     constructor(target: rangedAttackTargetType, options: TaskOptions = {}) {
         super(TaskRangedAttack.taskName, target, options);

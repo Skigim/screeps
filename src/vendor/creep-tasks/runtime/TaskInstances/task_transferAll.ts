@@ -1,13 +1,19 @@
 import { Task } from '../Task';
 
-export type transferAllTargetType = StructureStorage | StructureTerminal | StructureContainer;
+export type transferAllTargetType = Structure & {
+    store: StoreDefinition | Store<ResourceConstant, false> | Store<ResourceConstant, true>;
+    storeCapacity?: number;
+};
 
 export class TaskTransferAll extends Task {
     public static taskName = 'transferAll';
-    public target: transferAllTargetType | null = null;
+
+    public get target(): transferAllTargetType | null {
+        return super.target as transferAllTargetType | null;
+    }
 
     constructor(target: transferAllTargetType, skipEnergy = false, options: TaskOptions = {}) {
-        super(TaskTransferAll.taskName, target, options);
+        super(TaskTransferAll.taskName, target as any, options);
         this.data.skipEnergy = skipEnergy;
     }
 
@@ -25,7 +31,17 @@ export class TaskTransferAll extends Task {
     }
 
     isValidTarget(): boolean {
-        return !!(this.target && _.sum(this.target.store) < this.target.storeCapacity);
+        if (!this.target) {
+            return false;
+        }
+    const store = this.target.store as any;
+        if (store && typeof store.getFreeCapacity === 'function') {
+            return (store.getFreeCapacity() ?? 0) > 0;
+        }
+        if (typeof this.target.storeCapacity === 'number') {
+            return _.sum(store as any) < this.target.storeCapacity;
+        }
+        return false;
     }
 
     work(): number {

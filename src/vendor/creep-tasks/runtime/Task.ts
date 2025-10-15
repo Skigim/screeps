@@ -12,6 +12,7 @@
  * If you use Traveler, change all occurrences of creep.moveTo() to creep.travelTo()
  */
 
+import './types';
 import { initializeTask } from './utilities/initializer';
 import { deref, derefRoomPosition } from './utilities/helpers';
 
@@ -110,15 +111,24 @@ export abstract class Task implements ITask {
     }
 
     // Dereferences the target
-    get target(): RoomObject | null {
-        return deref(this._target.ref);
+    get target(): RoomObject | RoomPosition | null {
+        const roomObject = deref(this._target.ref);
+        if (roomObject) {
+            return roomObject;
+        }
+        if (this._target._pos.roomName) {
+            return derefRoomPosition(this._target._pos);
+        }
+        return null;
     }
 
     // Dereferences the saved target position; useful for situations where you might lose vision
     get targetPos(): RoomPosition {
         // refresh if you have visibility of the target
-        if (this.target) {
-            this._target._pos = this.target.pos;
+        const roomObject = deref(this._target.ref);
+        if (roomObject) {
+            this._target._pos = roomObject.pos;
+            return roomObject.pos;
         }
         return derefRoomPosition(this._target._pos);
     }
@@ -219,6 +229,7 @@ export abstract class Task implements ITask {
             return this.creep.moveTo(nextPos);
             // return this.creep.travelTo(nextPos); // <- switch if you use Traveler
         }
+        return undefined;
     }
 
     // Return expected number of ticks until creep arrives at its first destination; this requires Traveler to work!
@@ -226,6 +237,7 @@ export abstract class Task implements ITask {
         if (this.creep && (this.creep.memory as any)._trav) {
             return (this.creep.memory as any)._trav.path.length;
         }
+        return undefined;
     }
 
     // Execute this task each tick. Returns nothing unless work is done.
@@ -243,6 +255,7 @@ export abstract class Task implements ITask {
         } else {
             this.moveToTarget();
         }
+        return undefined;
     }
 
     /* Bundled form of Zerg.park(); adapted from BonzAI codebase*/

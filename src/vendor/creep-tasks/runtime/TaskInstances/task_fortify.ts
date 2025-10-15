@@ -4,7 +4,10 @@ export type fortifyTargetType = StructureWall | StructureRampart;
 
 export class TaskFortify extends Task {
     public static taskName = 'fortify';
-    public target: fortifyTargetType | null = null;
+
+    public get target(): fortifyTargetType | null {
+        return super.target as fortifyTargetType | null;
+    }
 
     constructor(target: fortifyTargetType, options: TaskOptions = {}) {
         super(TaskFortify.taskName, target, options);

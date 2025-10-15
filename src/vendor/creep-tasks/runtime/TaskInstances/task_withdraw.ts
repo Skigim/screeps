@@ -6,7 +6,10 @@ export type withdrawTargetType = Structure | Tombstone;
 
 export class TaskWithdraw extends Task {
     public static taskName = 'withdraw';
-    public target: withdrawTargetType | null = null;
+
+    public get target(): withdrawTargetType | null {
+        return super.target as withdrawTargetType | null;
+    }
 
     constructor(target: withdrawTargetType, resourceType: ResourceConstant = RESOURCE_ENERGY, amount: number | undefined = undefined, options: TaskOptions = {}) {
         super(TaskWithdraw.taskName, target, options);
@@ -18,7 +21,8 @@ export class TaskWithdraw extends Task {
 
     isValidTask(): boolean {
         const amount = this.data.amount || 1;
-        return (_.sum(this.creep.carry) <= this.creep.carryCapacity - amount);
+        const freeCapacity = this.creep.store.getFreeCapacity(this.data.resourceType as ResourceConstant);
+        return (freeCapacity ?? 0) >= amount;
     }
 
     isValidTarget(): boolean {

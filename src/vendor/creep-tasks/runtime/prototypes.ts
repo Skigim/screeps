@@ -1,55 +1,66 @@
 // This binds a getter/setter creep.task property
 
+import './types';
+import type { TaskMemory } from '../index';
 import { initializeTask } from './utilities/initializer';
 import { TargetCache } from './utilities/caching';
+import { isRuntimeProto } from './utilities/typeGuards';
 
 Object.defineProperty(Creep.prototype, 'task', {
     get(this: Creep & { _task?: ITask | null }): ITask | null {
         if (!this._task) {
-            const protoTask = this.memory.task;
-            this._task = protoTask ? initializeTask(protoTask) : null;
+            const memory = this.memory as CreepMemory & { task?: TaskMemory | protoTask };
+            const stored = memory.task;
+            if (stored && isRuntimeProto(stored)) {
+                this._task = initializeTask(stored);
+            } else {
+                this._task = null;
+            }
         }
-        return this._task;
+        return this._task || null;
     },
     set(this: Creep & { _task?: ITask | null }, task: ITask | null) {
         // Assert that there is an up-to-date target cache
         TargetCache.assert();
-        // Unregister target from old task if applicable
-        const oldProtoTask = this.memory.task;
-        if (oldProtoTask) {
-            const oldRef = oldProtoTask._target.ref;
+        const memory = this.memory as CreepMemory & { task?: TaskMemory | protoTask };
+        const previous = memory.task;
+        if (previous && isRuntimeProto(previous)) {
+            const oldRef = previous._target.ref;
             if (Game.TargetCache.targets[oldRef]) {
                 _.remove(Game.TargetCache.targets[oldRef], name => name === this.name);
             }
         }
-        // Set the new task
-        this.memory.task = task ? task.proto : null;
         if (task) {
-            if (task.target) {
-                // Register task target in cache if it is actively targeting something (excludes goTo and similar)
-                if (!Game.TargetCache.targets[task.target.ref]) {
-                    Game.TargetCache.targets[task.target.ref] = [];
+            memory.task = task.proto;
+            const target = task.target;
+            if (target && (target as RoomObject).ref !== undefined) {
+                const targetRef = (target as RoomObject).ref;
+                if (!Game.TargetCache.targets[targetRef]) {
+                    Game.TargetCache.targets[targetRef] = [];
                 }
-                Game.TargetCache.targets[task.target.ref].push(this.name);
+                Game.TargetCache.targets[targetRef].push(this.name);
             }
-            // Register references to creep
             task.creep = this;
+            this._task = task;
+        } else {
+            delete memory.task;
+            this._task = null;
         }
-        // Clear cache
-        this._task = null;
     },
 });
 
 Creep.prototype.run = function (this: Creep): number | void {
-    if (this.task) {
-        return this.task.run();
+    const task = this.task as ITask | null;
+    if (task) {
+        return task.run();
     }
 };
 
 Object.defineProperties(Creep.prototype, {
     'hasValidTask': {
         get(this: Creep): boolean {
-            return !!(this.task && this.task.isValid());
+            const task = this.task as ITask | null;
+            return !!(task && typeof task.isValid === 'function' && task.isValid());
         }
     },
     'isIdle': {

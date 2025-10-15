@@ -4,7 +4,10 @@ export type upgradeTargetType = StructureController;
 
 export class TaskUpgrade extends Task {
     public static taskName = 'upgrade';
-    public target: upgradeTargetType | null = null;
+
+    public get target(): upgradeTargetType | null {
+        return super.target as upgradeTargetType | null;
+    }
 
     constructor(target: upgradeTargetType, options: TaskOptions = {}) {
         super(TaskUpgrade.taskName, target, options);

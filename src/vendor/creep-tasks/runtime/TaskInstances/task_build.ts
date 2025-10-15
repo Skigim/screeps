@@ -5,7 +5,10 @@ export type buildTargetType = ConstructionSite;
 
 export class TaskBuild extends Task {
     public static taskName = 'build';
-    public target: buildTargetType | null = null;
+
+    public get target(): buildTargetType | null {
+        return super.target as buildTargetType | null;
+    }
 
     constructor(target: buildTargetType, options: TaskOptions = {}) {
         super(TaskBuild.taskName, target, options);

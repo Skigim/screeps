@@ -8,14 +8,17 @@ function isSource(obj: any): obj is Source {
 
 export class TaskHarvest extends Task {
     public static taskName = 'harvest';
-    public target: harvestTargetType | null = null;
+
+    public get target(): harvestTargetType | null {
+        return super.target as harvestTargetType | null;
+    }
 
     constructor(target: harvestTargetType, options: TaskOptions = {}) {
         super(TaskHarvest.taskName, target, options);
     }
 
     isValidTask(): boolean {
-        return _.sum(this.creep.carry) < this.creep.carryCapacity;
+        return this.creep.store.getFreeCapacity() > 0;
     }
 
     isValidTarget(): boolean {

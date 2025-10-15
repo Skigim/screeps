@@ -4,7 +4,10 @@ export type reserveTargetType = StructureController;
 
 export class TaskReserve extends Task {
     public static taskName = 'reserve';
-    public target: reserveTargetType | null = null;
+
+    public get target(): reserveTargetType | null {
+        return super.target as reserveTargetType | null;
+    }
 
     constructor(target: reserveTargetType, options: TaskOptions = {}) {
         super(TaskReserve.taskName, target, options);

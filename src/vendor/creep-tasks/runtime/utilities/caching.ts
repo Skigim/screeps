@@ -1,5 +1,9 @@
 // Caches targets every tick to allow for RoomObject.targetedBy property
 
+import './types';
+import type { TaskMemory } from '../../index';
+import { isRuntimeProto } from './typeGuards';
+
 export class TargetCache {
     public targets: { [ref: string]: string[] } = {};
     public tick: number;
@@ -13,7 +17,12 @@ export class TargetCache {
         this.targets = {};
         for (const i in Game.creeps) {
             const creep = Game.creeps[i];
-            let task = creep.memory.task;
+            const memory = creep.memory as CreepMemory & { task?: TaskMemory | protoTask };
+            let task: protoTask | null = null;
+            const stored = memory.task;
+            if (stored && isRuntimeProto(stored)) {
+                task = stored;
+            }
             // Perform a faster, primitive form of _.map(creep.task.manifest, task => task.target.ref)
             while (task) {
                 if (!this.targets[task._target.ref]) {

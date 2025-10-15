@@ -6,7 +6,10 @@ export type attackTargetType = Creep | Structure;
 
 export class TaskAttack extends Task {
     public static taskName = 'attack';
-    public target: attackTargetType | null = null;
+
+    public get target(): attackTargetType | null {
+        return super.target as attackTargetType | null;
+    }
 
     constructor(target: attackTargetType, options: TaskOptions = {}) {
         super(TaskAttack.taskName, target, options);
