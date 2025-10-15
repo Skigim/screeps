@@ -2436,14 +2436,35 @@ const calculateBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_
  * detect churn and maintain traceability back to directives.
  */
 const signatureForTask = (task) => {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     if (!task) {
         return "IDLE";
     }
-    const target = (_a = task.target) !== null && _a !== void 0 ? _a : null;
-    const proto = task.proto;
-    const protoTarget = Reflect.get(proto, "_target");
-    const ref = (_c = (_b = (target && "ref" in target ? target.ref : undefined)) !== null && _b !== void 0 ? _b : protoTarget === null || protoTarget === void 0 ? void 0 : protoTarget.ref) !== null && _c !== void 0 ? _c : "";
+    const taskWithTarget = task;
+    const liveTarget = (_a = taskWithTarget.target) !== null && _a !== void 0 ? _a : null;
+    let ref = "";
+    if (liveTarget) {
+        if ("id" in liveTarget && typeof liveTarget.id === "string") {
+            ref = liveTarget.id;
+        }
+        else if (typeof RoomPosition !== "undefined" && liveTarget instanceof RoomPosition) {
+            ref = `${(_b = liveTarget.roomName) !== null && _b !== void 0 ? _b : ""}:${liveTarget.x}:${liveTarget.y}`;
+        }
+    }
+    if (!ref) {
+        const proto = task.proto;
+        ref = (_c = proto.targetId) !== null && _c !== void 0 ? _c : "";
+        if (!ref) {
+            const runtimeTarget = Reflect.get(proto, "_target");
+            ref = (_d = runtimeTarget === null || runtimeTarget === void 0 ? void 0 : runtimeTarget.ref) !== null && _d !== void 0 ? _d : "";
+            const storedPos = runtimeTarget
+                ? Reflect.get(runtimeTarget, "_pos")
+                : undefined;
+            if (!ref && storedPos) {
+                ref = `${storedPos.roomName}:${storedPos.x}:${storedPos.y}`;
+            }
+        }
+    }
     return `${task.name.toUpperCase()}:${ref}`;
 };
 /**
@@ -2514,8 +2535,8 @@ const pickHarvestTarget = (snapshot) => {
  * Core assignment routine: examine creep state, choose or reuse a task, and stamp
  * telemetry used elsewhere for churn / traceability.
  */
-const assignTask = (creep, room, snapshot, workerCount) => {
-    var _a;
+const assignTask = (creep, room, snapshot, _workerCount) => {
+    var _a, _b;
     ensureHeapMaps();
     const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
     const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
@@ -2524,7 +2545,6 @@ const assignTask = (creep, room, snapshot, workerCount) => {
     const controller = room.controller;
     const refillTarget = findRefillTarget(snapshot);
     const harvestTarget = pickHarvestTarget(snapshot);
-    const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
     const controllerId = controller === null || controller === void 0 ? void 0 : controller.id;
     let task = null;
     let signature = "IDLE";
@@ -2536,24 +2556,37 @@ const assignTask = (creep, room, snapshot, workerCount) => {
         signature = signatureForTask(currentTask);
         task = currentTask;
     }
+    else if (!isEmpty && refillTarget) {
+        task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
+        signature = `TRANSFER:${refillTarget.id}`;
+    }
     else if (!isFull && harvestTarget) {
         task = Tasks.harvest(harvestTarget);
         signature = `HARVEST:${harvestTarget.id}`;
-    }
-    else if (shouldRefillSpawn) {
-        task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
-        signature = `TRANSFER:${refillTarget.id}`;
     }
     else if (!isEmpty && controllerId) {
         task = Tasks.upgrade(controller);
         signature = `UPGRADE:${controllerId}`;
     }
     const changed = signature !== previousSignature;
-    memory.taskSignature = signature;
-    memory.role = "worker";
-    memory.squad = "worker";
+    if (changed || memory.taskSignature === undefined) {
+        memory.taskSignature = signature;
+    }
+    if ((memory.role === undefined || memory.role === "") && signature !== "IDLE") {
+        memory.role = "worker";
+    }
+    if ((memory.squad === undefined || memory.squad === "") && signature !== "IDLE") {
+        memory.squad = "worker";
+    }
     if (Heap.orders) {
-        Heap.orders.set(creep.name, { task: signature, persisted: !changed });
+        const taskName = (_b = task === null || task === void 0 ? void 0 : task.name) !== null && _b !== void 0 ? _b : "idle";
+        Heap.orders.set(creep.name, {
+            id: `${creep.name}:${taskName}`,
+            task: taskName,
+            signature,
+            persisted: !changed,
+            assignedTick: Game.time
+        });
     }
     return { changed, idle: signature === "IDLE", signature, task };
 };
@@ -2605,6 +2638,7 @@ const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersCha
  * Ensure the worker count stays within configured bounds by issuing spawn orders.
  */
 const maintainPopulation = (context) => {
+    var _a;
     const { policy, snapshot } = context;
     const workerCreeps = snapshot.myCreeps.filter(creep => { var _a; return ((_a = creep.memory.role) !== null && _a !== void 0 ? _a : "") === "worker"; });
     if (workerCreeps.length >= RCL1Config.worker.max) {
@@ -2626,12 +2660,18 @@ const maintainPopulation = (context) => {
         return;
     }
     const name = `wrk-${Game.time}-${Math.floor(Math.random() * 1000)}`;
-    idleSpawn.spawnCreep(body, name, {
+    const result = idleSpawn.spawnCreep(body, name, {
         memory: {
             role: "worker",
             squad: "worker"
         }
     });
+    if (result !== OK && result !== ERR_BUSY) {
+        const energyStatus = `${snapshot.energyAvailable}/${snapshot.energyCapacityAvailable}`;
+        console.log(`[worker] spawn ${(_a = idleSpawn.name) !== null && _a !== void 0 ? _a : idleSpawn.id} failed to create ${name}: ${result}`, {
+            energyStatus
+        });
+    }
 };
 /**
  * High-level coordinator orchestrating the worker squad for the tick. Handles
@@ -2657,6 +2697,9 @@ class WorkerSquad {
                 Heap.debug.creepCpuSamples = [];
             }
             Heap.debug.creepCpuSamples.push(delta);
+            if (Heap.debug.creepCpuSamples.length > 250) {
+                Heap.debug.creepCpuSamples.splice(0, Heap.debug.creepCpuSamples.length - 250);
+            }
             ordersIssued += 1;
             if (assignment.changed) {
                 ordersChanged += 1;
@@ -3198,7 +3241,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "99a405e";
+global.__GIT_HASH__ = "c9a36ec";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
