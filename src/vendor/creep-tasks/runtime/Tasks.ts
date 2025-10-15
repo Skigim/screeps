@@ -1,26 +1,50 @@
+import { Task } from './Task';
 import { TaskAttack } from './TaskInstances/task_attack';
+import type { attackTargetType } from './TaskInstances/task_attack';
 import { TaskBuild } from './TaskInstances/task_build';
+import type { buildTargetType } from './TaskInstances/task_build';
 import { TaskClaim } from './TaskInstances/task_claim';
+import type { claimTargetType } from './TaskInstances/task_claim';
 import { TaskDismantle } from './TaskInstances/task_dismantle';
+import type { dismantleTargetType } from './TaskInstances/task_dismantle';
 import { TaskFortify } from './TaskInstances/task_fortify';
+import type { fortifyTargetType } from './TaskInstances/task_fortify';
 import { TaskGetBoosted } from './TaskInstances/task_getBoosted';
+import type { getBoostedTargetType } from './TaskInstances/task_getBoosted';
 import { TaskGetRenewed } from './TaskInstances/task_getRenewed';
+import type { getRenewedTargetType } from './TaskInstances/task_getRenewed';
 import { TaskGoTo } from './TaskInstances/task_goTo';
+import type { goToTargetType } from './TaskInstances/task_goTo';
 import { TaskGoToRoom } from './TaskInstances/task_goToRoom';
+import type { goToRoomTargetType } from './TaskInstances/task_goToRoom';
 import { TaskHarvest } from './TaskInstances/task_harvest';
+import type { harvestTargetType } from './TaskInstances/task_harvest';
 import { TaskHeal } from './TaskInstances/task_heal';
+import type { healTargetType } from './TaskInstances/task_heal';
 import { TaskMeleeAttack } from './TaskInstances/task_meleeAttack';
+import type { meleeAttackTargetType } from './TaskInstances/task_meleeAttack';
 import { TaskPickup } from './TaskInstances/task_pickup';
+import type { pickupTargetType } from './TaskInstances/task_pickup';
 import { TaskRangedAttack } from './TaskInstances/task_rangedAttack';
+import type { rangedAttackTargetType } from './TaskInstances/task_rangedAttack';
 import { TaskRepair } from './TaskInstances/task_repair';
+import type { repairTargetType } from './TaskInstances/task_repair';
 import { TaskReserve } from './TaskInstances/task_reserve';
+import type { reserveTargetType } from './TaskInstances/task_reserve';
 import { TaskSignController } from './TaskInstances/task_signController';
+import type { signControllerTargetType } from './TaskInstances/task_signController';
 import { TaskTransfer } from './TaskInstances/task_transfer';
+import type { transferTargetType } from './TaskInstances/task_transfer';
 import { TaskUpgrade } from './TaskInstances/task_upgrade';
+import type { upgradeTargetType } from './TaskInstances/task_upgrade';
 import { TaskWithdraw } from './TaskInstances/task_withdraw';
+import type { withdrawTargetType } from './TaskInstances/task_withdraw';
 import { TaskDrop } from './TaskInstances/task_drop';
+import type { dropTargetType } from './TaskInstances/task_drop';
 import { TaskTransferAll } from './TaskInstances/task_transferAll';
+import type { transferAllTargetType } from './TaskInstances/task_transferAll';
 import { TaskWithdrawAll } from './TaskInstances/task_withdrawAll';
+import type { withdrawAllTargetType } from './TaskInstances/task_withdrawAll';
 
 export class Tasks {
     /* Tasks.chain allows you to transform a list of tasks into a single task, where each subsequent task in the list
@@ -36,10 +60,10 @@ export class Tasks {
             }
         }
         // Make the accumulator task from the end and iteratively fork it
-        let task = _.last(tasks)!; // start with last task
-        tasks = _.dropRight(tasks); // remove it from the list
-        for (let i = (tasks.length - 1); i >= 0; i--) { // iterate over the remaining tasks
-            task = task.fork(tasks[i]);
+        let task: Task = _.last(tasks)! as Task; // start with last task
+        const remaining = _.dropRight(tasks) as Task[]; // remove it from the list
+        for (let i = (remaining.length - 1); i >= 0; i--) { // iterate over the remaining tasks
+            task = task.fork(remaining[i]);
         }
         return task;
     }

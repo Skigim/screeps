@@ -283,7 +283,7 @@ export abstract class Task implements ITask {
             return creep.move(creep.pos.getDirectionTo(swampPosition));
         }
         return creep.moveTo(pos);
-        // return creep.travelTo(pos); // <-- Switch if you use Traveler
+        // return creep.travelTo(pos); // <- switch if you use Traveler
     }
 
     abstract work(): number;

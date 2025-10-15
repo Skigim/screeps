@@ -30,6 +30,19 @@ type TaskAssignment = {
   task: TaskInstance | null;
 };
 
+const signatureForTask = (task: TaskInstance | null): string => {
+  if (!task) {
+    return "IDLE";
+  }
+
+  const target = (task as TaskInstance & { target?: RoomObject | null }).target ?? null;
+  const proto = task.proto as Record<string, unknown>;
+  const protoTarget = Reflect.get(proto, "_target") as { ref?: string } | undefined;
+  const ref = (target && "ref" in target ? (target as { ref?: string }).ref : undefined) ?? protoTarget?.ref ?? "";
+
+  return `${task.name.toUpperCase()}:${ref}`;
+};
+
 const ensureHeapMaps = (): void => {
   if (!Heap.snap) {
     Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -91,7 +104,7 @@ const pickHarvestTarget = (snapshot: RoomSenseSnapshot): Source | undefined => {
   return active ?? snapshot.sources[0];
 };
 
-const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): TaskAssignment => {
+const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, workerCount: number): TaskAssignment => {
   ensureHeapMaps();
   const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
   const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
@@ -99,24 +112,30 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot): Task
   const isFull = free === 0;
   const controller = room.controller;
   const refillTarget = findRefillTarget(snapshot);
-  const harvestTarget = !isFull ? pickHarvestTarget(snapshot) : undefined;
+  const harvestTarget = pickHarvestTarget(snapshot);
+  const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
+  const controllerId = controller?.id;
 
   let task: TaskInstance | null = null;
   let signature = "IDLE";
-
-  if (!isFull && harvestTarget) {
-    task = Tasks.harvest(harvestTarget);
-    signature = `HARVEST:${harvestTarget.id}`;
-  } else if (!isEmpty && refillTarget) {
-    task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
-    signature = `TRANSFER:${refillTarget.id}`;
-  } else if (!isEmpty && controller) {
-    task = Tasks.upgrade(controller);
-    signature = `UPGRADE:${controller.id}`;
-  }
-
   const memory = creep.memory as CreepMemory & { taskSignature?: string; role?: string; squad?: string };
   const previousSignature = memory.taskSignature ?? "";
+
+  const currentTask = creep.task as TaskInstance | null;
+  if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
+    signature = signatureForTask(currentTask);
+    task = currentTask;
+  } else if (!isFull && harvestTarget) {
+    task = Tasks.harvest(harvestTarget);
+    signature = `HARVEST:${harvestTarget.id}`;
+  } else if (shouldRefillSpawn) {
+    task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
+    signature = `TRANSFER:${refillTarget.id}`;
+  } else if (!isEmpty && controllerId) {
+    task = Tasks.upgrade(controller);
+    signature = `UPGRADE:${controllerId}`;
+  }
+
   const changed = signature !== previousSignature;
 
   memory.taskSignature = signature;
@@ -227,7 +246,7 @@ export class WorkerSquad {
 
     for (const creep of workerCreeps) {
       const before = cpuNow();
-      const assignment = assignTask(creep, context.room, context.snapshot);
+      const assignment = assignTask(creep, context.room, context.snapshot, workerCreeps.length);
       const after = cpuNow();
       const delta = after - before;
       ensureHeapMaps();
@@ -278,3 +297,7 @@ export class WorkerSquad {
     };
   }
 }
+
+export const workerInternals = {
+  assignTask
+};

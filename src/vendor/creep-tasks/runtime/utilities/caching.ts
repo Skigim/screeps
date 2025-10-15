@@ -1,6 +1,6 @@
 // Caches targets every tick to allow for RoomObject.targetedBy property
 
-import './types';
+import '../types';
 import type { TaskMemory } from '../../index';
 import { isRuntimeProto } from './typeGuards';
 

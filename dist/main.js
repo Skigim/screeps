@@ -898,7 +898,7 @@ class Task {
             return creep.move(creep.pos.getDirectionTo(swampPosition));
         }
         return creep.moveTo(pos);
-        // return creep.travelTo(pos); // <-- Switch if you use Traveler
+        // return creep.travelTo(pos); // <- switch if you use Traveler
     }
     // Finalize the task and switch to parent task (or null if there is none)
     finish() {
@@ -1820,10 +1820,173 @@ function initializeTask(protoTask) {
     return task;
 }
 
-/*
- * Lightweight task runner inspired by the original creep-tasks package.
- * Provides a small subset of task functionality tailored for the RCL1 worker squad.
- */
+const isRuntimeProto$1 = (value) => {
+    return value !== undefined && value !== null && typeof value === 'object' && '_creep' in value && '_target' in value;
+};
+
+// Caches targets every tick to allow for RoomObject.targetedBy property
+class TargetCache {
+    constructor() {
+        this.targets = {};
+        this.tick = Game.time; // record last refresh
+    }
+    // Generates a hash table for targets: key: TargetRef, val: targeting creep names
+    cacheTargets() {
+        this.targets = {};
+        for (const i in Game.creeps) {
+            const creep = Game.creeps[i];
+            const memory = creep.memory;
+            let task = null;
+            const stored = memory.task;
+            if (stored && isRuntimeProto$1(stored)) {
+                task = stored;
+            }
+            // Perform a faster, primitive form of _.map(creep.task.manifest, task => task.target.ref)
+            while (task) {
+                if (!this.targets[task._target.ref]) {
+                    this.targets[task._target.ref] = [];
+                }
+                this.targets[task._target.ref].push(creep.name);
+                task = task._parent;
+            }
+        }
+    }
+    // Assert that there is an up-to-date target cache
+    static assert() {
+        if (!(Game.TargetCache && Game.TargetCache.tick === Game.time)) {
+            Game.TargetCache = new TargetCache();
+            Game.TargetCache.build();
+        }
+    }
+    // Build the target cache
+    build() {
+        this.cacheTargets();
+    }
+}
+
+// This binds a getter/setter creep.task property
+Object.defineProperty(Creep.prototype, 'task', {
+    get() {
+        if (!this._task) {
+            const memory = this.memory;
+            const stored = memory.task;
+            if (stored && isRuntimeProto$1(stored)) {
+                this._task = initializeTask(stored);
+            }
+            else {
+                this._task = null;
+            }
+        }
+        return this._task || null;
+    },
+    set(task) {
+        // Assert that there is an up-to-date target cache
+        TargetCache.assert();
+        const memory = this.memory;
+        const previous = memory.task;
+        if (previous && isRuntimeProto$1(previous)) {
+            const oldRef = previous._target.ref;
+            if (Game.TargetCache.targets[oldRef]) {
+                _.remove(Game.TargetCache.targets[oldRef], name => name === this.name);
+            }
+        }
+        if (task) {
+            memory.task = task.proto;
+            const target = task.target;
+            if (target && target.ref !== undefined) {
+                const targetRef = target.ref;
+                if (!Game.TargetCache.targets[targetRef]) {
+                    Game.TargetCache.targets[targetRef] = [];
+                }
+                Game.TargetCache.targets[targetRef].push(this.name);
+            }
+            task.creep = this;
+            this._task = task;
+        }
+        else {
+            delete memory.task;
+            this._task = null;
+        }
+    },
+});
+Creep.prototype.run = function () {
+    const task = this.task;
+    if (task) {
+        return task.run();
+    }
+};
+Object.defineProperties(Creep.prototype, {
+    'hasValidTask': {
+        get() {
+            const task = this.task;
+            return !!(task && typeof task.isValid === 'function' && task.isValid());
+        }
+    },
+    'isIdle': {
+        get() {
+            return !this.hasValidTask;
+        }
+    }
+});
+// RoomObject prototypes ===============================================================================================
+Object.defineProperty(RoomObject.prototype, 'ref', {
+    get: function () {
+        return this.id || this.name || '';
+    },
+});
+Object.defineProperty(RoomObject.prototype, 'targetedBy', {
+    get: function () {
+        // Check that target cache has been initialized - you can move this to execute once per tick if you want
+        TargetCache.assert();
+        return _.map(Game.TargetCache.targets[this.ref], name => Game.creeps[name]);
+    },
+});
+// RoomPosition prototypes =============================================================================================
+Object.defineProperty(RoomPosition.prototype, 'isEdge', {
+    get: function () {
+        return this.x === 0 || this.x === 49 || this.y === 0 || this.y === 49;
+    },
+});
+Object.defineProperty(RoomPosition.prototype, 'neighbors', {
+    get: function () {
+        const adjPos = [];
+        for (const dx of [-1, 0, 1]) {
+            for (const dy of [-1, 0, 1]) {
+                if (!(dx === 0 && dy === 0)) {
+                    const x = this.x + dx;
+                    const y = this.y + dy;
+                    if (0 < x && x < 49 && 0 < y && y < 49) {
+                        adjPos.push(new RoomPosition(x, y, this.roomName));
+                    }
+                }
+            }
+        }
+        return adjPos;
+    }
+});
+RoomPosition.prototype.isPassible = function (ignoreCreeps = false) {
+    // Is terrain passable?
+    if (Game.map.getTerrainAt(this) === 'wall')
+        return false;
+    if (this.isVisible) {
+        // Are there creeps?
+        if (ignoreCreeps === false && this.lookFor(LOOK_CREEPS).length > 0)
+            return false;
+        // Are there structures?
+        const impassibleStructures = _.filter(this.lookFor(LOOK_STRUCTURES), function (s) {
+            return s.structureType !== STRUCTURE_ROAD &&
+                s.structureType !== STRUCTURE_CONTAINER &&
+                !(s.structureType === STRUCTURE_RAMPART && (s.my ||
+                    s.isPublic));
+        });
+        return impassibleStructures.length === 0;
+    }
+    return true;
+};
+RoomPosition.prototype.availableNeighbors = function (ignoreCreeps = false) {
+    return _.filter(this.neighbors, (pos) => pos.isPassible(ignoreCreeps));
+};
+
 const isRoomObject = (value) => {
     return typeof value === "object" && value !== null && "pos" in value;
 };
@@ -1870,6 +2033,17 @@ class BaseTask {
         const result = this.perform(target);
         this.afterRun(result, target);
         return result;
+    }
+    isValid() {
+        if (!this.creep) {
+            return false;
+        }
+        const target = this.resolveTarget();
+        if (!target) {
+            this.onTargetMissing();
+            return false;
+        }
+        return true;
     }
     get range() {
         var _a;
@@ -2207,8 +2381,8 @@ const getRoomRuntimeFrame = (roomName) => {
 
 const RCL1Config = {
     worker: {
-        min: 3,
-        max: 4,
+        min: 2,
+        max: 2,
         bodyPlan: "worker-basic"
     },
     spawn: {
@@ -2222,6 +2396,17 @@ const compileBody = (_plan, _profile, _energyCap, _policy) => {
 const estimateSpawnTime = (body) => body.length * 3;
 const calculateBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
 
+const signatureForTask = (task) => {
+    var _a, _b, _c;
+    if (!task) {
+        return "IDLE";
+    }
+    const target = (_a = task.target) !== null && _a !== void 0 ? _a : null;
+    const proto = task.proto;
+    const protoTarget = Reflect.get(proto, "_target");
+    const ref = (_c = (_b = (target && "ref" in target ? target.ref : undefined)) !== null && _b !== void 0 ? _b : protoTarget === null || protoTarget === void 0 ? void 0 : protoTarget.ref) !== null && _c !== void 0 ? _c : "";
+    return `${task.name.toUpperCase()}:${ref}`;
+};
 const ensureHeapMaps = () => {
     if (!Heap.snap) {
         Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -2273,7 +2458,7 @@ const pickHarvestTarget = (snapshot) => {
     const active = snapshot.sources.find(source => source.energy > 0);
     return active !== null && active !== void 0 ? active : snapshot.sources[0];
 };
-const assignTask = (creep, room, snapshot) => {
+const assignTask = (creep, room, snapshot, workerCount) => {
     var _a;
     ensureHeapMaps();
     const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
@@ -2282,23 +2467,30 @@ const assignTask = (creep, room, snapshot) => {
     const isFull = free === 0;
     const controller = room.controller;
     const refillTarget = findRefillTarget(snapshot);
-    const harvestTarget = !isFull ? pickHarvestTarget(snapshot) : undefined;
+    const harvestTarget = pickHarvestTarget(snapshot);
+    const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
+    const controllerId = controller === null || controller === void 0 ? void 0 : controller.id;
     let task = null;
     let signature = "IDLE";
-    if (!isFull && harvestTarget) {
+    const memory = creep.memory;
+    const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
+    const currentTask = creep.task;
+    if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
+        signature = signatureForTask(currentTask);
+        task = currentTask;
+    }
+    else if (!isFull && harvestTarget) {
         task = Tasks.harvest(harvestTarget);
         signature = `HARVEST:${harvestTarget.id}`;
     }
-    else if (!isEmpty && refillTarget) {
+    else if (shouldRefillSpawn) {
         task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
         signature = `TRANSFER:${refillTarget.id}`;
     }
-    else if (!isEmpty && controller) {
+    else if (!isEmpty && controllerId) {
         task = Tasks.upgrade(controller);
-        signature = `UPGRADE:${controller.id}`;
+        signature = `UPGRADE:${controllerId}`;
     }
-    const memory = creep.memory;
-    const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
     const changed = signature !== previousSignature;
     memory.taskSignature = signature;
     memory.role = "worker";
@@ -2382,7 +2574,7 @@ class WorkerSquad {
         let idleCount = 0;
         for (const creep of workerCreeps) {
             const before = cpuNow();
-            const assignment = assignTask(creep, context.room, context.snapshot);
+            const assignment = assignTask(creep, context.room, context.snapshot, workerCreeps.length);
             const after = cpuNow();
             const delta = after - before;
             ensureHeapMaps();
@@ -2944,7 +3136,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "c9062ef";
+global.__GIT_HASH__ = "bd82fbd";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
