@@ -3198,7 +3198,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "294037c";
+global.__GIT_HASH__ = "99a405e";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
