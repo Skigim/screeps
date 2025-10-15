@@ -34,9 +34,10 @@ describe("worker assignTask", () => {
     Heap.snap = undefined;
     Heap.debug = undefined;
 
-    (Tasks as Mutable<typeof Tasks>).harvest = (() => ({
+    (Tasks as Mutable<typeof Tasks>).harvest = ((target: Source) => ({
       name: "harvest",
-      proto: { name: "harvest" },
+      target,
+      proto: { name: "harvest", targetId: target.id },
       assign: () => {
         /* noop for tests */
       },
@@ -44,9 +45,10 @@ describe("worker assignTask", () => {
       isValid: () => true
     })) as typeof Tasks.harvest;
 
-    (Tasks as Mutable<typeof Tasks>).upgrade = (() => ({
+    (Tasks as Mutable<typeof Tasks>).upgrade = ((controller: StructureController) => ({
       name: "upgrade",
-      proto: { name: "upgrade" },
+      target: controller,
+      proto: { name: "upgrade", targetId: controller.id },
       assign: () => {
         /* noop for tests */
       },
@@ -54,9 +56,10 @@ describe("worker assignTask", () => {
       isValid: () => true
     })) as typeof Tasks.upgrade;
 
-    (Tasks as Mutable<typeof Tasks>).transfer = (() => ({
+    (Tasks as Mutable<typeof Tasks>).transfer = ((target: Structure) => ({
       name: "transfer",
-      proto: { name: "transfer" },
+      target,
+      proto: { name: "transfer", targetId: target.id },
       assign: () => {
         /* noop for tests */
       },
@@ -106,8 +109,8 @@ describe("worker assignTask", () => {
     }
   } as Room;
 
-  it("continues harvesting until carry is full", () => {
-    const creep = makeCreep(25, 50);
+  it("harvests when empty", () => {
+    const creep = makeCreep(0, 50);
     const snapshot = makeSnapshot();
 
     const assignment = workerInternals.assignTask(creep, room, snapshot, RCL1Config.worker.min);
@@ -115,6 +118,17 @@ describe("worker assignTask", () => {
     assert.strictEqual(assignment.task?.name, "harvest");
     const memory = creep.memory as CreepMemory & { taskSignature?: string };
     assert.strictEqual(memory.taskSignature, "HARVEST:source-1");
+  });
+
+  it("upgrades when carrying energy", () => {
+    const creep = makeCreep(25, 50);
+    const snapshot = makeSnapshot();
+
+    const assignment = workerInternals.assignTask(creep, room, snapshot, RCL1Config.worker.min);
+
+    assert.strictEqual(assignment.task?.name, "upgrade");
+    const memory = creep.memory as CreepMemory & { taskSignature?: string };
+    assert.strictEqual(memory.taskSignature, "UPGRADE:controller-1");
   });
 
   it("upgrades when carry is full", () => {

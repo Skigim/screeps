@@ -2553,20 +2553,29 @@ const assignTask = (creep, room, snapshot, _workerCount) => {
     // Reuse the in-flight task when possible to avoid task churn and associated memory writes.
     const currentTask = creep.task;
     if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
-        signature = signatureForTask(currentTask);
         task = currentTask;
     }
-    else if (!isEmpty && refillTarget) {
-        task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
-        signature = `TRANSFER:${refillTarget.id}`;
+    else {
+        if (!isEmpty) {
+            if (refillTarget) {
+                task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
+            }
+            else if (controllerId) {
+                task = Tasks.upgrade(controller);
+            }
+            else if (!isFull && harvestTarget) {
+                task = Tasks.harvest(harvestTarget);
+            }
+        }
+        else if (!isFull && harvestTarget) {
+            task = Tasks.harvest(harvestTarget);
+        }
+        else if (controllerId) {
+            task = Tasks.upgrade(controller);
+        }
     }
-    else if (!isFull && harvestTarget) {
-        task = Tasks.harvest(harvestTarget);
-        signature = `HARVEST:${harvestTarget.id}`;
-    }
-    else if (!isEmpty && controllerId) {
-        task = Tasks.upgrade(controller);
-        signature = `UPGRADE:${controllerId}`;
+    if (task) {
+        signature = signatureForTask(task);
     }
     const changed = signature !== previousSignature;
     if (changed || memory.taskSignature === undefined) {
@@ -3241,7 +3250,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "c9a36ec";
+global.__GIT_HASH__ = "3aeba54";
 const loop = () => {
     cleanupCreepMemory();
     runTick();

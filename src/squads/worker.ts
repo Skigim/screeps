@@ -178,17 +178,25 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, _work
   // Reuse the in-flight task when possible to avoid task churn and associated memory writes.
   const currentTask = creep.task as TaskInstance | null;
   if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
-    signature = signatureForTask(currentTask);
     task = currentTask;
-  } else if (!isEmpty && refillTarget) {
-    task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
-    signature = `TRANSFER:${refillTarget.id}`;
-  } else if (!isFull && harvestTarget) {
-    task = Tasks.harvest(harvestTarget);
-    signature = `HARVEST:${harvestTarget.id}`;
-  } else if (!isEmpty && controllerId) {
-    task = Tasks.upgrade(controller);
-    signature = `UPGRADE:${controllerId}`;
+  } else {
+    if (!isEmpty) {
+      if (refillTarget) {
+        task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
+      } else if (controllerId) {
+        task = Tasks.upgrade(controller);
+      } else if (!isFull && harvestTarget) {
+        task = Tasks.harvest(harvestTarget);
+      }
+    } else if (!isFull && harvestTarget) {
+      task = Tasks.harvest(harvestTarget);
+    } else if (controllerId) {
+      task = Tasks.upgrade(controller);
+    }
+  }
+
+  if (task) {
+    signature = signatureForTask(task);
   }
 
   const changed = signature !== previousSignature;
