@@ -1529,13 +1529,32 @@ class TaskUpgrade extends Task {
         this.settings.workOffRoad = true;
     }
     isValidTask() {
-        return (this.creep.carry.energy > 0);
+        var _a;
+        if (this.creep.store) {
+            return this.creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+        }
+        const legacyCarry = this.creep.carry;
+        return ((_a = legacyCarry === null || legacyCarry === void 0 ? void 0 : legacyCarry.energy) !== null && _a !== void 0 ? _a : 0) > 0;
     }
     isValidTarget() {
         return !!(this.target && this.target.my);
     }
     work() {
-        return this.creep.upgradeController(this.target);
+        var _a, _b;
+        const result = this.creep.upgradeController(this.target);
+        if (result === ERR_NOT_ENOUGH_ENERGY || result === ERR_INVALID_TARGET) {
+            this.finish();
+            return result;
+        }
+        if (result === OK) {
+            const remaining = this.creep.store
+                ? this.creep.store.getUsedCapacity(RESOURCE_ENERGY)
+                : (_b = (_a = this.creep.carry) === null || _a === void 0 ? void 0 : _a.energy) !== null && _b !== void 0 ? _b : 0;
+            if (!remaining) {
+                this.finish();
+            }
+        }
+        return result;
     }
 }
 TaskUpgrade.taskName = 'upgrade';
@@ -2350,6 +2369,15 @@ if (!Heap.runtime) {
 if (!Heap.debug) {
     Heap.debug = {};
 }
+/**
+ * Clear per-tick heap collections to prevent stale order or telemetry data from
+ * leaking across ticks. Call once at tick start.
+ */
+const resetHeapForTick = () => {
+    Heap.orders = new Map();
+    Heap.snap = { rooms: new Map(), squads: new Map() };
+    Heap.debug = { roomScans: {}, creepCpuSamples: [] };
+};
 const ensureRoomFrame = (roomName) => {
     if (!Heap.snap) {
         Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -2396,6 +2424,17 @@ const compileBody = (_plan, _profile, _energyCap, _policy) => {
 const estimateSpawnTime = (body) => body.length * 3;
 const calculateBodyCost = (body) => body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
 
+/**
+ * Worker squad coordinator. Translates mayor-issued directives and room state into
+ * concrete creep-tasks, while tracking workforce metrics and maintaining population.
+ *
+ * The emphasis is on keeping creeps themselves logic-free (they simply run assigned
+ * tasks) while this module manages lifecycle, task reuse, and instrumentation.
+ */
+/**
+ * Produce a stable signature for a task, keyed by name and target reference. Used to
+ * detect churn and maintain traceability back to directives.
+ */
 const signatureForTask = (task) => {
     var _a, _b, _c;
     if (!task) {
@@ -2407,6 +2446,10 @@ const signatureForTask = (task) => {
     const ref = (_c = (_b = (target && "ref" in target ? target.ref : undefined)) !== null && _b !== void 0 ? _b : protoTarget === null || protoTarget === void 0 ? void 0 : protoTarget.ref) !== null && _c !== void 0 ? _c : "";
     return `${task.name.toUpperCase()}:${ref}`;
 };
+/**
+ * Ensure Heap bookkeeping maps exist before mutation; keeps the hot path null-safe
+ * when running outside of the Screeps VM (tests, scripts).
+ */
 const ensureHeapMaps = () => {
     if (!Heap.snap) {
         Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -2424,7 +2467,12 @@ const ensureHeapMaps = () => {
         Heap.debug.creepCpuSamples = [];
     }
 };
+/** Lightweight CPU helper so we can sample per-creep assignment cost. */
 const cpuNow = () => (typeof Game !== "undefined" && Game.cpu ? Game.cpu.getUsed() : 0);
+/**
+ * Detect whether a spawn/extension can accept energy, supporting both Store API and
+ * older energy/energyCapacity fields to keep tests simple.
+ */
 const hasEnergyFreeCapacity = (structure) => {
     const store = structure.store;
     if (store && typeof store.getFreeCapacity === "function") {
@@ -2437,6 +2485,9 @@ const hasEnergyFreeCapacity = (structure) => {
     }
     return false;
 };
+/**
+ * Locate the highest-priority refill structure (spawn first, then extensions).
+ */
 const findRefillTarget = (snapshot) => {
     const spawn = snapshot.structures.find((structure) => {
         if (structure.structureType !== STRUCTURE_SPAWN) {
@@ -2454,10 +2505,15 @@ const findRefillTarget = (snapshot) => {
         return hasEnergyFreeCapacity(structure);
     });
 };
+/** Pick a harvest source, biasing toward those with current energy. */
 const pickHarvestTarget = (snapshot) => {
     const active = snapshot.sources.find(source => source.energy > 0);
     return active !== null && active !== void 0 ? active : snapshot.sources[0];
 };
+/**
+ * Core assignment routine: examine creep state, choose or reuse a task, and stamp
+ * telemetry used elsewhere for churn / traceability.
+ */
 const assignTask = (creep, room, snapshot, workerCount) => {
     var _a;
     ensureHeapMaps();
@@ -2474,6 +2530,7 @@ const assignTask = (creep, room, snapshot, workerCount) => {
     let signature = "IDLE";
     const memory = creep.memory;
     const previousSignature = (_a = memory.taskSignature) !== null && _a !== void 0 ? _a : "";
+    // Reuse the in-flight task when possible to avoid task churn and associated memory writes.
     const currentTask = creep.task;
     if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
         signature = signatureForTask(currentTask);
@@ -2500,6 +2557,10 @@ const assignTask = (creep, room, snapshot, workerCount) => {
     }
     return { changed, idle: signature === "IDLE", signature, task };
 };
+/**
+ * Apply a task selection to the creep while minimizing unnecessary writes to
+ * Creep.task, which in turn keeps Traveler cache churn low.
+ */
 const applyTaskAssignment = (creep, assignment) => {
     if (assignment.task) {
         if (assignment.changed || !creep.task) {
@@ -2511,6 +2572,10 @@ const applyTaskAssignment = (creep, assignment) => {
         creep.task = null;
     }
 };
+/**
+ * Persist squad metrics to Heap so downstream analytics (chronicle lines, dashboards)
+ * have access to recent history without touching game objects.
+ */
 const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersChanged) => {
     var _a;
     const squadName = "worker";
@@ -2536,6 +2601,9 @@ const recordMetrics = (room, headcount, queued, idlePct, ordersIssued, ordersCha
     }
     snap.squads.set(squadName, entries);
 };
+/**
+ * Ensure the worker count stays within configured bounds by issuing spawn orders.
+ */
 const maintainPopulation = (context) => {
     const { policy, snapshot } = context;
     const workerCreeps = snapshot.myCreeps.filter(creep => { var _a; return ((_a = creep.memory.role) !== null && _a !== void 0 ? _a : "") === "worker"; });
@@ -2565,6 +2633,10 @@ const maintainPopulation = (context) => {
         }
     });
 };
+/**
+ * High-level coordinator orchestrating the worker squad for the tick. Handles
+ * population upkeep, task assignment, task execution, and metrics in a single pass.
+ */
 class WorkerSquad {
     run(context) {
         maintainPopulation(context);
@@ -2594,6 +2666,7 @@ class WorkerSquad {
                 applyTaskAssignment(creep, assignment);
                 continue;
             }
+            // Execute the assigned task; creeps themselves do not branch on behaviors.
             applyTaskAssignment(creep, assignment);
             if (typeof creep.runTask === "function") {
                 creep.runTask();
@@ -2661,9 +2734,7 @@ const pushAlert = (room, type, msg) => {
         memory.alerts = [];
     }
     memory.alerts.push({ tick: Game.time, type, msg });
-    if (memory.alerts.length > ALERT_LIMIT) {
-        memory.alerts.splice(0, memory.alerts.length - ALERT_LIMIT);
-    }
+    memory.alerts = memory.alerts.slice(-ALERT_LIMIT);
 };
 const median = (values) => {
     if (values.length === 0) {
@@ -2826,20 +2897,7 @@ const runRoomAssertions = (room, context) => {
 };
 
 const initializeTick = () => {
-    if (!Heap.orders) {
-        Heap.orders = new Map();
-    }
-    Heap.orders.clear();
-    if (!Heap.snap) {
-        Heap.snap = { rooms: new Map(), squads: new Map() };
-    }
-    Heap.snap.rooms.clear();
-    Heap.snap.squads.clear();
-    if (!Heap.debug) {
-        Heap.debug = {};
-    }
-    Heap.debug.roomScans = {};
-    Heap.debug.creepCpuSamples = [];
+    resetHeapForTick();
 };
 const sense = (room) => {
     var _a;
@@ -2860,7 +2918,11 @@ const sense = (room) => {
     if (!Heap.debug.roomScans) {
         Heap.debug.roomScans = {};
     }
-    Heap.debug.roomScans[room.name] = ((_a = Heap.debug.roomScans[room.name]) !== null && _a !== void 0 ? _a : 0) + 1;
+    const scanCount = ((_a = Heap.debug.roomScans[room.name]) !== null && _a !== void 0 ? _a : 0) + 1;
+    Heap.debug.roomScans[room.name] = scanCount;
+    if (scanCount !== 1) {
+        console.log(`[Diagnostics ${room.name}] multiple room scans in single tick count=${scanCount}`);
+    }
     return snapshot;
 };
 const writeCompactState = (room, state) => {
@@ -3136,7 +3198,7 @@ const getGitHash = () => {
         return "development";
     }
 };
-global.__GIT_HASH__ = "bd82fbd";
+global.__GIT_HASH__ = "294037c";
 const loop = () => {
     cleanupCreepMemory();
     runTick();
