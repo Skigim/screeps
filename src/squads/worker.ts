@@ -1,3 +1,11 @@
+/**
+ * Worker squad coordinator. Translates mayor-issued directives and room state into
+ * concrete creep-tasks, while tracking workforce metrics and maintaining population.
+ *
+ * The emphasis is on keeping creeps themselves logic-free (they simply run assigned
+ * tasks) while this module manages lifecycle, task reuse, and instrumentation.
+ */
+
 import { RCL1Config } from "../config/rcl1";
 import { calculateBodyCost, compileBody } from "../core/bodyFactory";
 import { Heap } from "../core/heap";
@@ -23,6 +31,10 @@ export type WorkerSquadReport = {
   idlePct: number;
 };
 
+/**
+ * Summary of a creep-task assignment outcome, allowing the squad to reason about
+ * churn (changed tasks) and idleness without inspecting creep internals.
+ */
 type TaskAssignment = {
   changed: boolean;
   idle: boolean;
@@ -30,6 +42,10 @@ type TaskAssignment = {
   task: TaskInstance | null;
 };
 
+/**
+ * Produce a stable signature for a task, keyed by name and target reference. Used to
+ * detect churn and maintain traceability back to directives.
+ */
 const signatureForTask = (task: TaskInstance | null): string => {
   if (!task) {
     return "IDLE";
@@ -43,6 +59,10 @@ const signatureForTask = (task: TaskInstance | null): string => {
   return `${task.name.toUpperCase()}:${ref}`;
 };
 
+/**
+ * Ensure Heap bookkeeping maps exist before mutation; keeps the hot path null-safe
+ * when running outside of the Screeps VM (tests, scripts).
+ */
 const ensureHeapMaps = (): void => {
   if (!Heap.snap) {
     Heap.snap = { rooms: new Map(), squads: new Map() };
@@ -61,8 +81,13 @@ const ensureHeapMaps = (): void => {
   }
 };
 
+/** Lightweight CPU helper so we can sample per-creep assignment cost. */
 const cpuNow = (): number => (typeof Game !== "undefined" && Game.cpu ? Game.cpu.getUsed() : 0);
 
+/**
+ * Detect whether a spawn/extension can accept energy, supporting both Store API and
+ * older energy/energyCapacity fields to keep tests simple.
+ */
 const hasEnergyFreeCapacity = (structure: StructureSpawn | StructureExtension): boolean => {
   const store = structure.store as Store<ResourceConstant, false> | undefined;
   if (store && typeof store.getFreeCapacity === "function") {
@@ -78,6 +103,9 @@ const hasEnergyFreeCapacity = (structure: StructureSpawn | StructureExtension): 
   return false;
 };
 
+/**
+ * Locate the highest-priority refill structure (spawn first, then extensions).
+ */
 const findRefillTarget = (snapshot: RoomSenseSnapshot): StructureSpawn | StructureExtension | undefined => {
   const spawn = snapshot.structures.find((structure): structure is StructureSpawn => {
     if (structure.structureType !== STRUCTURE_SPAWN) {
@@ -99,11 +127,16 @@ const findRefillTarget = (snapshot: RoomSenseSnapshot): StructureSpawn | Structu
   });
 };
 
+/** Pick a harvest source, biasing toward those with current energy. */
 const pickHarvestTarget = (snapshot: RoomSenseSnapshot): Source | undefined => {
   const active = snapshot.sources.find(source => source.energy > 0);
   return active ?? snapshot.sources[0];
 };
 
+/**
+ * Core assignment routine: examine creep state, choose or reuse a task, and stamp
+ * telemetry used elsewhere for churn / traceability.
+ */
 const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, workerCount: number): TaskAssignment => {
   ensureHeapMaps();
   const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
@@ -121,6 +154,7 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, worke
   const memory = creep.memory as CreepMemory & { taskSignature?: string; role?: string; squad?: string };
   const previousSignature = memory.taskSignature ?? "";
 
+  // Reuse the in-flight task when possible to avoid task churn and associated memory writes.
   const currentTask = creep.task as TaskInstance | null;
   if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
     signature = signatureForTask(currentTask);
@@ -149,6 +183,10 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, worke
   return { changed, idle: signature === "IDLE", signature, task };
 };
 
+/**
+ * Apply a task selection to the creep while minimizing unnecessary writes to
+ * Creep.task, which in turn keeps Traveler cache churn low.
+ */
 const applyTaskAssignment = (creep: Creep, assignment: TaskAssignment): void => {
   if (assignment.task) {
     if (assignment.changed || !creep.task) {
@@ -162,6 +200,10 @@ const applyTaskAssignment = (creep: Creep, assignment: TaskAssignment): void => 
   }
 };
 
+/**
+ * Persist squad metrics to Heap so downstream analytics (chronicle lines, dashboards)
+ * have access to recent history without touching game objects.
+ */
 const recordMetrics = (
   room: Room,
   headcount: number,
@@ -195,6 +237,9 @@ const recordMetrics = (
   snap.squads.set(squadName, entries);
 };
 
+/**
+ * Ensure the worker count stays within configured bounds by issuing spawn orders.
+ */
 const maintainPopulation = (context: WorkerSquadContext): void => {
   const { policy, snapshot } = context;
   const workerCreeps = snapshot.myCreeps.filter(
@@ -233,6 +278,10 @@ const maintainPopulation = (context: WorkerSquadContext): void => {
   });
 };
 
+/**
+ * High-level coordinator orchestrating the worker squad for the tick. Handles
+ * population upkeep, task assignment, task execution, and metrics in a single pass.
+ */
 export class WorkerSquad {
   public run(context: WorkerSquadContext): WorkerSquadReport {
     maintainPopulation(context);
@@ -268,6 +317,7 @@ export class WorkerSquad {
         continue;
       }
 
+      // Execute the assigned task; creeps themselves do not branch on behaviors.
       applyTaskAssignment(creep, assignment);
       if (typeof creep.runTask === "function") {
         creep.runTask();

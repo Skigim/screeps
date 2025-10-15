@@ -1,6 +1,6 @@
 import { derivePolicy } from "./core/policy";
 import { buildRoomState, type RoomSenseSnapshot } from "./core/state";
-import { Heap, ensureRoomFrame } from "./core/heap";
+import { Heap, ensureRoomFrame, resetHeapForTick } from "./core/heap";
 import type {
   Directives,
   HealthAlert,
@@ -15,22 +15,7 @@ import { runRoomAudit } from "./health/audit";
 import { runRoomAssertions } from "./health/assert";
 
 const initializeTick = (): void => {
-  if (!Heap.orders) {
-    Heap.orders = new Map();
-  }
-  Heap.orders.clear();
-
-  if (!Heap.snap) {
-    Heap.snap = { rooms: new Map(), squads: new Map() };
-  }
-  Heap.snap.rooms.clear();
-  Heap.snap.squads.clear();
-
-  if (!Heap.debug) {
-    Heap.debug = {};
-  }
-  Heap.debug.roomScans = {};
-  Heap.debug.creepCpuSamples = [];
+  resetHeapForTick();
 };
 
 const sense = (room: Room): RoomSenseSnapshot => {
@@ -53,7 +38,11 @@ const sense = (room: Room): RoomSenseSnapshot => {
   if (!Heap.debug.roomScans) {
     Heap.debug.roomScans = {};
   }
-  Heap.debug.roomScans[room.name] = (Heap.debug.roomScans[room.name] ?? 0) + 1;
+  const scanCount = (Heap.debug.roomScans[room.name] ?? 0) + 1;
+  Heap.debug.roomScans[room.name] = scanCount;
+  if (scanCount !== 1) {
+    console.log(`[Diagnostics ${room.name}] multiple room scans in single tick count=${scanCount}`);
+  }
 
   return snapshot;
 };

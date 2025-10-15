@@ -64,10 +64,7 @@ export const pushAlert = (room: Room, type: "WARN" | "FAIL", msg: string): void 
   }
 
   memory.alerts.push({ tick: Game.time, type, msg });
-
-  if (memory.alerts.length > ALERT_LIMIT) {
-    memory.alerts.splice(0, memory.alerts.length - ALERT_LIMIT);
-  }
+  memory.alerts = memory.alerts.slice(-ALERT_LIMIT);
 };
 
 const median = (values: number[]): number => {

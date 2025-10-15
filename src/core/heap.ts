@@ -56,6 +56,16 @@ if (!Heap.debug) {
   Heap.debug = {};
 }
 
+/**
+ * Clear per-tick heap collections to prevent stale order or telemetry data from
+ * leaking across ticks. Call once at tick start.
+ */
+export const resetHeapForTick = (): void => {
+  Heap.orders = new Map();
+  Heap.snap = { rooms: new Map(), squads: new Map() };
+  Heap.debug = { roomScans: {}, creepCpuSamples: [] };
+};
+
 export const ensureRoomFrame = (roomName: string): RoomHeapFrame => {
   if (!Heap.snap) {
     Heap.snap = { rooms: new Map(), squads: new Map() };

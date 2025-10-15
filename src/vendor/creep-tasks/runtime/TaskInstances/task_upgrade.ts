@@ -17,7 +17,11 @@ export class TaskUpgrade extends Task {
     }
 
     isValidTask(): boolean {
-        return (this.creep.carry.energy > 0);
+        if (this.creep.store) {
+            return this.creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+        }
+        const legacyCarry = (this.creep as Creep & { carry?: { energy?: number } }).carry;
+        return (legacyCarry?.energy ?? 0) > 0;
     }
 
     isValidTarget(): boolean {
@@ -25,6 +29,19 @@ export class TaskUpgrade extends Task {
     }
 
     work(): number {
-        return this.creep.upgradeController(this.target!);
+        const result = this.creep.upgradeController(this.target!);
+        if (result === ERR_NOT_ENOUGH_ENERGY || result === ERR_INVALID_TARGET) {
+            this.finish();
+            return result;
+        }
+        if (result === OK) {
+            const remaining = this.creep.store
+                ? this.creep.store.getUsedCapacity(RESOURCE_ENERGY)
+                : (this.creep as Creep & { carry?: { energy?: number } }).carry?.energy ?? 0;
+            if (!remaining) {
+                this.finish();
+            }
+        }
+        return result;
     }
 }
