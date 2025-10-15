@@ -51,10 +51,32 @@ const signatureForTask = (task: TaskInstance | null): string => {
     return "IDLE";
   }
 
-  const target = (task as TaskInstance & { target?: RoomObject | null }).target ?? null;
-  const proto = task.proto as Record<string, unknown>;
-  const protoTarget = Reflect.get(proto, "_target") as { ref?: string } | undefined;
-  const ref = (target && "ref" in target ? (target as { ref?: string }).ref : undefined) ?? protoTarget?.ref ?? "";
+  const taskWithTarget = task as TaskInstance & { target?: RoomObject | RoomPosition | null };
+  const liveTarget = taskWithTarget.target ?? null;
+  let ref = "";
+
+  if (liveTarget) {
+    if ("id" in liveTarget && typeof (liveTarget as { id?: unknown }).id === "string") {
+      ref = (liveTarget as { id: string }).id;
+    } else if (typeof RoomPosition !== "undefined" && liveTarget instanceof RoomPosition) {
+      ref = `${liveTarget.roomName ?? ""}:${liveTarget.x}:${liveTarget.y}`;
+    }
+  }
+
+  if (!ref) {
+    const proto = task.proto as Record<string, unknown> & { targetId?: string };
+    ref = proto.targetId ?? "";
+    if (!ref) {
+      const runtimeTarget = Reflect.get(proto, "_target") as { ref?: string } | undefined;
+      ref = runtimeTarget?.ref ?? "";
+      const storedPos = runtimeTarget
+        ? (Reflect.get(runtimeTarget, "_pos") as { x: number; y: number; roomName: string } | undefined)
+        : undefined;
+      if (!ref && storedPos) {
+        ref = `${storedPos.roomName}:${storedPos.x}:${storedPos.y}`;
+      }
+    }
+  }
 
   return `${task.name.toUpperCase()}:${ref}`;
 };
@@ -137,7 +159,7 @@ const pickHarvestTarget = (snapshot: RoomSenseSnapshot): Source | undefined => {
  * Core assignment routine: examine creep state, choose or reuse a task, and stamp
  * telemetry used elsewhere for churn / traceability.
  */
-const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, workerCount: number): TaskAssignment => {
+const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, _workerCount?: number): TaskAssignment => {
   ensureHeapMaps();
   const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
   const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
@@ -146,7 +168,6 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, worke
   const controller = room.controller;
   const refillTarget = findRefillTarget(snapshot);
   const harvestTarget = pickHarvestTarget(snapshot);
-  const shouldRefillSpawn = !isEmpty && refillTarget && workerCount < RCL1Config.worker.min;
   const controllerId = controller?.id;
 
   let task: TaskInstance | null = null;
@@ -159,12 +180,12 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, worke
   if (currentTask && typeof currentTask.isValid === "function" && currentTask.isValid()) {
     signature = signatureForTask(currentTask);
     task = currentTask;
+  } else if (!isEmpty && refillTarget) {
+    task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
+    signature = `TRANSFER:${refillTarget.id}`;
   } else if (!isFull && harvestTarget) {
     task = Tasks.harvest(harvestTarget);
     signature = `HARVEST:${harvestTarget.id}`;
-  } else if (shouldRefillSpawn) {
-    task = Tasks.transfer(refillTarget, RESOURCE_ENERGY);
-    signature = `TRANSFER:${refillTarget.id}`;
   } else if (!isEmpty && controllerId) {
     task = Tasks.upgrade(controller);
     signature = `UPGRADE:${controllerId}`;
@@ -172,12 +193,25 @@ const assignTask = (creep: Creep, room: Room, snapshot: RoomSenseSnapshot, worke
 
   const changed = signature !== previousSignature;
 
-  memory.taskSignature = signature;
-  memory.role = "worker";
-  memory.squad = "worker";
+  if (changed || memory.taskSignature === undefined) {
+    memory.taskSignature = signature;
+  }
+  if ((memory.role === undefined || memory.role === "") && signature !== "IDLE") {
+    memory.role = "worker";
+  }
+  if ((memory.squad === undefined || memory.squad === "") && signature !== "IDLE") {
+    memory.squad = "worker";
+  }
 
   if (Heap.orders) {
-    Heap.orders.set(creep.name, { task: signature, persisted: !changed });
+    const taskName = task?.name ?? "idle";
+    Heap.orders.set(creep.name, {
+      id: `${creep.name}:${taskName}`,
+      task: taskName,
+      signature,
+      persisted: !changed,
+      assignedTick: Game.time
+    });
   }
 
   return { changed, idle: signature === "IDLE", signature, task };
@@ -270,12 +304,19 @@ const maintainPopulation = (context: WorkerSquadContext): void => {
   }
 
   const name = `wrk-${Game.time}-${Math.floor(Math.random() * 1000)}`;
-  idleSpawn.spawnCreep(body, name, {
+  const result = idleSpawn.spawnCreep(body, name, {
     memory: {
       role: "worker",
       squad: "worker"
     } as CreepMemory
   });
+
+  if (result !== OK && result !== ERR_BUSY) {
+    const energyStatus = `${snapshot.energyAvailable}/${snapshot.energyCapacityAvailable}`;
+    console.log(`[worker] spawn ${idleSpawn.name ?? idleSpawn.id} failed to create ${name}: ${result}`, {
+      energyStatus
+    });
+  }
 };
 
 /**
@@ -306,6 +347,9 @@ export class WorkerSquad {
         Heap.debug.creepCpuSamples = [];
       }
       Heap.debug.creepCpuSamples.push(delta);
+      if (Heap.debug.creepCpuSamples.length > 250) {
+        Heap.debug.creepCpuSamples.splice(0, Heap.debug.creepCpuSamples.length - 250);
+      }
 
       ordersIssued += 1;
       if (assignment.changed) {
