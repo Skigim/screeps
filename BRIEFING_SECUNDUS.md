@@ -612,3 +612,137 @@ Signal: [PHASE I COMPLETE / PHASE II COMPLETE]
 - Leave any interfaces incomplete
 
 Ave Imperator! Begin immediately - the Empire depends on you!
+
+---
+
+## 🆕 PHASE IV: OPERATION LEGIONARY - NEW ORDERS
+
+**Status**: Phase III Complete ✅ | Phase IV Initiated ⚔️
+
+### Your New Mission: Phase IV-B - Task Executor Implementations
+
+**Objective**: Implement 8 specific executors that enable creeps to perform actions
+
+**Dependencies**: ⚠️ BLOCKED until Agent Primus completes Phase IV-A (framework must exist first)
+
+### Phase IV-B Tasks:
+
+Once Agent Primus signals "PHASE IV-A COMPLETE":
+
+1. **Create directory**: `src/execution/executors/`
+
+2. **Implement HarvestExecutor** (PRIORITY 1 - Critical):
+```typescript
+import { TaskExecutor } from '../TaskExecutor';
+import { Task } from '../../interfaces';
+import { TaskResult, TaskStatus } from '../TaskResult';
+
+export class HarvestExecutor extends TaskExecutor {
+  public execute(creep: Creep, task: Task): TaskResult {
+    if (!task.targetId) {
+      return { status: TaskStatus.FAILED, message: 'No harvest target' };
+    }
+    
+    const source = Game.getObjectById(task.targetId as Id<Source>);
+    if (!source) {
+      return { status: TaskStatus.FAILED, message: 'Source not found' };
+    }
+    
+    if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+      return { status: TaskStatus.COMPLETED, message: 'Creep full' };
+    }
+    
+    if (source.energy === 0) {
+      return { status: TaskStatus.BLOCKED, message: 'Source empty' };
+    }
+    
+    if (!this.isAtTarget(creep, source)) {
+      this.moveToTarget(creep, source);
+      return { status: TaskStatus.IN_PROGRESS, message: 'Moving to source' };
+    }
+    
+    const result = creep.harvest(source);
+    if (result === OK) {
+      return { status: TaskStatus.IN_PROGRESS, message: 'Harvesting' };
+    } else {
+      return { status: TaskStatus.FAILED, message: `Harvest failed: ${result}` };
+    }
+  }
+}
+```
+
+3. **Implement TransferExecutor** (PRIORITY 1):
+- Move to spawn/extension/tower
+- Transfer energy
+- Return COMPLETED when empty
+
+4. **Implement UpgradeExecutor** (PRIORITY 1):
+- Move to controller
+- Upgrade controller
+- Return COMPLETED when out of energy
+
+5. **Implement BuildExecutor** (PRIORITY 2):
+- Move to construction site
+- Build
+- Return COMPLETED when site done or out of energy
+
+6. **Implement RepairExecutor** (PRIORITY 2):
+- Move to structure
+- Repair
+- Return COMPLETED when structure at max hits
+
+7. **Implement WithdrawExecutor** (PRIORITY 2):
+- Move to container/storage
+- Withdraw energy
+- Return COMPLETED when creep full
+
+8. **Implement DefendExecutor** (PRIORITY 3):
+- Move to hostile
+- Attack
+- Return IN_PROGRESS while hostile exists
+
+9. **Implement IdleExecutor** (PRIORITY 3):
+- Default fallback behavior
+- Move to parking spot near controller
+
+10. **Update ExecutorFactory.ts**:
+```typescript
+// Add imports at top
+import { HarvestExecutor } from './executors/HarvestExecutor';
+import { TransferExecutor } from './executors/TransferExecutor';
+// ... import all executors
+
+// In initializeExecutors():
+private static initializeExecutors(): void {
+  this.registerExecutor(TaskType.HARVEST_ENERGY, new HarvestExecutor());
+  this.registerExecutor(TaskType.HAUL_ENERGY, new TransferExecutor());
+  this.registerExecutor(TaskType.REFILL_SPAWN, new TransferExecutor());
+  this.registerExecutor(TaskType.REFILL_EXTENSION, new TransferExecutor());
+  this.registerExecutor(TaskType.REFILL_TOWER, new TransferExecutor());
+  this.registerExecutor(TaskType.UPGRADE_CONTROLLER, new UpgradeExecutor());
+  this.registerExecutor(TaskType.BUILD, new BuildExecutor());
+  this.registerExecutor(TaskType.REPAIR, new RepairExecutor());
+  this.registerExecutor(TaskType.WITHDRAW_ENERGY, new WithdrawExecutor());
+  this.registerExecutor(TaskType.DEFEND_ROOM, new DefendExecutor());
+  this.registerExecutor(TaskType.IDLE, new IdleExecutor());
+  console.log('✅ ExecutorFactory registered 11 task executors');
+}
+```
+
+11. **Update `src/execution/index.ts`**:
+```typescript
+export * from './executors/HarvestExecutor';
+export * from './executors/TransferExecutor';
+// ... export all executors
+```
+
+### Success Criteria:
+- [ ] All 8 executor files created
+- [ ] ExecutorFactory updated with registrations
+- [ ] Code compiles: `npm run build`
+- [ ] Post completion to CAMPAIGN_STATUS.md
+
+### After Completion:
+Signal "PHASE IV-B COMPLETE" to unblock Agent Tertius.
+
+**You are the CRITICAL PATH. The Empire needs your executors! Ave!**

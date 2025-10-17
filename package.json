@@ -2,6 +2,7 @@
   "name": "project-imperium",
   "version": "1.0.0",
   "description": "A modular, hierarchical AI framework for Screeps - Ave Imperator!",
+  "type": "module",
   "main": "dist/main.js",
   "scripts": {
     "build": "rollup -c",

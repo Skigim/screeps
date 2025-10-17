@@ -30,13 +30,28 @@ AGENT SECUNDUS (CRITICAL PATH - NO BLOCKERS)
 - `screeps.sample.json`
 - `deploy.js`
 - `src/main.ts`
-- `src/principate/Empire.ts`
+- `src/principate/Empire.ts` (shared with Tertius for Phase IV-C)
+- **PHASE IV**: `src/execution/` directory (framework only)
+  - `src/execution/TaskExecutor.ts`
+  - `src/execution/TaskResult.ts`
+  - `src/execution/ExecutorFactory.ts`
+  - `src/execution/index.ts`
 
 **DO NOT MODIFY** these files if you are not Agent Primus.
 
 ### Agent Secundus Owns:
 - `src/interfaces/*.ts` (ALL files in interfaces directory)
 - `src/magistrates/LegatusArchivus.ts`
+- **PHASE IV**: `src/execution/executors/` directory (ALL executor implementations)
+  - `src/execution/executors/HarvestExecutor.ts`
+  - `src/execution/executors/TransferExecutor.ts`
+  - `src/execution/executors/UpgradeExecutor.ts`
+  - `src/execution/executors/BuildExecutor.ts`
+  - `src/execution/executors/RepairExecutor.ts`
+  - `src/execution/executors/WithdrawExecutor.ts`
+  - `src/execution/executors/DefendExecutor.ts`
+  - `src/execution/executors/IdleExecutor.ts`
+  - Updates to `src/execution/ExecutorFactory.ts` (registration only)
 
 **DO NOT MODIFY** these files if you are not Agent Secundus.
 
@@ -45,6 +60,8 @@ AGENT SECUNDUS (CRITICAL PATH - NO BLOCKERS)
 - `src/magistrates/LegatusGenetor.ts`
 - `src/magistrates/LegatusFabrum.ts`
 - `src/magistrates/LegatusViae.ts`
+- **PHASE IV**: `src/magistrates/LegatusLegionum.ts` (Legion Commander)
+- **PHASE IV**: Updates to `src/principate/Empire.ts` (integration only)
 
 **DO NOT MODIFY** these files if you are not Agent Tertius.
 

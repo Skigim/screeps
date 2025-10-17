@@ -398,3 +398,123 @@ Signal: [READY/BLOCKED/COMPLETE]
 - Test compilation before signaling completion
 
 Ave Imperator! Your mission begins now.
+
+---
+
+## 🆕 PHASE IV: OPERATION LEGIONARY - NEW ORDERS
+
+**Status**: Phase III Complete ✅ | Phase IV Initiated ⚔️
+
+### Your New Mission: Phase IV-A - Task Executor Framework
+
+**Objective**: Build the execution framework that will enable creeps to execute tasks
+
+**Why This Matters**: Currently our creeps spawn but stand idle. This framework gives them the ability to act.
+
+### Phase IV-A Tasks:
+
+1. **Create directory**: `src/execution/`
+
+2. **Create `src/execution/TaskResult.ts`**:
+```typescript
+export enum TaskStatus {
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  BLOCKED = 'BLOCKED'
+}
+
+export interface TaskResult {
+  status: TaskStatus;
+  message?: string;
+  energyUsed?: number;
+  workDone?: number;
+}
+```
+
+3. **Create `src/execution/TaskExecutor.ts`**:
+```typescript
+import { Task } from '../interfaces';
+import { TaskResult } from './TaskResult';
+
+/**
+ * Base class for task execution
+ * Each TaskType has a corresponding executor that knows how to execute it
+ */
+export abstract class TaskExecutor {
+  /**
+   * Execute the task with the given creep
+   */
+  abstract execute(creep: Creep, task: Task): TaskResult;
+  
+  /**
+   * Check if creep is at the target position
+   */
+  protected isAtTarget(creep: Creep, target: RoomPosition | RoomObject): boolean {
+    return creep.pos.isNearTo(target);
+  }
+  
+  /**
+   * Move creep to target
+   */
+  protected moveToTarget(creep: Creep, target: RoomPosition | RoomObject): ScreepsReturnCode {
+    return creep.moveTo(target, {
+      visualizePathStyle: { stroke: '#ffffff' },
+      reusePath: 10
+    });
+  }
+}
+```
+
+4. **Create `src/execution/ExecutorFactory.ts`**:
+```typescript
+import { TaskType } from '../interfaces';
+import { TaskExecutor } from './TaskExecutor';
+
+/**
+ * Factory that returns the appropriate TaskExecutor for a given TaskType
+ */
+export class ExecutorFactory {
+  private static executors: Map<TaskType, TaskExecutor> = new Map();
+  
+  public static getExecutor(taskType: TaskType): TaskExecutor | null {
+    // Initialize executors on first use
+    if (this.executors.size === 0) {
+      this.initializeExecutors();
+    }
+    
+    return this.executors.get(taskType) || null;
+  }
+  
+  private static initializeExecutors(): void {
+    // Agent Secundus will populate this in Phase IV-B
+    console.log('📋 ExecutorFactory initialized - awaiting executor registration');
+  }
+  
+  /**
+   * Register an executor for a task type
+   * Called by Agent Secundus during Phase IV-B
+   */
+  public static registerExecutor(taskType: TaskType, executor: TaskExecutor): void {
+    this.executors.set(taskType, executor);
+  }
+}
+```
+
+5. **Create `src/execution/index.ts`**:
+```typescript
+export * from './TaskResult';
+export * from './TaskExecutor';
+export * from './ExecutorFactory';
+```
+
+### Success Criteria:
+- [ ] Directory `src/execution/` created
+- [ ] All 4 files created
+- [ ] Code compiles: `npm run build`
+- [ ] Post completion to CAMPAIGN_STATUS.md
+
+### After Completion:
+Signal "PHASE IV-A COMPLETE" in CAMPAIGN_STATUS.md to unblock Agent Secundus.
+
+**Strategic Coordinator will be monitoring your progress. Ave!**

@@ -683,3 +683,168 @@ Signal: [WAITING/IN-PROGRESS/ALL MAGISTRATES COMPLETE]
 - Update status file religiously
 
 Ave Imperator! Stand ready to begin once Agent Secundus signals completion.
+
+---
+
+## 🆕 PHASE IV: OPERATION LEGIONARY - NEW ORDERS
+
+**Status**: Phase III Complete ✅ | Phase IV Initiated ⚔️
+
+### Your New Mission: Phase IV-C - Legion Commander Integration
+
+**Objective**: Wire task execution into the main Empire loop
+
+**Dependencies**: ⚠️ BLOCKED until Agent Secundus completes Phase IV-B (executors must exist first)
+
+### Phase IV-C Tasks:
+
+Once Agent Secundus signals "PHASE IV-B COMPLETE":
+
+1. **Create `src/magistrates/LegatusLegionum.ts`**:
+```typescript
+import { Task, TaskType } from '../interfaces';
+import { ExecutorFactory, TaskStatus, TaskResult } from '../execution';
+
+/**
+ * Legatus Legionum - The Legion Commander
+ * 
+ * Responsibility: Execute tasks assigned to creeps
+ * Philosophy: Every creep is a soldier executing orders
+ * 
+ * The Legion Commander ensures each creep executes its assigned task.
+ */
+export class LegatusLegionum {
+  private roomName: string;
+
+  constructor(roomName: string) {
+    this.roomName = roomName;
+  }
+
+  /**
+   * Execute tasks for all creeps in the room
+   */
+  public run(tasks: Task[]): void {
+    const room = Game.rooms[this.roomName];
+    if (!room) return;
+
+    const creeps = room.find(FIND_MY_CREEPS);
+    
+    creeps.forEach(creep => {
+      this.executeCreepTask(creep, tasks);
+    });
+  }
+
+  private executeCreepTask(creep: Creep, tasks: Task[]): void {
+    // Get creep's assigned task
+    const taskId = creep.memory.task;
+    const task = tasks.find(t => t.id === taskId);
+    
+    if (!task) {
+      // Creep has no task - assign one
+      this.assignTask(creep, tasks);
+      return;
+    }
+    
+    // Get executor for this task type
+    const executor = ExecutorFactory.getExecutor(task.type);
+    if (!executor) {
+      console.log(`⚠️ No executor for task type: ${task.type}`);
+      return;
+    }
+    
+    // Execute the task
+    const result = executor.execute(creep, task);
+    
+    // Handle result
+    this.handleTaskResult(creep, task, result);
+  }
+
+  private assignTask(creep: Creep, tasks: Task[]): void {
+    // Find highest priority task needing creeps
+    const availableTask = tasks.find(t => 
+      t.assignedCreeps.length < t.creepsNeeded &&
+      !t.assignedCreeps.includes(creep.name)
+    );
+    
+    if (availableTask) {
+      creep.memory.task = availableTask.id;
+      availableTask.assignedCreeps.push(creep.name);
+      console.log(`📋 ${creep.name} assigned to ${availableTask.type}`);
+    }
+  }
+
+  private handleTaskResult(creep: Creep, task: Task, result: TaskResult): void {
+    if (result.status === TaskStatus.COMPLETED) {
+      // Task complete - clear assignment
+      creep.memory.task = undefined;
+      const index = task.assignedCreeps.indexOf(creep.name);
+      if (index > -1) {
+        task.assignedCreeps.splice(index, 1);
+      }
+      console.log(`✅ ${creep.name} completed ${task.type}`);
+    } else if (result.status === TaskStatus.FAILED) {
+      // Task failed - log and clear
+      console.log(`❌ ${creep.name} failed ${task.type}: ${result.message}`);
+      creep.memory.task = undefined;
+    }
+    // IN_PROGRESS and BLOCKED continue normally
+  }
+}
+```
+
+2. **Update `src/principate/Empire.ts`**:
+
+Add import:
+```typescript
+import { LegatusLegionum } from '../magistrates/LegatusLegionum';
+```
+
+Update RoomMagistrates interface:
+```typescript
+interface RoomMagistrates {
+  archivist: LegatusArchivus;
+  taskmaster: LegatusOfficio;
+  broodmother: LegatusGenetor;
+  architect: LegatusFabrum;
+  trailblazer: LegatusViae;
+  legionCommander: LegatusLegionum;  // ADD THIS LINE
+}
+```
+
+Update manageColonia to add Legion Commander:
+```typescript
+private manageColonia(room: Room): void {
+  // Get or create magistrates for this room
+  if (!this.magistratesByRoom.has(room.name)) {
+    this.magistratesByRoom.set(room.name, {
+      archivist: new LegatusArchivus(room.name),
+      taskmaster: new LegatusOfficio(room.name),
+      broodmother: new LegatusGenetor(room.name),
+      architect: new LegatusFabrum(room.name),
+      trailblazer: new LegatusViae(room.name),
+      legionCommander: new LegatusLegionum(room.name)  // ADD THIS LINE
+    });
+  }
+
+  const magistrates = this.magistratesByRoom.get(room.name)!;
+
+  // Execute the Magistrate chain in order
+  const report = magistrates.archivist.run(room);
+  const tasks = magistrates.taskmaster.run(report);
+  magistrates.broodmother.run(tasks);
+  magistrates.legionCommander.run(tasks);  // ADD THIS LINE
+  magistrates.architect.run();
+  magistrates.trailblazer.run();
+}
+```
+
+### Success Criteria:
+- [ ] LegatusLegionum.ts created
+- [ ] Empire.ts updated with Legion Commander
+- [ ] Code compiles: `npm run build`
+- [ ] Post completion to CAMPAIGN_STATUS.md
+
+### After Completion:
+Signal "PHASE IV-C COMPLETE" - PROJECT READY FOR DEPLOYMENT!
+
+**This is the final piece. After you complete this, creeps will ACT! Ave!**
