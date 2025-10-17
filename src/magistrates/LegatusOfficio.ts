@@ -121,6 +121,7 @@ export class LegatusOfficio {
           targetPos: { x: resource.pos.x, y: resource.pos.y, roomName: this.roomName },
           creepsNeeded: 1,
           assignedCreeps: [],
+          requiredParts: [CARRY], // Need CARRY to pick up resources
           metadata: {
             energyAmount: resource.amount
           }
@@ -141,7 +142,8 @@ export class LegatusOfficio {
         targetId: source.id,
         targetPos: { x: source.pos.x, y: source.pos.y, roomName: this.roomName },
         creepsNeeded: source.harvestersNeeded, // Total needed, not shortage
-        assignedCreeps: []
+        assignedCreeps: [],
+        requiredParts: [WORK] // Need WORK to harvest
       });
     });
 
@@ -165,6 +167,7 @@ export class LegatusOfficio {
             targetId: spawn.id,
             creepsNeeded: Math.ceil(freeCapacity / 50), // 1 creep per 50 energy needed
             assignedCreeps: [],
+            requiredParts: [CARRY], // Need CARRY to transfer energy
             metadata: {
               energyNeeded: freeCapacity
             }
@@ -186,6 +189,7 @@ export class LegatusOfficio {
           targetPos: { x: container.pos.x, y: container.pos.y, roomName: this.roomName },
           creepsNeeded: 99, // Multiple haulers acceptable - proximity optimizes
           assignedCreeps: [],
+          requiredParts: [CARRY], // Need CARRY to haul energy
           metadata: {
             energyAvailable: container.store.energy
           }
@@ -209,6 +213,7 @@ export class LegatusOfficio {
           targetId: tower.id,
           creepsNeeded: Math.ceil(energyNeeded / 500),
           assignedCreeps: [],
+          requiredParts: [CARRY], // Need CARRY to transfer energy
           metadata: {
             energyRequired: energyNeeded
           }
@@ -256,6 +261,7 @@ export class LegatusOfficio {
         targetPos: { x: site.pos.x, y: site.pos.y, roomName: this.roomName },
         creepsNeeded: creepsNeeded,
         assignedCreeps: [],
+        requiredParts: [WORK, CARRY], // Need WORK to build, CARRY to transport energy
         metadata: {
           structureType: site.structureType,
           remainingWork: site.progressTotal - site.progress
@@ -278,6 +284,7 @@ export class LegatusOfficio {
         targetPos: { x: target.pos.x, y: target.pos.y, roomName: this.roomName },
         creepsNeeded: 1,
         assignedCreeps: [],
+        requiredParts: [WORK, CARRY], // Need WORK to repair, CARRY to transport energy
         metadata: {
           structureType: target.structureType,
           hitsNeeded: target.hitsMax - target.hits
@@ -322,6 +329,7 @@ export class LegatusOfficio {
       targetId: report.controller.id,
       creepsNeeded: creepsNeeded, // Controller can handle many upgraders
       assignedCreeps: [],
+      requiredParts: [WORK, CARRY], // Need WORK to upgrade, CARRY to transport energy
       metadata: {
         ticksToDowngrade: ticksToDowngrade,
         downgradeRisk: ticksToDowngrade < downgradeThreshold ? 'WARNING' : 'SAFE'
@@ -396,6 +404,7 @@ export class LegatusOfficio {
           targetId: spawn.id,
           creepsNeeded: 2, // Limit to prevent spawn drainage
           assignedCreeps: [],
+          requiredParts: [CARRY], // Need CARRY to withdraw energy
           metadata: {
             resourceType: RESOURCE_ENERGY,
             emergencyWithdrawal: true

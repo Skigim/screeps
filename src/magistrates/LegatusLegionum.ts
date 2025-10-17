@@ -111,26 +111,12 @@ export class LegatusLegionum {
       // Check if already assigned to this task
       if (t.assignedCreeps.includes(creep.name)) return false;
       
-      // SPECIALIZED ROLE FILTERING:
-      // Harvesters ONLY harvest (never haul, build, upgrade, etc.)
-      if (role === 'harvester' && t.type !== 'HARVEST_ENERGY') {
-        return false;
-      }
-      
-      // Haulers ONLY haul energy (no WORK parts - can't build/upgrade/repair)
-      // Allowed: PICKUP, HAUL, REFILL, WITHDRAW
-      if (role === 'hauler') {
-        const haulerTasks = ['PICKUP_ENERGY', 'HAUL_ENERGY', 'REFILL_SPAWN', 
-                            'REFILL_EXTENSION', 'REFILL_TOWER', 'WITHDRAW_ENERGY'];
-        if (!haulerTasks.includes(t.type)) {
-          return false;
-        }
-      }
-      
-      // Workers NEVER harvest (dedicated harvesters do that)
-      // Workers: pickup, build, upgrade, repair, refill only
-      if (role === 'worker' && t.type === 'HARVEST_ENERGY') {
-        return false;
+      // PART-BASED FILTERING: Check if creep has required body parts
+      if (t.requiredParts && t.requiredParts.length > 0) {
+        const hasAllParts = t.requiredParts.every(partType => 
+          creep.body.some(bodyPart => bodyPart.type === partType)
+        );
+        if (!hasAllParts) return false; // Creep lacks required parts
       }
       
       // Check if task is full - if so, can we displace someone less suitable?
