@@ -351,8 +351,9 @@ class LegatusOfficio {
         if (minorRepairs.length > 0) {
             tasks.push(...this.createRepairTasks(minorRepairs));
         }
-        // Priority 8: Renew Creeps (low priority - only when idle and spawn energy available)
-        tasks.push(...this.createRenewTasks(report));
+        // Priority 8: Emergency Spawn Withdrawal (when no energy sources available)
+        // Only if we have time before needing to spawn replacements
+        tasks.push(...this.createEmergencyWithdrawalTasks(report));
         // Sort by priority (highest first)
         return tasks.sort((a, b) => b.priority - a.priority);
     }
@@ -532,24 +533,54 @@ class LegatusOfficio {
         });
         return tasks;
     }
-    createRenewTasks(report) {
+    createEmergencyWithdrawalTasks(report) {
         const tasks = [];
         const room = Game.rooms[this.roomName];
         if (!room)
             return tasks;
-        // Create renew tasks for each spawn (low priority - only for idle creeps)
+        // Check if we have enough energy sources available (harvest/pickup tasks)
+        // If harvest sources are saturated and no pickup available, allow spawn withdrawal
+        const harvestTasksAvailable = report.sources.some(s => s.harvestersPresent < s.harvestersNeeded);
+        // Check for dropped energy
+        const droppedResources = room.find(FIND_DROPPED_RESOURCES, {
+            filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+        });
+        const pickupAvailable = droppedResources.length > 0;
+        // Only create withdrawal tasks if normal energy sources are saturated
+        if (harvestTasksAvailable || pickupAvailable) {
+            return tasks; // Normal energy acquisition available, don't use spawn energy
+        }
+        // Find the shortest TTL among our creeps (for spawn-locking prevention)
+        const creeps = room.find(FIND_MY_CREEPS);
+        const shortestTTL = creeps.reduce((min, creep) => {
+            const ttl = creep.ticksToLive || 1500;
+            return Math.min(min, ttl);
+        }, 1500);
+        // Calculate spawn time needed for replacement (body parts * 3 ticks)
+        // Assume worst case: 10 parts = 30 ticks
+        const spawnTimeNeeded = 30;
+        const safetyBuffer = 50; // Extra buffer for movement/assignment
+        // Only allow spawn withdrawal if we have time before needing to spawn
+        if (shortestTTL < spawnTimeNeeded + safetyBuffer) {
+            // Too close to needing spawn - don't lock it
+            return tasks;
+        }
+        // Safe to withdraw from spawn for emergency energy
         report.spawns.forEach(spawn => {
-            tasks.push({
-                id: this.generateTaskId(),
-                type: TaskType.RENEW_CREEP,
-                priority: 10, // Very low - only when nothing else to do
-                targetId: spawn.id,
-                creepsNeeded: 99, // Accept all idle creeps
-                assignedCreeps: [],
-                metadata: {
-                    spawnId: spawn.id
-                }
-            });
+            if (spawn.energy > 100) { // Only if spawn has energy to spare
+                tasks.push({
+                    id: this.generateTaskId(),
+                    type: TaskType.WITHDRAW_ENERGY,
+                    priority: 15, // Low priority - only when harvest/pickup unavailable
+                    targetId: spawn.id,
+                    creepsNeeded: 2, // Limit to prevent spawn drainage
+                    assignedCreeps: [],
+                    metadata: {
+                        resourceType: RESOURCE_ENERGY,
+                        emergencyWithdrawal: true
+                    }
+                });
+            }
         });
         return tasks;
     }
@@ -1371,9 +1402,31 @@ class BuildExecutor extends TaskExecutor {
         if (!site) {
             return { status: TaskStatus.FAILED, message: 'Construction site not found' };
         }
-        // If creep has no energy, go harvest first
+        // If creep has no energy, acquire energy first (following priority: pickup > harvest)
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            // Find nearest source with energy
+            // Priority 1: Look for dropped energy first (don't waste it)
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+            });
+            if (droppedEnergy) {
+                if (!creep.pos.isNearTo(droppedEnergy)) {
+                    creep.moveTo(droppedEnergy, { visualizePathStyle: { stroke: '#ffaa00' } });
+                    return {
+                        status: TaskStatus.IN_PROGRESS,
+                        message: 'Moving to pickup energy',
+                        workDone: 0
+                    };
+                }
+                const pickupResult = creep.pickup(droppedEnergy);
+                if (pickupResult === OK) {
+                    return {
+                        status: TaskStatus.IN_PROGRESS,
+                        message: 'Picking up energy for build',
+                        workDone: 0
+                    };
+                }
+            }
+            // Priority 2: Harvest from source
             const sources = creep.room.find(FIND_SOURCES_ACTIVE);
             if (sources.length === 0) {
                 return {
@@ -1482,13 +1535,70 @@ class RepairExecutor extends TaskExecutor {
                 workDone: 0
             };
         }
-        // Check if creep is out of energy
+        // If creep has no energy, acquire energy first (following priority: pickup > harvest)
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            return {
-                status: TaskStatus.COMPLETED,
-                message: 'No energy',
-                workDone: 0
-            };
+            // Priority 1: Look for dropped energy first (don't waste it)
+            const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+            });
+            if (droppedEnergy) {
+                if (!creep.pos.isNearTo(droppedEnergy)) {
+                    creep.moveTo(droppedEnergy, { visualizePathStyle: { stroke: '#ffaa00' } });
+                    return {
+                        status: TaskStatus.IN_PROGRESS,
+                        message: 'Moving to pickup energy',
+                        workDone: 0
+                    };
+                }
+                const pickupResult = creep.pickup(droppedEnergy);
+                if (pickupResult === OK) {
+                    return {
+                        status: TaskStatus.IN_PROGRESS,
+                        message: 'Picking up energy for repair',
+                        workDone: 0
+                    };
+                }
+            }
+            // Priority 2: Harvest from source
+            const sources = creep.room.find(FIND_SOURCES_ACTIVE);
+            if (sources.length === 0) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Waiting for energy sources to regenerate',
+                    workDone: 0
+                };
+            }
+            const nearestSource = creep.pos.findClosestByPath(sources);
+            if (!nearestSource) {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: 'Cannot path to energy source',
+                    workDone: 0
+                };
+            }
+            if (!creep.pos.isNearTo(nearestSource)) {
+                creep.moveTo(nearestSource, { visualizePathStyle: { stroke: '#ffaa00' } });
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to harvest energy',
+                    workDone: 0
+                };
+            }
+            const harvestResult = creep.harvest(nearestSource);
+            if (harvestResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Harvesting energy for repair',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Harvest failed: ${harvestResult}`,
+                    workDone: 0
+                };
+            }
         }
         // Check if adjacent to structure
         if (!this.isAtTarget(creep, structure)) {

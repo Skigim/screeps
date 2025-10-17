@@ -32,13 +32,75 @@ export class RepairExecutor extends TaskExecutor {
       };
     }
 
-    // Check if creep is out of energy
+    // If creep has no energy, acquire energy first (following priority: pickup > harvest)
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-      return { 
-        status: TaskStatus.COMPLETED, 
-        message: 'No energy',
-        workDone: 0
-      };
+      // Priority 1: Look for dropped energy first (don't waste it)
+      const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+        filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+      });
+
+      if (droppedEnergy) {
+        if (!creep.pos.isNearTo(droppedEnergy)) {
+          creep.moveTo(droppedEnergy, { visualizePathStyle: { stroke: '#ffaa00' } });
+          return { 
+            status: TaskStatus.IN_PROGRESS, 
+            message: 'Moving to pickup energy',
+            workDone: 0
+          };
+        }
+
+        const pickupResult = creep.pickup(droppedEnergy);
+        if (pickupResult === OK) {
+          return { 
+            status: TaskStatus.IN_PROGRESS, 
+            message: 'Picking up energy for repair',
+            workDone: 0
+          };
+        }
+      }
+
+      // Priority 2: Harvest from source
+      const sources = creep.room.find(FIND_SOURCES_ACTIVE);
+      if (sources.length === 0) {
+        return { 
+          status: TaskStatus.IN_PROGRESS, 
+          message: 'Waiting for energy sources to regenerate',
+          workDone: 0
+        };
+      }
+
+      const nearestSource = creep.pos.findClosestByPath(sources);
+      if (!nearestSource) {
+        return { 
+          status: TaskStatus.FAILED, 
+          message: 'Cannot path to energy source',
+          workDone: 0
+        };
+      }
+
+      if (!creep.pos.isNearTo(nearestSource)) {
+        creep.moveTo(nearestSource, { visualizePathStyle: { stroke: '#ffaa00' } });
+        return { 
+          status: TaskStatus.IN_PROGRESS, 
+          message: 'Moving to harvest energy',
+          workDone: 0
+        };
+      }
+
+      const harvestResult = creep.harvest(nearestSource);
+      if (harvestResult === OK) {
+        return { 
+          status: TaskStatus.IN_PROGRESS, 
+          message: 'Harvesting energy for repair',
+          workDone: 0
+        };
+      } else {
+        return { 
+          status: TaskStatus.FAILED, 
+          message: `Harvest failed: ${harvestResult}`,
+          workDone: 0
+        };
+      }
     }
 
     // Check if adjacent to structure

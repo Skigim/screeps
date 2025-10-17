@@ -22,7 +22,7 @@ export declare class LegatusOfficio {
     private createConstructionTasks;
     private createRepairTasks;
     private createUpgradeTasks;
-    private createRenewTasks;
+    private createEmergencyWithdrawalTasks;
     private generateTaskId;
 }
 //# sourceMappingURL=LegatusOfficio.d.ts.map

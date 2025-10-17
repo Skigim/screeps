@@ -58,8 +58,9 @@ export class LegatusOfficio {
       tasks.push(...this.createRepairTasks(minorRepairs));
     }
 
-    // Priority 8: Renew Creeps (low priority - only when idle and spawn energy available)
-    tasks.push(...this.createRenewTasks(report));
+    // Priority 8: Emergency Spawn Withdrawal (when no energy sources available)
+    // Only if we have time before needing to spawn replacements
+    tasks.push(...this.createEmergencyWithdrawalTasks(report));
 
     // Sort by priority (highest first)
     return tasks.sort((a, b) => b.priority - a.priority);
@@ -264,24 +265,60 @@ export class LegatusOfficio {
     return tasks;
   }
 
-  private createRenewTasks(report: ArchivistReport): Task[] {
+  private createEmergencyWithdrawalTasks(report: ArchivistReport): Task[] {
     const tasks: Task[] = [];
     const room = Game.rooms[this.roomName];
     if (!room) return tasks;
 
-    // Create renew tasks for each spawn (low priority - only for idle creeps)
+    // Check if we have enough energy sources available (harvest/pickup tasks)
+    // If harvest sources are saturated and no pickup available, allow spawn withdrawal
+    const harvestTasksAvailable = report.sources.some(s => s.harvestersPresent < s.harvestersNeeded);
+    
+    // Check for dropped energy
+    const droppedResources = room.find(FIND_DROPPED_RESOURCES, {
+      filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+    });
+    const pickupAvailable = droppedResources.length > 0;
+
+    // Only create withdrawal tasks if normal energy sources are saturated
+    if (harvestTasksAvailable || pickupAvailable) {
+      return tasks; // Normal energy acquisition available, don't use spawn energy
+    }
+
+    // Find the shortest TTL among our creeps (for spawn-locking prevention)
+    const creeps = room.find(FIND_MY_CREEPS);
+    const shortestTTL = creeps.reduce((min, creep) => {
+      const ttl = creep.ticksToLive || 1500;
+      return Math.min(min, ttl);
+    }, 1500);
+
+    // Calculate spawn time needed for replacement (body parts * 3 ticks)
+    // Assume worst case: 10 parts = 30 ticks
+    const spawnTimeNeeded = 30;
+    const safetyBuffer = 50; // Extra buffer for movement/assignment
+
+    // Only allow spawn withdrawal if we have time before needing to spawn
+    if (shortestTTL < spawnTimeNeeded + safetyBuffer) {
+      // Too close to needing spawn - don't lock it
+      return tasks;
+    }
+
+    // Safe to withdraw from spawn for emergency energy
     report.spawns.forEach(spawn => {
-      tasks.push({
-        id: this.generateTaskId(),
-        type: TaskType.RENEW_CREEP,
-        priority: 10, // Very low - only when nothing else to do
-        targetId: spawn.id,
-        creepsNeeded: 99, // Accept all idle creeps
-        assignedCreeps: [],
-        metadata: {
-          spawnId: spawn.id
-        }
-      });
+      if (spawn.energy > 100) { // Only if spawn has energy to spare
+        tasks.push({
+          id: this.generateTaskId(),
+          type: TaskType.WITHDRAW_ENERGY,
+          priority: 15, // Low priority - only when harvest/pickup unavailable
+          targetId: spawn.id,
+          creepsNeeded: 2, // Limit to prevent spawn drainage
+          assignedCreeps: [],
+          metadata: {
+            resourceType: RESOURCE_ENERGY,
+            emergencyWithdrawal: true
+          }
+        });
+      }
     });
 
     return tasks;

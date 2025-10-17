@@ -23,9 +23,34 @@ export class BuildExecutor extends TaskExecutor {
       return { status: TaskStatus.FAILED, message: 'Construction site not found' };
     }
 
-    // If creep has no energy, go harvest first
+    // If creep has no energy, acquire energy first (following priority: pickup > harvest)
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-      // Find nearest source with energy
+      // Priority 1: Look for dropped energy first (don't waste it)
+      const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+        filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+      });
+
+      if (droppedEnergy) {
+        if (!creep.pos.isNearTo(droppedEnergy)) {
+          creep.moveTo(droppedEnergy, { visualizePathStyle: { stroke: '#ffaa00' } });
+          return { 
+            status: TaskStatus.IN_PROGRESS, 
+            message: 'Moving to pickup energy',
+            workDone: 0
+          };
+        }
+
+        const pickupResult = creep.pickup(droppedEnergy);
+        if (pickupResult === OK) {
+          return { 
+            status: TaskStatus.IN_PROGRESS, 
+            message: 'Picking up energy for build',
+            workDone: 0
+          };
+        }
+      }
+
+      // Priority 2: Harvest from source
       const sources = creep.room.find(FIND_SOURCES_ACTIVE);
       if (sources.length === 0) {
         return { 
