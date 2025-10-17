@@ -116,6 +116,13 @@ export class LegatusLegionum {
         const hasAllParts = t.requiredParts.every(partType => 
           creep.body.some(bodyPart => bodyPart.type === partType)
         );
+        
+        // Debug: Log hauler assignment attempts to BUILD
+        if (creep.memory.role === 'hauler' && t.type === 'BUILD') {
+          const bodyParts = creep.body.map(bp => bp.type).join(',');
+          console.log(`🔍 ${creep.name} checking BUILD: body=[${bodyParts}], required=[${t.requiredParts.join(',')}], hasAll=${hasAllParts}`);
+        }
+        
         if (!hasAllParts) {
           // Debug: Log when filtering out tasks
           if (creep.memory.role === 'hauler' && t.type === 'BUILD') {
