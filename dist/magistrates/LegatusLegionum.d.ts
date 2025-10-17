@@ -32,7 +32,9 @@ export declare class LegatusLegionum {
     /**
      * Assign a task to an idle creep
      *
-     * Finds the highest priority task that needs more creeps assigned
+     * Finds the highest priority task that:
+     * 1. Needs more creeps assigned
+     * 2. The creep is capable of performing (based on body parts and state)
      *
      * @param creep - The creep to assign a task to
      * @param tasks - Available tasks

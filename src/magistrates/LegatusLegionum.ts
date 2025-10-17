@@ -83,17 +83,47 @@ export class LegatusLegionum {
   /**
    * Assign a task to an idle creep
    * 
-   * Finds the highest priority task that needs more creeps assigned
+   * Finds the highest priority task that:
+   * 1. Needs more creeps assigned
+   * 2. The creep is capable of performing (based on body parts and state)
    * 
    * @param creep - The creep to assign a task to
    * @param tasks - Available tasks
    */
   private assignTask(creep: Creep, tasks: Task[]): void {
-    // Find highest priority task needing creeps
-    const availableTask = tasks.find(t => 
-      t.assignedCreeps.length < t.creepsNeeded &&
-      !t.assignedCreeps.includes(creep.name)
-    );
+    // Filter tasks based on creep capabilities and state
+    const suitableTasks = tasks.filter(t => {
+      // Task needs more creeps
+      if (t.assignedCreeps.length >= t.creepsNeeded) return false;
+      if (t.assignedCreeps.includes(creep.name)) return false;
+      
+      // Check if creep can do this task based on energy state
+      const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+      const hasSpace = creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+      
+      // Energy transfer tasks require energy
+      if (t.type === 'REFILL_SPAWN' || t.type === 'REFILL_EXTENSION' || 
+          t.type === 'REFILL_TOWER' || t.type === 'HAUL_ENERGY') {
+        if (!hasEnergy) return false;
+      }
+      
+      // Harvest tasks require space
+      if (t.type === 'HARVEST_ENERGY' || t.type === 'WITHDRAW_ENERGY') {
+        if (!hasSpace) return false;
+      }
+      
+      // Upgrade/build/repair require energy
+      if (t.type === 'UPGRADE_CONTROLLER' || t.type === 'BUILD' || t.type === 'REPAIR') {
+        if (!hasEnergy) return false;
+      }
+      
+      return true;
+    });
+    
+    // Sort by priority (highest first)
+    suitableTasks.sort((a, b) => b.priority - a.priority);
+    
+    const availableTask = suitableTasks[0];
     
     if (availableTask) {
       creep.memory.task = availableTask.id;
