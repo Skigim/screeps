@@ -107,20 +107,48 @@ export class Empire {
     });
     
     // 2. Taskmaster generates tasks based on the report
-    const newTasks = magistrates.taskmaster.run(report);
-    console.log(`📋 ${room.name}: Generated ${newTasks.length} tasks`);
-    if (newTasks.length > 0) {
-      newTasks.forEach(t => console.log(`   - ${t.type} (priority ${t.priority}, needs ${t.creepsNeeded} creeps)`));
+    // Use existing tasks from memory, or generate new ones if none exist
+    let tasks = room.memory.tasks || [];
+    
+    // Clean up completed tasks (no assigned creeps and not needed anymore)
+    tasks = tasks.filter(t => t.assignedCreeps.length > 0 || t.creepsNeeded > 0);
+    
+    // Generate new tasks if we have none, or refresh periodically (every 10 ticks)
+    if (tasks.length === 0 || Game.time % 10 === 0) {
+      const newTasks = magistrates.taskmaster.run(report);
+      
+      // Merge new tasks with existing ones (preserve assignments)
+      newTasks.forEach(newTask => {
+        const existing = tasks.find(t => 
+          t.type === newTask.type && 
+          t.targetId === newTask.targetId
+        );
+        
+        if (existing) {
+          // Update existing task's priority and needs
+          existing.priority = newTask.priority;
+          existing.creepsNeeded = newTask.creepsNeeded;
+        } else {
+          // Add new task
+          tasks.push(newTask);
+        }
+      });
+      
+      console.log(`📋 ${room.name}: Refreshed tasks - ${tasks.length} total`);
+    }
+    
+    if (tasks.length > 0) {
+      tasks.forEach(t => console.log(`   - ${t.type} (priority ${t.priority}, ${t.assignedCreeps.length}/${t.creepsNeeded} creeps)`));
     }
     
     // Store tasks in room memory for persistence
-    room.memory.tasks = newTasks;
+    room.memory.tasks = tasks;
     
     // 3. Broodmother spawns creeps based on tasks
-    magistrates.broodmother.run(newTasks);
+    magistrates.broodmother.run(tasks);
     
     // 4. Legion Commander executes tasks with existing creeps
-    magistrates.legionCommander.run(newTasks);
+    magistrates.legionCommander.run(tasks);
     
     // 5. Architect handles construction
     magistrates.architect.run();
