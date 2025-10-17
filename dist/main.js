@@ -486,18 +486,18 @@ class LegatusOfficio {
 /**
  * Legatus Genetor - The Broodmother
  *
- * Responsibility: Design and spawn creeps optimized for tasks
- * Philosophy: The right tool for the right job
+ * Responsibility: Maintain optimal creep population with intelligent body designs
+ * Philosophy: Spawn versatile workers, let tasks find them
  *
- * The Broodmother looks at the task queue and determines if a new creep
- * is needed. If so, it designs the perfect body for that task.
+ * The Broodmother analyzes room needs and spawns creeps with appropriate
+ * body configurations. Creeps are assigned tasks based on their capabilities.
  */
 class LegatusGenetor {
     constructor(roomName) {
         this.roomName = roomName;
     }
     /**
-     * Analyze tasks and spawn creeps as needed
+     * Analyze room population and spawn creeps as needed
      */
     run(tasks) {
         const room = Game.rooms[this.roomName];
@@ -509,125 +509,115 @@ class LegatusGenetor {
         });
         if (spawns.length === 0)
             return;
-        // Find highest priority task that needs creeps
-        const taskNeedingCreeps = tasks.find(t => t.assignedCreeps.length < t.creepsNeeded);
-        if (!taskNeedingCreeps)
+        // Check if we need more creeps
+        const creepCount = Object.keys(Game.creeps).filter(name => Game.creeps[name].memory.room === this.roomName).length;
+        // Early game: maintain minimum population
+        const minCreeps = 6;
+        const maxCreeps = 15;
+        if (creepCount >= maxCreeps)
             return;
-        // Design and spawn a creep for this task
-        const request = this.designCreep(taskNeedingCreeps, room);
-        if (request) {
-            this.spawnCreep(spawns[0], request);
-        }
-    }
-    designCreep(task, room) {
-        var _a;
+        // Determine what type of creep to spawn based on room needs
         const energy = room.energyAvailable;
-        // Design body based on task type
-        let body = [];
-        let role = '';
-        switch (task.type) {
-            case TaskType.HARVEST_ENERGY:
-                body = this.designHarvester(energy);
-                role = 'harvester';
-                break;
-            case TaskType.HAUL_ENERGY:
-            case TaskType.REFILL_TOWER:
-            case TaskType.REFILL_SPAWN:
-            case TaskType.REFILL_EXTENSION:
-                body = this.designHauler(energy);
-                role = 'hauler';
-                break;
-            case TaskType.BUILD:
-                body = this.designBuilder(energy);
-                role = 'builder';
-                break;
-            case TaskType.REPAIR:
-                body = this.designRepairer(energy);
-                role = 'repairer';
-                break;
-            case TaskType.UPGRADE_CONTROLLER:
-                body = this.designUpgrader(energy);
-                role = 'upgrader';
-                break;
-            case TaskType.DEFEND_ROOM:
-                body = this.designDefender(energy);
-                role = 'defender';
-                break;
-            default:
-                body = this.designWorker(energy);
-                role = 'worker';
-        }
+        // Only spawn if we have enough energy (don't spawn weak creeps)
+        const minEnergyToSpawn = creepCount < minCreeps ? 200 : 300;
+        if (energy < minEnergyToSpawn)
+            return;
+        // Decide body type based on current population and needs
+        const creepType = this.determineNeededCreepType(room, tasks);
+        const body = this.designCreepBody(creepType, energy);
         if (body.length === 0)
-            return null;
+            return;
         const cost = this.calculateBodyCost(body);
-        return {
-            priority: task.priority,
+        const role = creepType; // 'worker', 'hauler', 'defender', etc.
+        const request = {
+            priority: creepCount < minCreeps ? 100 : 50, // Emergency priority if below min
             body: body,
             memory: {
                 role: role,
-                room: this.roomName,
-                task: task.id,
-                targetId: (_a = task.targetId) === null || _a === void 0 ? void 0 : _a.toString()
+                room: this.roomName
             },
-            initialTask: task,
+            initialTask: undefined, // Workers are not spawned for specific tasks
             cost: cost,
             role: role
         };
+        this.spawnCreep(spawns[0], request);
     }
-    designHarvester(energy) {
-        // Optimal harvester: 1 WORK, 1 CARRY, 2 MOVE for roads
-        // Max 5 WORK parts (source energy/tick limit)
+    /**
+     * Determine what type of creep the room needs most
+     */
+    determineNeededCreepType(room, _tasks) {
+        const creeps = Object.values(Game.creeps).filter(c => c.memory.room === this.roomName);
+        // Count creeps by capability
+        const workCreeps = creeps.filter(c => c.getActiveBodyparts(WORK) > 0).length;
+        const carryCreeps = creeps.filter(c => c.getActiveBodyparts(CARRY) > 0).length;
+        const attackCreeps = creeps.filter(c => c.getActiveBodyparts(ATTACK) > 0).length;
+        // Check for defense needs
+        const hostiles = room.find(FIND_HOSTILE_CREEPS);
+        if (hostiles.length > 0 && attackCreeps < 2) {
+            return 'defender';
+        }
+        // Early game: need workers who can do everything
+        if (workCreeps < 4) {
+            return 'worker'; // WORK + CARRY + MOVE - can harvest, build, upgrade, transfer
+        }
+        // Mid game: specialized haulers for efficiency
+        if (carryCreeps < workCreeps * 0.5) {
+            return 'hauler'; // Mostly CARRY + MOVE - fast energy transport
+        }
+        // Default: balanced worker
+        return 'worker';
+    }
+    /**
+     * Design a creep body based on type and available energy
+     */
+    designCreepBody(type, energy) {
+        switch (type) {
+            case 'worker':
+                return this.designWorker(energy);
+            case 'hauler':
+                return this.designHauler(energy);
+            case 'defender':
+                return this.designDefender(energy);
+            default:
+                return this.designWorker(energy);
+        }
+    }
+    /**
+     * Design a general-purpose worker: WORK + CARRY + MOVE
+     * Can harvest, build, upgrade, repair, and transfer
+     */
+    designWorker(energy) {
+        // Worker: Balanced WORK, CARRY, MOVE (versatile, can do anything)
         const parts = [];
-        const maxWork = 5;
-        let workParts = 0;
-        while (energy >= 250 && workParts < maxWork) {
+        while (energy >= 200) {
             parts.push(WORK); // 100
             parts.push(CARRY); // 50
-            parts.push(MOVE); // 50
-            parts.push(MOVE); // 50 = 250 total, 1:1 ratio on roads
-            workParts++;
-            energy -= 250;
+            parts.push(MOVE); // 50 = 200 total
+            energy -= 200;
         }
         return parts.length > 0 ? parts : [WORK, CARRY, MOVE];
     }
+    /**
+     * Design a specialized hauler: Mostly CARRY + MOVE
+     * Fast energy transport
+     */
     designHauler(energy) {
         // Hauler: Maximize CARRY with MOVE for speed
         const parts = [];
+        // At least 1 WORK for emergency harvesting
+        if (energy >= 150) {
+            parts.push(WORK);
+            parts.push(CARRY);
+            parts.push(MOVE);
+            energy -= 150;
+        }
+        // Rest is CARRY + MOVE
         while (energy >= 100) {
             parts.push(CARRY);
             parts.push(MOVE);
             energy -= 100;
         }
         return parts.length > 0 ? parts : [CARRY, MOVE];
-    }
-    designBuilder(energy) {
-        // Builder: 1 WORK, 1 CARRY, 2 MOVE (1:1 ratio on roads)
-        const parts = [];
-        while (energy >= 250) {
-            parts.push(WORK); // 100
-            parts.push(CARRY); // 50
-            parts.push(MOVE); // 50
-            parts.push(MOVE); // 50 = 250 total
-            energy -= 250;
-        }
-        return parts.length > 0 ? parts : [WORK, CARRY, MOVE];
-    }
-    designRepairer(energy) {
-        // Same as builder
-        return this.designBuilder(energy);
-    }
-    designUpgrader(energy) {
-        // Upgrader: 2 WORK, 1 CARRY, 2 MOVE (balanced for efficiency and speed)
-        const parts = [];
-        while (energy >= 350) {
-            parts.push(WORK); // 100
-            parts.push(WORK); // 100
-            parts.push(CARRY); // 50
-            parts.push(MOVE); // 50
-            parts.push(MOVE); // 50 = 350 total, 3 parts : 2 MOVE
-            energy -= 350;
-        }
-        return parts.length > 0 ? parts : [WORK, CARRY, MOVE];
     }
     designDefender(energy) {
         // Defender: ATTACK, MOVE, some TOUGH
@@ -644,17 +634,6 @@ class LegatusGenetor {
             energy -= 130;
         }
         return parts.length > 0 ? parts : [ATTACK, MOVE];
-    }
-    designWorker(energy) {
-        // Generic worker: balanced parts
-        const parts = [];
-        while (energy >= 200) {
-            parts.push(WORK);
-            parts.push(CARRY);
-            parts.push(MOVE);
-            energy -= 200;
-        }
-        return parts.length > 0 ? parts : [WORK, CARRY, MOVE];
     }
     calculateBodyCost(body) {
         const costs = {

@@ -2,27 +2,38 @@ import { Task } from '../interfaces';
 /**
  * Legatus Genetor - The Broodmother
  *
- * Responsibility: Design and spawn creeps optimized for tasks
- * Philosophy: The right tool for the right job
+ * Responsibility: Maintain optimal creep population with intelligent body designs
+ * Philosophy: Spawn versatile workers, let tasks find them
  *
- * The Broodmother looks at the task queue and determines if a new creep
- * is needed. If so, it designs the perfect body for that task.
+ * The Broodmother analyzes room needs and spawns creeps with appropriate
+ * body configurations. Creeps are assigned tasks based on their capabilities.
  */
 export declare class LegatusGenetor {
     private roomName;
     constructor(roomName: string);
     /**
-     * Analyze tasks and spawn creeps as needed
+     * Analyze room population and spawn creeps as needed
      */
     run(tasks: Task[]): void;
-    private designCreep;
-    private designHarvester;
-    private designHauler;
-    private designBuilder;
-    private designRepairer;
-    private designUpgrader;
-    private designDefender;
+    /**
+     * Determine what type of creep the room needs most
+     */
+    private determineNeededCreepType;
+    /**
+     * Design a creep body based on type and available energy
+     */
+    private designCreepBody;
+    /**
+     * Design a general-purpose worker: WORK + CARRY + MOVE
+     * Can harvest, build, upgrade, repair, and transfer
+     */
     private designWorker;
+    /**
+     * Design a specialized hauler: Mostly CARRY + MOVE
+     * Fast energy transport
+     */
+    private designHauler;
+    private designDefender;
     private calculateBodyCost;
     private spawnCreep;
 }

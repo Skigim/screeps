@@ -17,8 +17,8 @@ export interface CreepRequest {
   /** Memory to initialize the creep with */
   memory: CreepMemory;
   
-  /** The task this creep will immediately begin */
-  initialTask: Task;
+  /** Optional: The task this creep will immediately begin */
+  initialTask?: Task;
   
   /** Estimated energy cost */
   cost: number;
