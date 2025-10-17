@@ -91,6 +91,11 @@ export class LegatusLegionum {
    * @param tasks - Available tasks
    */
   private assignTask(creep: Creep, tasks: Task[]): void {
+    // Analyze creep body composition
+    const workParts = creep.body.filter(p => p.type === WORK).length;
+    const carryParts = creep.body.filter(p => p.type === CARRY).length;
+    const isSpecializedHarvester = workParts > carryParts; // More WORK than CARRY = harvester
+    
     // Filter tasks based on creep capabilities and state
     const suitableTasks = tasks.filter(t => {
       // Task needs more creeps
@@ -100,6 +105,11 @@ export class LegatusLegionum {
       // Check if creep can do this task based on energy state
       const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
       const hasSpace = creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+      
+      // Specialized harvesters should focus on harvesting, not pickup
+      if (t.type === 'PICKUP_ENERGY' && isSpecializedHarvester) {
+        return false; // Let general workers handle pickup
+      }
       
       // Energy transfer tasks require energy
       if (t.type === 'REFILL_SPAWN' || t.type === 'REFILL_EXTENSION' || 
