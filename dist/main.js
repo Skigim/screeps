@@ -442,20 +442,19 @@ class LegatusOfficio {
     }
     createUpgradeTasks(report) {
         const tasks = [];
-        // Always have an upgrade task available
+        // ALWAYS create upgrade tasks - upgrading is core gameplay
         const upgraderShortage = report.controller.upgraderRecommendation -
             report.controller.upgraderCount;
-        if (upgraderShortage > 0 || report.controller.ticksToDowngrade < 5000) {
-            const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 55;
-            tasks.push({
-                id: this.generateTaskId(),
-                type: TaskType.UPGRADE_CONTROLLER,
-                priority: priority,
-                targetId: report.controller.id,
-                creepsNeeded: Math.max(1, upgraderShortage),
-                assignedCreeps: []
-            });
-        }
+        const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 55;
+        const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 1;
+        tasks.push({
+            id: this.generateTaskId(),
+            type: TaskType.UPGRADE_CONTROLLER,
+            priority: priority,
+            targetId: report.controller.id,
+            creepsNeeded: creepsNeeded,
+            assignedCreeps: []
+        });
         return tasks;
     }
     generateTaskId() {
@@ -1649,9 +1648,16 @@ class Empire {
         // 1. Archivist observes the room state
         const report = magistrates.archivist.run(room);
         console.log(`📊 ${room.name} Report: energyDeficit=${report.energyDeficit}, sources=${report.sources.length}, upgraderShortage=${report.controller.upgraderRecommendation - report.controller.upgraderCount}`);
+        // Debug source info
+        report.sources.forEach((s, i) => {
+            console.log(`   Source ${i}: energy=${s.energy}, harvesters=${s.harvestersPresent}/${s.harvestersNeeded}`);
+        });
         // 2. Taskmaster generates tasks based on the report
         const newTasks = magistrates.taskmaster.run(report);
         console.log(`📋 ${room.name}: Generated ${newTasks.length} tasks`);
+        if (newTasks.length > 0) {
+            newTasks.forEach(t => console.log(`   - ${t.type} (priority ${t.priority}, needs ${t.creepsNeeded} creeps)`));
+        }
         // Store tasks in room memory for persistence
         room.memory.tasks = newTasks;
         // 3. Broodmother spawns creeps based on tasks

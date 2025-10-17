@@ -101,9 +101,17 @@ export class Empire {
     const report = magistrates.archivist.run(room);
     console.log(`📊 ${room.name} Report: energyDeficit=${report.energyDeficit}, sources=${report.sources.length}, upgraderShortage=${report.controller.upgraderRecommendation - report.controller.upgraderCount}`);
     
+    // Debug source info
+    report.sources.forEach((s, i) => {
+      console.log(`   Source ${i}: energy=${s.energy}, harvesters=${s.harvestersPresent}/${s.harvestersNeeded}`);
+    });
+    
     // 2. Taskmaster generates tasks based on the report
     const newTasks = magistrates.taskmaster.run(report);
     console.log(`📋 ${room.name}: Generated ${newTasks.length} tasks`);
+    if (newTasks.length > 0) {
+      newTasks.forEach(t => console.log(`   - ${t.type} (priority ${t.priority}, needs ${t.creepsNeeded} creeps)`));
+    }
     
     // Store tasks in room memory for persistence
     room.memory.tasks = newTasks;

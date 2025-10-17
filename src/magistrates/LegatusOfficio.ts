@@ -195,22 +195,21 @@ export class LegatusOfficio {
   private createUpgradeTasks(report: ArchivistReport): Task[] {
     const tasks: Task[] = [];
 
-    // Always have an upgrade task available
+    // ALWAYS create upgrade tasks - upgrading is core gameplay
     const upgraderShortage = report.controller.upgraderRecommendation - 
                              report.controller.upgraderCount;
 
-    if (upgraderShortage > 0 || report.controller.ticksToDowngrade < 5000) {
-      const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 55;
-      
-      tasks.push({
-        id: this.generateTaskId(),
-        type: TaskType.UPGRADE_CONTROLLER,
-        priority: priority,
-        targetId: report.controller.id,
-        creepsNeeded: Math.max(1, upgraderShortage),
-        assignedCreeps: []
-      });
-    }
+    const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 55;
+    const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 1;
+    
+    tasks.push({
+      id: this.generateTaskId(),
+      type: TaskType.UPGRADE_CONTROLLER,
+      priority: priority,
+      targetId: report.controller.id,
+      creepsNeeded: creepsNeeded,
+      assignedCreeps: []
+    });
 
     return tasks;
   }
