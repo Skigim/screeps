@@ -97,7 +97,7 @@ export class LegatusOfficio {
         tasks.push({
           id: `pickup_${resource.id}`, // Stable ID based on resource
           type: TaskType.PICKUP_ENERGY,
-          priority: 88, // Higher than harvest, lower than refill
+          priority: 84, // Just below BUILD - pickup energy to use for construction
           targetId: resource.id,
           targetPos: { x: resource.pos.x, y: resource.pos.y, roomName: this.roomName },
           creepsNeeded: 1,
@@ -109,13 +109,14 @@ export class LegatusOfficio {
       });
     }
 
-    // Harvest from sources
+    // Harvest from sources (for dedicated harvesters only)
+    // Priority: Lower than BUILD - we only harvest to GET energy FOR building
     report.sources.forEach(source => {
       if (source.energy > 0 && source.harvestersPresent < source.harvestersNeeded) {
         tasks.push({
           id: `harvest_${source.id}`, // Stable ID based on source
           type: TaskType.HARVEST_ENERGY,
-          priority: 85,
+          priority: 80, // Below BUILD (85+), ensures dedicated harvesters only
           targetId: source.id,
           targetPos: { x: source.pos.x, y: source.pos.y, roomName: this.roomName },
           creepsNeeded: source.harvestersNeeded - source.harvestersPresent,
@@ -136,7 +137,7 @@ export class LegatusOfficio {
           tasks.push({
             id: `refill_spawn_${spawn.id}`, // Stable ID based on spawn
             type: TaskType.REFILL_SPAWN,
-            priority: 90, // Higher than harvest - we need energy NOW
+            priority: 82, // Below BUILD, above HARVEST - ensures spawn energy for creep replacement
             targetId: spawn.id,
             creepsNeeded: Math.ceil(freeCapacity / 50), // 1 creep per 50 energy needed
             assignedCreeps: [],
@@ -156,7 +157,7 @@ export class LegatusOfficio {
         tasks.push({
           id: `haul_${container.id}`, // Stable ID based on container
           type: TaskType.HAUL_ENERGY,
-          priority: 80,
+          priority: 83, // Just below BUILD - haul energy for construction
           targetId: container.id,
           targetPos: { x: container.pos.x, y: container.pos.y, roomName: this.roomName },
           creepsNeeded: 99, // Multiple haulers acceptable - proximity optimizes
@@ -180,7 +181,7 @@ export class LegatusOfficio {
         tasks.push({
           id: `refill_tower_${tower.id}`, // Stable ID based on tower
           type: TaskType.REFILL_TOWER,
-          priority: 75,
+          priority: 91, // High priority - tower defense is critical
           targetId: tower.id,
           creepsNeeded: Math.ceil(energyNeeded / 500),
           assignedCreeps: [],
@@ -198,11 +199,15 @@ export class LegatusOfficio {
     const tasks: Task[] = [];
 
     report.constructionSites.forEach(site => {
-      // Prioritize spawns and towers
-      let priority = 60;
-      if (site.structureType === STRUCTURE_SPAWN) priority = 85;
-      if (site.structureType === STRUCTURE_TOWER) priority = 80;
-      if (site.structureType === STRUCTURE_EXTENSION) priority = 70;
+      // CONSTRUCTION IS TOP PRIORITY - infrastructure expansion is critical
+      // Higher priority than harvesting (except for dedicated harvesters)
+      let priority = 85; // Base: higher than most tasks
+      
+      // Critical structures get even higher priority
+      if (site.structureType === STRUCTURE_SPAWN) priority = 95;
+      if (site.structureType === STRUCTURE_TOWER) priority = 92;
+      if (site.structureType === STRUCTURE_EXTENSION) priority = 90;
+      // Roads, containers, walls = 85 (still high)
 
       tasks.push({
         id: `build_${site.id}`, // Stable ID based on construction site
@@ -252,9 +257,10 @@ export class LegatusOfficio {
     const upgraderShortage = report.controller.upgraderRecommendation - 
                              report.controller.upgraderCount;
 
-    // Priority: 90 if downgrade imminent, 45 otherwise (below all construction)
-    // Building infrastructure should take priority over upgrading
-    const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 45;
+    // Priority: LOWEST - only upgrade when all construction is done
+    // Emergency: 96 if downgrade imminent (higher than all BUILD)
+    // Normal: 40 (below all other tasks - construction first!)
+    const priority = report.controller.ticksToDowngrade < 5000 ? 96 : 40;
     const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps with energy
     
     tasks.push({
