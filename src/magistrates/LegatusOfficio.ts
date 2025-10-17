@@ -11,7 +11,6 @@ import { ArchivistReport, Task, TaskType } from '../interfaces';
  */
 export class LegatusOfficio {
   private roomName: string;
-  private taskIdCounter: number = 0;
 
   constructor(roomName: string) {
     this.roomName = roomName;
@@ -71,7 +70,7 @@ export class LegatusOfficio {
     
     report.hostiles.forEach(hostile => {
       tasks.push({
-        id: this.generateTaskId(),
+        id: `defend_${hostile.id}`, // Stable ID based on hostile
         type: TaskType.DEFEND_ROOM,
         priority: 95 + report.hostileThreatLevel,
         targetId: hostile.id,
@@ -96,7 +95,7 @@ export class LegatusOfficio {
       
       droppedResources.forEach(resource => {
         tasks.push({
-          id: this.generateTaskId(),
+          id: `pickup_${resource.id}`, // Stable ID based on resource
           type: TaskType.PICKUP_ENERGY,
           priority: 88, // Higher than harvest, lower than refill
           targetId: resource.id,
@@ -114,7 +113,7 @@ export class LegatusOfficio {
     report.sources.forEach(source => {
       if (source.energy > 0 && source.harvestersPresent < source.harvestersNeeded) {
         tasks.push({
-          id: this.generateTaskId(),
+          id: `harvest_${source.id}`, // Stable ID based on source
           type: TaskType.HARVEST_ENERGY,
           priority: 85,
           targetId: source.id,
@@ -132,7 +131,7 @@ export class LegatusOfficio {
         const freeCapacity = spawn.energyCapacity - spawn.energy;
         if (freeCapacity > 0) {
           tasks.push({
-            id: this.generateTaskId(),
+            id: `refill_spawn_${spawn.id}`, // Stable ID based on spawn
             type: TaskType.REFILL_SPAWN,
             priority: 90, // Higher than harvest - we need energy NOW
             targetId: spawn.id,
@@ -152,7 +151,7 @@ export class LegatusOfficio {
     report.containers.forEach(container => {
       if (container.store.energy > 100 && report.energyDeficit > 0) {
         tasks.push({
-          id: this.generateTaskId(),
+          id: `haul_${container.id}`, // Stable ID based on container
           type: TaskType.HAUL_ENERGY,
           priority: 80,
           targetId: container.id,
@@ -176,7 +175,7 @@ export class LegatusOfficio {
       if (tower.needsRefill) {
         const energyNeeded = tower.energyCapacity - tower.energy;
         tasks.push({
-          id: this.generateTaskId(),
+          id: `refill_tower_${tower.id}`, // Stable ID based on tower
           type: TaskType.REFILL_TOWER,
           priority: 75,
           targetId: tower.id,
@@ -203,7 +202,7 @@ export class LegatusOfficio {
       if (site.structureType === STRUCTURE_EXTENSION) priority = 70;
 
       tasks.push({
-        id: this.generateTaskId(),
+        id: `build_${site.id}`, // Stable ID based on construction site
         type: TaskType.BUILD,
         priority: priority,
         targetId: site.id,
@@ -225,7 +224,7 @@ export class LegatusOfficio {
 
     repairTargets.forEach(target => {
       tasks.push({
-        id: this.generateTaskId(),
+        id: `repair_${target.id}`, // Stable ID based on structure
         type: TaskType.REPAIR,
         priority: target.priority,
         targetId: target.id,
@@ -254,7 +253,7 @@ export class LegatusOfficio {
     const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps with energy
     
     tasks.push({
-      id: this.generateTaskId(),
+      id: `upgrade_${report.controller.id}`, // Stable ID based on controller
       type: TaskType.UPGRADE_CONTROLLER,
       priority: priority,
       targetId: report.controller.id,
@@ -307,7 +306,7 @@ export class LegatusOfficio {
     report.spawns.forEach(spawn => {
       if (spawn.energy > 100) { // Only if spawn has energy to spare
         tasks.push({
-          id: this.generateTaskId(),
+          id: `withdraw_spawn_${spawn.id}`, // Stable ID based on spawn
           type: TaskType.WITHDRAW_ENERGY,
           priority: 15, // Low priority - only when harvest/pickup unavailable
           targetId: spawn.id,
@@ -322,9 +321,5 @@ export class LegatusOfficio {
     });
 
     return tasks;
-  }
-
-  private generateTaskId(): string {
-    return `task_${this.roomName}_${Game.time}_${this.taskIdCounter++}`;
   }
 }

@@ -10,7 +10,6 @@ import { ArchivistReport, Task } from '../interfaces';
  */
 export declare class LegatusOfficio {
     private roomName;
-    private taskIdCounter;
     constructor(roomName: string);
     /**
      * Analyze the room report and generate prioritized tasks
@@ -23,6 +22,5 @@ export declare class LegatusOfficio {
     private createRepairTasks;
     private createUpgradeTasks;
     private createEmergencyWithdrawalTasks;
-    private generateTaskId;
 }
 //# sourceMappingURL=LegatusOfficio.d.ts.map
