@@ -1530,12 +1530,14 @@ class LegatusLegionum {
             !t.assignedCreeps.includes(creep.name));
         if (availableTask) {
             creep.memory.task = availableTask.id;
+            creep.memory.targetId = availableTask.targetId; // Set targetId so Archivist can count us
             availableTask.assignedCreeps.push(creep.name);
-            console.log(`📋 ${creep.name} assigned to ${availableTask.type}`);
+            console.log(`📋 ${creep.name} assigned to ${availableTask.type} (target: ${availableTask.targetId})`);
         }
         else {
             // No tasks available - assign idle task
             creep.memory.task = 'idle';
+            creep.memory.targetId = undefined;
             console.log(`💤 ${creep.name} idle - no tasks available`);
         }
     }
@@ -1550,6 +1552,7 @@ class LegatusLegionum {
         if (result.status === TaskStatus.COMPLETED) {
             // Task complete - clear assignment
             creep.memory.task = undefined;
+            creep.memory.targetId = undefined;
             const index = task.assignedCreeps.indexOf(creep.name);
             if (index > -1) {
                 task.assignedCreeps.splice(index, 1);
@@ -1560,6 +1563,7 @@ class LegatusLegionum {
             // Task failed - log and clear
             console.log(`❌ ${creep.name} failed ${task.type}: ${result.message || 'Unknown error'}`);
             creep.memory.task = undefined;
+            creep.memory.targetId = undefined;
             const index = task.assignedCreeps.indexOf(creep.name);
             if (index > -1) {
                 task.assignedCreeps.splice(index, 1);
