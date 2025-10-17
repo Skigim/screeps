@@ -126,16 +126,19 @@ export class LegatusOfficio {
 
     // DIRECT TRANSFER to spawns/extensions (early game - no containers yet)
     if (report.energyDeficit > 0) {
-      // Find spawns and extensions that need energy
+      // Find spawns that need energy (check actual spawn capacity, not room capacity)
       report.spawns.forEach(spawn => {
-        const freeCapacity = spawn.energyCapacity - spawn.energy;
+        const spawnObj = Game.getObjectById(spawn.id as Id<StructureSpawn>);
+        if (!spawnObj) return;
+        
+        const freeCapacity = spawnObj.store.getFreeCapacity(RESOURCE_ENERGY);
         if (freeCapacity > 0) {
           tasks.push({
             id: `refill_spawn_${spawn.id}`, // Stable ID based on spawn
             type: TaskType.REFILL_SPAWN,
             priority: 90, // Higher than harvest - we need energy NOW
             targetId: spawn.id,
-            creepsNeeded: 99, // Accept all haulers - proximity will optimize
+            creepsNeeded: Math.ceil(freeCapacity / 50), // 1 creep per 50 energy needed
             assignedCreeps: [],
             metadata: {
               energyNeeded: freeCapacity
