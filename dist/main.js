@@ -1371,13 +1371,50 @@ class BuildExecutor extends TaskExecutor {
         if (!site) {
             return { status: TaskStatus.FAILED, message: 'Construction site not found' };
         }
-        // Check if creep is out of energy
+        // If creep has no energy, go harvest first
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            return {
-                status: TaskStatus.COMPLETED,
-                message: 'No energy',
-                workDone: 0
-            };
+            // Find nearest source with energy
+            const sources = creep.room.find(FIND_SOURCES_ACTIVE);
+            if (sources.length === 0) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Waiting for energy sources to regenerate',
+                    workDone: 0
+                };
+            }
+            const nearestSource = creep.pos.findClosestByPath(sources);
+            if (!nearestSource) {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: 'Cannot path to energy source',
+                    workDone: 0
+                };
+            }
+            // Move to source and harvest
+            if (!creep.pos.isNearTo(nearestSource)) {
+                creep.moveTo(nearestSource, { visualizePathStyle: { stroke: '#ffaa00' } });
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to harvest energy',
+                    workDone: 0
+                };
+            }
+            // Harvest
+            const harvestResult = creep.harvest(nearestSource);
+            if (harvestResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Harvesting energy for build',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Harvest failed: ${harvestResult}`,
+                    workDone: 0
+                };
+            }
         }
         // Check if adjacent to construction site
         if (!this.isAtTarget(creep, site)) {
@@ -2034,8 +2071,10 @@ class LegatusLegionum {
                 if (!hasSpace)
                     return false;
             }
-            // Upgrade/build/repair require energy
-            if (t.type === 'UPGRADE_CONTROLLER' || t.type === 'BUILD' || t.type === 'REPAIR') {
+            // Upgrade/build/repair - DON'T filter by energy, let executor handle getting energy
+            // (Creeps can be assigned while empty, then go harvest, then execute the task)
+            // Only UPGRADE requires energy (it's low priority and only for already-loaded creeps)
+            if (t.type === 'UPGRADE_CONTROLLER') {
                 if (!hasEnergy)
                     return false;
             }
@@ -2060,7 +2099,7 @@ class LegatusLegionum {
                     reason.push('NEEDS_ENERGY');
                 if (['HARVEST_ENERGY', 'PICKUP_ENERGY', 'WITHDRAW_ENERGY'].includes(t.type) && !hasSpace)
                     reason.push('NEEDS_SPACE');
-                if (['UPGRADE_CONTROLLER', 'BUILD', 'REPAIR'].includes(t.type) && !hasEnergy)
+                if (t.type === 'UPGRADE_CONTROLLER' && !hasEnergy)
                     reason.push('NEEDS_ENERGY');
                 console.log(`    ${t.type} [${t.priority}] ${t.assignedCreeps.length}/${t.creepsNeeded} - ❌ ${reason.join(', ')}`);
             });

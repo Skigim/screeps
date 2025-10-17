@@ -124,8 +124,10 @@ export class LegatusLegionum {
         if (!hasSpace) return false;
       }
       
-      // Upgrade/build/repair require energy
-      if (t.type === 'UPGRADE_CONTROLLER' || t.type === 'BUILD' || t.type === 'REPAIR') {
+      // Upgrade/build/repair - DON'T filter by energy, let executor handle getting energy
+      // (Creeps can be assigned while empty, then go harvest, then execute the task)
+      // Only UPGRADE requires energy (it's low priority and only for already-loaded creeps)
+      if (t.type === 'UPGRADE_CONTROLLER') {
         if (!hasEnergy) return false;
       }
       
@@ -147,7 +149,7 @@ export class LegatusLegionum {
         if (t.assignedCreeps.includes(creep.name)) reason.push('ALREADY_ASSIGNED');
         if (['REFILL_SPAWN', 'REFILL_EXTENSION', 'REFILL_TOWER', 'HAUL_ENERGY'].includes(t.type) && !hasEnergy) reason.push('NEEDS_ENERGY');
         if (['HARVEST_ENERGY', 'PICKUP_ENERGY', 'WITHDRAW_ENERGY'].includes(t.type) && !hasSpace) reason.push('NEEDS_SPACE');
-        if (['UPGRADE_CONTROLLER', 'BUILD', 'REPAIR'].includes(t.type) && !hasEnergy) reason.push('NEEDS_ENERGY');
+        if (t.type === 'UPGRADE_CONTROLLER' && !hasEnergy) reason.push('NEEDS_ENERGY');
         console.log(`    ${t.type} [${t.priority}] ${t.assignedCreeps.length}/${t.creepsNeeded} - ❌ ${reason.join(', ')}`);
       });
     }

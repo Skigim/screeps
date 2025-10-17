@@ -23,13 +23,52 @@ export class BuildExecutor extends TaskExecutor {
       return { status: TaskStatus.FAILED, message: 'Construction site not found' };
     }
 
-    // Check if creep is out of energy
+    // If creep has no energy, go harvest first
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-      return { 
-        status: TaskStatus.COMPLETED, 
-        message: 'No energy',
-        workDone: 0
-      };
+      // Find nearest source with energy
+      const sources = creep.room.find(FIND_SOURCES_ACTIVE);
+      if (sources.length === 0) {
+        return { 
+          status: TaskStatus.IN_PROGRESS, 
+          message: 'Waiting for energy sources to regenerate',
+          workDone: 0
+        };
+      }
+
+      const nearestSource = creep.pos.findClosestByPath(sources);
+      if (!nearestSource) {
+        return { 
+          status: TaskStatus.FAILED, 
+          message: 'Cannot path to energy source',
+          workDone: 0
+        };
+      }
+
+      // Move to source and harvest
+      if (!creep.pos.isNearTo(nearestSource)) {
+        creep.moveTo(nearestSource, { visualizePathStyle: { stroke: '#ffaa00' } });
+        return { 
+          status: TaskStatus.IN_PROGRESS, 
+          message: 'Moving to harvest energy',
+          workDone: 0
+        };
+      }
+
+      // Harvest
+      const harvestResult = creep.harvest(nearestSource);
+      if (harvestResult === OK) {
+        return { 
+          status: TaskStatus.IN_PROGRESS, 
+          message: 'Harvesting energy for build',
+          workDone: 0
+        };
+      } else {
+        return { 
+          status: TaskStatus.FAILED, 
+          message: `Harvest failed: ${harvestResult}`,
+          workDone: 0
+        };
+      }
     }
 
     // Check if adjacent to construction site
