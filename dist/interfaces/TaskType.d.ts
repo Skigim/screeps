@@ -18,6 +18,7 @@ export declare enum TaskType {
     CLAIM_CONTROLLER = "CLAIM_CONTROLLER",
     RESERVE_CONTROLLER = "RESERVE_CONTROLLER",
     SCOUT_ROOM = "SCOUT_ROOM",
+    RENEW_CREEP = "RENEW_CREEP",
     IDLE = "IDLE"
 }
 //# sourceMappingURL=TaskType.d.ts.map

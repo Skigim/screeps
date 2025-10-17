@@ -299,6 +299,7 @@ var TaskType;
     TaskType["CLAIM_CONTROLLER"] = "CLAIM_CONTROLLER";
     TaskType["RESERVE_CONTROLLER"] = "RESERVE_CONTROLLER";
     TaskType["SCOUT_ROOM"] = "SCOUT_ROOM";
+    TaskType["RENEW_CREEP"] = "RENEW_CREEP";
     // Idle/Default
     TaskType["IDLE"] = "IDLE";
 })(TaskType || (TaskType = {}));
@@ -350,6 +351,8 @@ class LegatusOfficio {
         if (minorRepairs.length > 0) {
             tasks.push(...this.createRepairTasks(minorRepairs));
         }
+        // Priority 8: Renew Creeps (low priority - only when idle and spawn energy available)
+        tasks.push(...this.createRenewTasks(report));
         // Sort by priority (highest first)
         return tasks.sort((a, b) => b.priority - a.priority);
     }
@@ -529,6 +532,27 @@ class LegatusOfficio {
         });
         return tasks;
     }
+    createRenewTasks(report) {
+        const tasks = [];
+        const room = Game.rooms[this.roomName];
+        if (!room)
+            return tasks;
+        // Create renew tasks for each spawn (low priority - only for idle creeps)
+        report.spawns.forEach(spawn => {
+            tasks.push({
+                id: this.generateTaskId(),
+                type: TaskType.RENEW_CREEP,
+                priority: 10, // Very low - only when nothing else to do
+                targetId: spawn.id,
+                creepsNeeded: 99, // Accept all idle creeps
+                assignedCreeps: [],
+                metadata: {
+                    spawnId: spawn.id
+                }
+            });
+        });
+        return tasks;
+    }
     generateTaskId() {
         return `task_${this.roomName}_${Game.time}_${this.taskIdCounter++}`;
     }
@@ -567,6 +591,17 @@ class LegatusGenetor {
         const maxCreeps = 15;
         if (creepCount >= maxCreeps)
             return;
+        // DON'T SPAWN if there are no available tasks (workers would just idle)
+        // Check if there are ANY tasks that have open slots
+        const availableTasks = tasks.filter(task => {
+            const openSlots = task.creepsNeeded - task.assignedCreeps.length;
+            return openSlots > 0;
+        });
+        if (availableTasks.length === 0 && creepCount >= minCreeps) {
+            // No tasks available and we have minimum population - don't spawn
+            // Let existing creeps renew instead
+            return;
+        }
         // Determine what type of creep to spawn based on room needs
         const energy = room.energyAvailable;
         // Only spawn if we have enough energy (don't spawn weak creeps)
@@ -1678,6 +1713,118 @@ class IdleExecutor extends TaskExecutor {
     }
 }
 
+/// <reference types="screeps" />
+/**
+ * RenewExecutor - Handles RENEW_CREEP tasks
+ *
+ * Responsibility: Keep creeps alive by renewing them at spawns
+ * Philosophy: Use excess spawn energy to extend creep lifespan
+ *
+ * When there are no urgent tasks, idle creeps should renew themselves
+ * to avoid dying and wasting the energy that was used to spawn them.
+ */
+class RenewExecutor extends TaskExecutor {
+    /**
+     * Execute renewal for a creep
+     */
+    execute(creep, task) {
+        // Get the spawn from the task
+        const spawn = Game.getObjectById(task.targetId);
+        if (!spawn) {
+            return {
+                status: TaskStatus.FAILED,
+                message: 'Spawn not found'
+            };
+        }
+        // Don't renew if creep is still very young (TTL > 1300 = ~65% life)
+        if (creep.ticksToLive && creep.ticksToLive > 1300) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Creep still young, no renewal needed'
+            };
+        }
+        // Check if spawn is spawning (can't renew while spawning)
+        if (spawn.spawning) {
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Waiting for spawn to finish spawning'
+            };
+        }
+        // Check if spawn has enough energy to renew (costs energy)
+        const renewCost = Math.ceil(this.calculateRenewCost(creep) * 0.1); // Estimate 10% of body cost
+        if (spawn.store.getUsedCapacity(RESOURCE_ENERGY) < renewCost) {
+            return {
+                status: TaskStatus.FAILED,
+                message: 'Spawn lacks energy for renewal'
+            };
+        }
+        // Move to spawn if not adjacent
+        if (!creep.pos.isNearTo(spawn)) {
+            const moveResult = creep.moveTo(spawn, {
+                visualizePathStyle: { stroke: '#00ff00' }
+            });
+            if (moveResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to spawn'
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Movement failed: ${moveResult}`
+                };
+            }
+        }
+        // Renew the creep
+        const renewResult = spawn.renewCreep(creep);
+        switch (renewResult) {
+            case OK:
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: `Renewing (TTL: ${creep.ticksToLive})`
+                };
+            case ERR_NOT_ENOUGH_ENERGY:
+                return {
+                    status: TaskStatus.FAILED,
+                    message: 'Spawn out of energy'
+                };
+            case ERR_FULL:
+                // Creep is fully renewed
+                return {
+                    status: TaskStatus.COMPLETED,
+                    message: 'Fully renewed'
+                };
+            case ERR_BUSY:
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Spawn busy, waiting'
+                };
+            default:
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Renewal failed: ${renewResult}`
+                };
+        }
+    }
+    /**
+     * Calculate approximate renewal cost based on body parts
+     */
+    calculateRenewCost(creep) {
+        const costs = {
+            [MOVE]: 50,
+            [WORK]: 100,
+            [CARRY]: 50,
+            [ATTACK]: 80,
+            [RANGED_ATTACK]: 150,
+            [HEAL]: 250,
+            [TOUGH]: 10,
+            [CLAIM]: 600
+        };
+        return creep.body.reduce((sum, part) => sum + (costs[part.type] || 0), 0);
+    }
+}
+
 /**
  * Factory for task executors
  *
@@ -1734,6 +1881,7 @@ class ExecutorFactory {
         const withdrawExecutor = new WithdrawExecutor();
         const defendExecutor = new DefendExecutor();
         const idleExecutor = new IdleExecutor();
+        const renewExecutor = new RenewExecutor();
         // Register energy management executors
         this.registerExecutor(TaskType.HARVEST_ENERGY, harvestExecutor);
         this.registerExecutor(TaskType.PICKUP_ENERGY, pickupExecutor);
@@ -1755,6 +1903,7 @@ class ExecutorFactory {
         this.registerExecutor(TaskType.CLAIM_CONTROLLER, upgradeExecutor); // Temporary - will be updated
         this.registerExecutor(TaskType.RESERVE_CONTROLLER, upgradeExecutor); // Temporary - will be updated
         this.registerExecutor(TaskType.SCOUT_ROOM, idleExecutor); // Temporary - will be updated
+        this.registerExecutor(TaskType.RENEW_CREEP, renewExecutor);
         // Register default idle
         this.registerExecutor(TaskType.IDLE, idleExecutor);
         console.log(`✅ ExecutorFactory initialized with ${this.executors.size} executors`);

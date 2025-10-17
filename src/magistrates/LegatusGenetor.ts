@@ -41,6 +41,19 @@ export class LegatusGenetor {
 
     if (creepCount >= maxCreeps) return;
 
+    // DON'T SPAWN if there are no available tasks (workers would just idle)
+    // Check if there are ANY tasks that have open slots
+    const availableTasks = tasks.filter(task => {
+      const openSlots = task.creepsNeeded - task.assignedCreeps.length;
+      return openSlots > 0;
+    });
+
+    if (availableTasks.length === 0 && creepCount >= minCreeps) {
+      // No tasks available and we have minimum population - don't spawn
+      // Let existing creeps renew instead
+      return;
+    }
+
     // Determine what type of creep to spawn based on room needs
     const energy = room.energyAvailable;
     

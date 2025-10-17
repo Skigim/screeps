@@ -9,6 +9,7 @@ import { RepairExecutor } from './executors/RepairExecutor';
 import { WithdrawExecutor } from './executors/WithdrawExecutor';
 import { DefendExecutor } from './executors/DefendExecutor';
 import { IdleExecutor } from './executors/IdleExecutor';
+import { RenewExecutor } from './executors/RenewExecutor';
 
 /**
  * Factory for task executors
@@ -72,6 +73,7 @@ export class ExecutorFactory {
     const withdrawExecutor = new WithdrawExecutor();
     const defendExecutor = new DefendExecutor();
     const idleExecutor = new IdleExecutor();
+    const renewExecutor = new RenewExecutor();
 
     // Register energy management executors
     this.registerExecutor(TaskType.HARVEST_ENERGY, harvestExecutor);
@@ -99,6 +101,7 @@ export class ExecutorFactory {
     this.registerExecutor(TaskType.CLAIM_CONTROLLER, upgradeExecutor); // Temporary - will be updated
     this.registerExecutor(TaskType.RESERVE_CONTROLLER, upgradeExecutor); // Temporary - will be updated
     this.registerExecutor(TaskType.SCOUT_ROOM, idleExecutor); // Temporary - will be updated
+    this.registerExecutor(TaskType.RENEW_CREEP, renewExecutor);
 
     // Register default idle
     this.registerExecutor(TaskType.IDLE, idleExecutor);

@@ -58,6 +58,9 @@ export class LegatusOfficio {
       tasks.push(...this.createRepairTasks(minorRepairs));
     }
 
+    // Priority 8: Renew Creeps (low priority - only when idle and spawn energy available)
+    tasks.push(...this.createRenewTasks(report));
+
     // Sort by priority (highest first)
     return tasks.sort((a, b) => b.priority - a.priority);
   }
@@ -256,6 +259,29 @@ export class LegatusOfficio {
       targetId: report.controller.id,
       creepsNeeded: creepsNeeded, // Controller can handle many upgraders
       assignedCreeps: []
+    });
+
+    return tasks;
+  }
+
+  private createRenewTasks(report: ArchivistReport): Task[] {
+    const tasks: Task[] = [];
+    const room = Game.rooms[this.roomName];
+    if (!room) return tasks;
+
+    // Create renew tasks for each spawn (low priority - only for idle creeps)
+    report.spawns.forEach(spawn => {
+      tasks.push({
+        id: this.generateTaskId(),
+        type: TaskType.RENEW_CREEP,
+        priority: 10, // Very low - only when nothing else to do
+        targetId: spawn.id,
+        creepsNeeded: 99, // Accept all idle creeps
+        assignedCreeps: [],
+        metadata: {
+          spawnId: spawn.id
+        }
+      });
     });
 
     return tasks;
