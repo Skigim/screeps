@@ -23,8 +23,12 @@ export class HarvestExecutor extends TaskExecutor {
       return { status: TaskStatus.FAILED, message: 'Source not found' };
     }
 
-    // Check if creep is full
-    if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+    // Check if creep has CARRY capacity
+    const hasCarryCapacity = creep.store.getCapacity(RESOURCE_ENERGY) > 0;
+    
+    // Only check fullness if creep has CARRY parts
+    // Harvesters with no CARRY parts drop energy immediately and never complete
+    if (hasCarryCapacity && creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
       return { 
         status: TaskStatus.COMPLETED, 
         message: 'Creep full',
@@ -36,7 +40,7 @@ export class HarvestExecutor extends TaskExecutor {
     if (source.energy === 0) {
       return { 
         status: TaskStatus.BLOCKED, 
-        message: 'Source empty',
+        message: 'Source empty - waiting for regen',
         workDone: 0
       };
     }

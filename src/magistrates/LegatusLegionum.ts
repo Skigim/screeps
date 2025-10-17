@@ -332,12 +332,20 @@ export class LegatusLegionum {
         task.assignedCreeps.splice(index, 1);
       }
     } else if (result.status === TaskStatus.BLOCKED) {
-      // Task blocked - log and clear for reassignment
-      console.log(`🚫 ${creep.name} blocked on ${task.type}: ${result.message || 'Task blocked'}`);
-      creep.memory.task = undefined;
-      const index = task.assignedCreeps.indexOf(creep.name);
-      if (index > -1) {
-        task.assignedCreeps.splice(index, 1);
+      // Task blocked - for most tasks, clear and reassign
+      // EXCEPTION: Harvesters should stay at their source even when blocked (waiting for regen)
+      const role = creep.memory.role || 'worker';
+      if (role === 'harvester' && task.type === 'HARVEST_ENERGY') {
+        // Harvester stays assigned, just waits for source to regenerate
+        console.log(`⏸️ ${creep.name} waiting at source: ${result.message || 'Source regenerating'}`);
+      } else {
+        // Other creeps clear and get reassigned
+        console.log(`🚫 ${creep.name} blocked on ${task.type}: ${result.message || 'Task blocked'}`);
+        creep.memory.task = undefined;
+        const index = task.assignedCreeps.indexOf(creep.name);
+        if (index > -1) {
+          task.assignedCreeps.splice(index, 1);
+        }
       }
     }
     // IN_PROGRESS: Continue normally next tick
