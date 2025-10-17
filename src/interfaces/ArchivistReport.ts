@@ -87,6 +87,7 @@ export interface ConstructionSiteReport {
   progress: number;
   progressTotal: number;
   pos: { x: number; y: number };
+  priority: number; // Architect-determined priority (higher = more important)
 }
 
 /** Report on a structure that needs repair */

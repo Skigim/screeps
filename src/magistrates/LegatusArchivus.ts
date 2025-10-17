@@ -171,8 +171,43 @@ export class LegatusArchivus {
       structureType: site.structureType,
       progress: site.progress,
       progressTotal: site.progressTotal,
-      pos: { x: site.pos.x, y: site.pos.y }
+      pos: { x: site.pos.x, y: site.pos.y },
+      priority: this.calculateConstructionPriority(site)
     }));
+  }
+
+  /**
+   * Calculate priority for construction sites based on Architect's strategic importance
+   * This encodes the Architect's knowledge of what structures matter most
+   */
+  private calculateConstructionPriority(site: ConstructionSite): number {
+    // CRITICAL: Spawn enables all future operations
+    if (site.structureType === STRUCTURE_SPAWN) return 100;
+    
+    // HIGHEST: Extensions unlock better creeps and faster economy
+    if (site.structureType === STRUCTURE_EXTENSION) return 95;
+    
+    // HIGH: Tower provides defense and automated healing
+    if (site.structureType === STRUCTURE_TOWER) return 90;
+    
+    // HIGH: Storage unlocks advanced economy
+    if (site.structureType === STRUCTURE_STORAGE) return 88;
+    
+    // MEDIUM-HIGH: Container enables energy logistics
+    if (site.structureType === STRUCTURE_CONTAINER) return 70;
+    
+    // MEDIUM: Roads improve traffic efficiency
+    if (site.structureType === STRUCTURE_ROAD) return 50;
+    
+    // MEDIUM-LOW: Labs enable boosting (mid-late game)
+    if (site.structureType === STRUCTURE_LAB) return 60;
+    
+    // LOW: Ramparts/Walls are defensive (low priority until needed)
+    if (site.structureType === STRUCTURE_RAMPART) return 30;
+    if (site.structureType === STRUCTURE_WALL) return 25;
+    
+    // DEFAULT: Unknown structure types
+    return 50;
   }
 
   /**

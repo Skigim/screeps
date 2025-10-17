@@ -77,6 +77,7 @@ export interface ConstructionSiteReport {
         x: number;
         y: number;
     };
+    priority: number;
 }
 /** Report on a structure that needs repair */
 export interface RepairTargetReport {

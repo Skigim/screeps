@@ -41,6 +41,11 @@ export declare class LegatusArchivus {
      */
     private analyzeConstructionSites;
     /**
+     * Calculate priority for construction sites based on Architect's strategic importance
+     * This encodes the Architect's knowledge of what structures matter most
+     */
+    private calculateConstructionPriority;
+    /**
      * Analyze all structures that need repair
      */
     private analyzeRepairTargets;
