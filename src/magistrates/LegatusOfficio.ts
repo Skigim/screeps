@@ -242,18 +242,19 @@ export class LegatusOfficio {
     const tasks: Task[] = [];
 
     // ALWAYS create upgrade tasks - upgrading is core gameplay
+    // The controller can handle unlimited upgraders, so set a high limit
     const upgraderShortage = report.controller.upgraderRecommendation - 
                              report.controller.upgraderCount;
 
     const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 55;
-    const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 1;
+    const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps with energy
     
     tasks.push({
       id: this.generateTaskId(),
       type: TaskType.UPGRADE_CONTROLLER,
       priority: priority,
       targetId: report.controller.id,
-      creepsNeeded: creepsNeeded,
+      creepsNeeded: creepsNeeded, // Controller can handle many upgraders
       assignedCreeps: []
     });
 
