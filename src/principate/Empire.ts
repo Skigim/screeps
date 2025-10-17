@@ -130,6 +130,7 @@ export class Empire {
           existing.id = newTask.id; // CRITICAL: Update to new stable ID format
           existing.priority = newTask.priority;
           existing.creepsNeeded = newTask.creepsNeeded;
+          existing.requiredParts = newTask.requiredParts; // MIGRATION: Add requiredParts to existing tasks
         } else {
           // Add new task
           tasks.push(newTask);

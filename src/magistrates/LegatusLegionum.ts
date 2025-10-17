@@ -117,23 +117,8 @@ export class LegatusLegionum {
           creep.body.some(bodyPart => bodyPart.type === partType)
         );
         
-        // Debug: Log hauler assignment attempts to BUILD
-        if (creep.memory.role === 'hauler' && t.type === 'BUILD') {
-          const bodyParts = creep.body.map(bp => bp.type).join(',');
-          console.log(`🔍 ${creep.name} checking BUILD: body=[${bodyParts}], required=[${t.requiredParts.join(',')}], hasAll=${hasAllParts}`);
-        }
-        
         if (!hasAllParts) {
-          // Debug: Log when filtering out tasks
-          if (creep.memory.role === 'hauler' && t.type === 'BUILD') {
-            console.log(`🚫 ${creep.name} filtered from ${t.type}: missing required parts [${t.requiredParts.join(',')}]`);
-          }
           return false; // Creep lacks required parts
-        }
-      } else {
-        // Debug: Warn if task has no requiredParts (legacy behavior)
-        if (t.type === 'BUILD' || t.type === 'UPGRADE_CONTROLLER' || t.type === 'REPAIR') {
-          console.log(`⚠️ Task ${t.type} (${t.id}) has no requiredParts! Using legacy filtering.`);
         }
       }
       
