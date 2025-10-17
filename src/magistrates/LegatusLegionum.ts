@@ -96,15 +96,15 @@ export class LegatusLegionum {
     const carryParts = creep.body.filter(p => p.type === CARRY).length;
     const isSpecializedHarvester = workParts > carryParts; // More WORK than CARRY = harvester
     
+    // Check if creep can do this task based on energy state
+    const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+    const hasSpace = creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+    
     // Filter tasks based on creep capabilities and state
     const suitableTasks = tasks.filter(t => {
       // Task needs more creeps
       if (t.assignedCreeps.length >= t.creepsNeeded) return false;
       if (t.assignedCreeps.includes(creep.name)) return false;
-      
-      // Check if creep can do this task based on energy state
-      const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
-      const hasSpace = creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
       
       // Specialized harvesters should focus on harvesting, not pickup
       if (t.type === 'PICKUP_ENERGY' && isSpecializedHarvester) {
@@ -129,6 +129,24 @@ export class LegatusLegionum {
       
       return true;
     });
+    
+    // Debug: Log why no tasks available
+    if (suitableTasks.length === 0) {
+      console.log(`🔍 ${creep.name} - NO SUITABLE TASKS`);
+      console.log(`  Energy: ${creep.store[RESOURCE_ENERGY]}/${creep.store.getCapacity(RESOURCE_ENERGY)} (hasEnergy:${hasEnergy}, hasSpace:${hasSpace})`);
+      console.log(`  Body: WORK:${workParts} CARRY:${carryParts} (specialized:${isSpecializedHarvester})`);
+      console.log(`  Total tasks: ${tasks.length}`);
+      tasks.forEach(t => {
+        const reason = [];
+        if (t.assignedCreeps.length >= t.creepsNeeded) reason.push('FULL');
+        if (t.assignedCreeps.includes(creep.name)) reason.push('ALREADY_ASSIGNED');
+        if (t.type === 'PICKUP_ENERGY' && isSpecializedHarvester) reason.push('SPECIALIZED_HARVESTER');
+        if (['REFILL_SPAWN', 'REFILL_EXTENSION', 'REFILL_TOWER', 'HAUL_ENERGY'].includes(t.type) && !hasEnergy) reason.push('NEEDS_ENERGY');
+        if (['HARVEST_ENERGY', 'PICKUP_ENERGY', 'WITHDRAW_ENERGY'].includes(t.type) && !hasSpace) reason.push('NEEDS_SPACE');
+        if (['UPGRADE_CONTROLLER', 'BUILD', 'REPAIR'].includes(t.type) && !hasEnergy) reason.push('NEEDS_ENERGY');
+        console.log(`    ${t.type} [${t.priority}] ${t.assignedCreeps.length}/${t.creepsNeeded} - ❌ ${reason.join(', ')}`);
+      });
+    }
     
     // Sort by priority (highest first)
     suitableTasks.sort((a, b) => b.priority - a.priority);
