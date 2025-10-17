@@ -40,4 +40,9 @@ declare global {
     targetId?: string;
     [key: string]: any;
   }
+  
+  interface RoomMemory {
+    tasks?: Task[]; // Current task list for the room
+    [key: string]: any;
+  }
 }

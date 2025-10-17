@@ -31,5 +31,9 @@ declare global {
         targetId?: string;
         [key: string]: any;
     }
+    interface RoomMemory {
+        tasks?: Task[];
+        [key: string]: any;
+    }
 }
 //# sourceMappingURL=CreepRequest.d.ts.map

@@ -91,18 +91,26 @@ export class Empire {
 
     const magistrates = this.magistratesByRoom.get(room.name)!;
 
+    // Initialize room memory for tasks if needed
+    if (!room.memory.tasks) {
+      room.memory.tasks = [];
+    }
+
     // Execute the Magistrate chain in order
     // 1. Archivist observes the room state
     const report = magistrates.archivist.run(room);
     
     // 2. Taskmaster generates tasks based on the report
-    const tasks = magistrates.taskmaster.run(report);
+    const newTasks = magistrates.taskmaster.run(report);
+    
+    // Store tasks in room memory for persistence
+    room.memory.tasks = newTasks;
     
     // 3. Broodmother spawns creeps based on tasks
-    magistrates.broodmother.run(tasks);
+    magistrates.broodmother.run(newTasks);
     
     // 4. Legion Commander executes tasks with existing creeps
-    magistrates.legionCommander.run(tasks);
+    magistrates.legionCommander.run(newTasks);
     
     // 5. Architect handles construction
     magistrates.architect.run();
