@@ -110,25 +110,19 @@ export class LegatusGenetor {
   }
 
   private designHarvester(energy: number): BodyPartConstant[] {
-    // Optimal harvester: 1 WORK per 2 MOVE for speed
+    // Optimal harvester: 1 WORK, 1 CARRY, 2 MOVE for roads
     // Max 5 WORK parts (source energy/tick limit)
     const parts: BodyPartConstant[] = [];
     const maxWork = 5;
     let workParts = 0;
-    let moveParts = 0;
 
-    while (energy >= 150 && workParts < maxWork) {
-      parts.push(WORK);
-      parts.push(MOVE);
+    while (energy >= 250 && workParts < maxWork) {
+      parts.push(WORK);   // 100
+      parts.push(CARRY);  // 50
+      parts.push(MOVE);   // 50
+      parts.push(MOVE);   // 50 = 250 total, 1:1 ratio on roads
       workParts++;
-      moveParts++;
-      energy -= 150;
-    }
-
-    // Add carry for pickup
-    if (energy >= 50) {
-      parts.push(CARRY);
-      energy -= 50;
+      energy -= 250;
     }
 
     return parts.length > 0 ? parts : [WORK, CARRY, MOVE];
@@ -148,14 +142,15 @@ export class LegatusGenetor {
   }
 
   private designBuilder(energy: number): BodyPartConstant[] {
-    // Builder: Balanced WORK, CARRY, MOVE
+    // Builder: 1 WORK, 1 CARRY, 2 MOVE (1:1 ratio on roads)
     const parts: BodyPartConstant[] = [];
     
-    while (energy >= 200) {
-      parts.push(WORK);
-      parts.push(CARRY);
-      parts.push(MOVE);
-      energy -= 200;
+    while (energy >= 250) {
+      parts.push(WORK);   // 100
+      parts.push(CARRY);  // 50
+      parts.push(MOVE);   // 50
+      parts.push(MOVE);   // 50 = 250 total
+      energy -= 250;
     }
 
     return parts.length > 0 ? parts : [WORK, CARRY, MOVE];
@@ -167,15 +162,16 @@ export class LegatusGenetor {
   }
 
   private designUpgrader(energy: number): BodyPartConstant[] {
-    // Upgrader: More WORK than builder for efficiency
+    // Upgrader: 2 WORK, 1 CARRY, 2 MOVE (balanced for efficiency and speed)
     const parts: BodyPartConstant[] = [];
     
-    while (energy >= 300) {
-      parts.push(WORK);
-      parts.push(WORK);
-      parts.push(CARRY);
-      parts.push(MOVE);
-      energy -= 300;
+    while (energy >= 350) {
+      parts.push(WORK);   // 100
+      parts.push(WORK);   // 100
+      parts.push(CARRY);  // 50
+      parts.push(MOVE);   // 50
+      parts.push(MOVE);   // 50 = 350 total, 3 parts : 2 MOVE
+      energy -= 350;
     }
 
     return parts.length > 0 ? parts : [WORK, CARRY, MOVE];
