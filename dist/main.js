@@ -639,7 +639,9 @@ class LegatusGenetor {
         const defenderCount = creeps.filter(c => c.memory.role === 'defender').length;
         const totalCreeps = creeps.length;
         const minCreeps = 6;
-        const maxCreeps = 15;
+        // Dynamic max based on available tasks (scale up during construction boom)
+        const totalTaskSlots = tasks.reduce((sum, t) => sum + t.creepsNeeded, 0);
+        const maxCreeps = Math.max(15, Math.min(30, totalTaskSlots + 5)); // 15-30 range
         if (totalCreeps >= maxCreeps)
             return;
         const energy = room.energyAvailable;
