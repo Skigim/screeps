@@ -72,15 +72,48 @@ export class LegatusArchivus {
                        c.memory.targetId === source.id
       });
       
+      // Calculate available harvesting positions around source
+      const availableSpaces = this.countAvailableSpaces(room, source.pos);
+      
       return {
         id: source.id,
         pos: { x: source.pos.x, y: source.pos.y },
         energy: source.energy,
         energyCapacity: source.energyCapacity,
         harvestersPresent: harvesters.length,
-        harvestersNeeded: 2 // Simple default - can be improved
+        harvestersNeeded: availableSpaces // Use actual terrain-based capacity
       };
     });
+  }
+
+  /**
+   * Count walkable spaces adjacent to a position
+   * This determines how many creeps can actually harvest from a source
+   */
+  private countAvailableSpaces(room: Room, pos: RoomPosition): number {
+    const terrain = room.getTerrain();
+    let spaces = 0;
+    
+    // Check all 8 adjacent tiles
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue; // Skip the center (source itself)
+        
+        const x = pos.x + dx;
+        const y = pos.y + dy;
+        
+        // Check bounds
+        if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+        
+        // Check terrain
+        const terrainType = terrain.get(x, y);
+        if (terrainType !== TERRAIN_MASK_WALL) {
+          spaces++;
+        }
+      }
+    }
+    
+    return spaces;
   }
 
   /**

@@ -20,6 +20,11 @@ export declare class LegatusArchivus {
      */
     private analyzeSources;
     /**
+     * Count walkable spaces adjacent to a position
+     * This determines how many creeps can actually harvest from a source
+     */
+    private countAvailableSpaces;
+    /**
      * Analyze all spawn structures in the room
      */
     private analyzeSpawns;

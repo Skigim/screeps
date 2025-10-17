@@ -102,9 +102,25 @@ export class LegatusLegionum {
     
     // Filter tasks based on creep capabilities and state
     const suitableTasks = tasks.filter(t => {
-      // Task needs more creeps
-      if (t.assignedCreeps.length >= t.creepsNeeded) return false;
+      // Check if already assigned to this task
       if (t.assignedCreeps.includes(creep.name)) return false;
+      
+      // For HARVEST tasks: Check if this creep can displace a weaker harvester
+      if (t.type === 'HARVEST_ENERGY') {
+        if (t.assignedCreeps.length < t.creepsNeeded) {
+          // Slots available - proceed normally
+        } else if (isSpecializedHarvester) {
+          // Task is full, but check if we can displace a weaker harvester
+          const canDisplace = this.canDisplaceHarvester(creep, t, workParts);
+          if (!canDisplace) return false;
+        } else {
+          // Task full and we're not elite - skip
+          return false;
+        }
+      } else {
+        // Non-harvest tasks: normal slot checking
+        if (t.assignedCreeps.length >= t.creepsNeeded) return false;
+      }
       
       // Specialized harvesters should focus on harvesting, not pickup
       if (t.type === 'PICKUP_ENERGY' && isSpecializedHarvester) {
@@ -154,15 +170,76 @@ export class LegatusLegionum {
     const availableTask = suitableTasks[0];
     
     if (availableTask) {
-      creep.memory.task = availableTask.id;
-      creep.memory.targetId = availableTask.targetId; // Set targetId so Archivist can count us
-      availableTask.assignedCreeps.push(creep.name);
-      console.log(`📋 ${creep.name} assigned to ${availableTask.type} (target: ${availableTask.targetId})`);
+      // For HARVEST tasks that are full, displace the weakest harvester
+      if (availableTask.type === 'HARVEST_ENERGY' && 
+          availableTask.assignedCreeps.length >= availableTask.creepsNeeded) {
+        this.displaceWeakestHarvester(creep, availableTask, workParts);
+      } else {
+        // Normal assignment
+        creep.memory.task = availableTask.id;
+        creep.memory.targetId = availableTask.targetId;
+        availableTask.assignedCreeps.push(creep.name);
+        console.log(`📋 ${creep.name} assigned to ${availableTask.type} (target: ${availableTask.targetId})`);
+      }
     } else {
       // No tasks available - assign idle task
       creep.memory.task = 'idle';
       creep.memory.targetId = undefined;
       console.log(`💤 ${creep.name} idle - no tasks available`);
+    }
+  }
+
+  /**
+   * Check if this creep can displace a weaker harvester from a task
+   */
+  private canDisplaceHarvester(_creep: Creep, task: Task, myWorkParts: number): boolean {
+    // Find weakest assigned harvester
+    for (const assignedName of task.assignedCreeps) {
+      const assignedCreep = Game.creeps[assignedName];
+      if (!assignedCreep) continue;
+      
+      const theirWorkParts = assignedCreep.body.filter(p => p.type === WORK).length;
+      if (myWorkParts > theirWorkParts) {
+        return true; // We can displace at least one weaker harvester
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Displace the weakest harvester and assign this creep instead
+   */
+  private displaceWeakestHarvester(creep: Creep, task: Task, myWorkParts: number): void {
+    let weakestCreep: Creep | null = null;
+    let weakestWorkParts = myWorkParts;
+    
+    // Find the weakest assigned harvester
+    for (const assignedName of task.assignedCreeps) {
+      const assignedCreep = Game.creeps[assignedName];
+      if (!assignedCreep) continue;
+      
+      const theirWorkParts = assignedCreep.body.filter(p => p.type === WORK).length;
+      if (theirWorkParts < weakestWorkParts) {
+        weakestCreep = assignedCreep;
+        weakestWorkParts = theirWorkParts;
+      }
+    }
+    
+    if (weakestCreep) {
+      // Remove weak harvester from task
+      const index = task.assignedCreeps.indexOf(weakestCreep.name);
+      if (index > -1) {
+        task.assignedCreeps.splice(index, 1);
+      }
+      weakestCreep.memory.task = undefined;
+      weakestCreep.memory.targetId = undefined;
+      
+      // Assign elite harvester
+      creep.memory.task = task.id;
+      creep.memory.targetId = task.targetId;
+      task.assignedCreeps.push(creep.name);
+      
+      console.log(`⚔️ ${creep.name} (WORK:${myWorkParts}) displaced ${weakestCreep.name} (WORK:${weakestWorkParts}) from ${task.type}`);
     }
   }
 
