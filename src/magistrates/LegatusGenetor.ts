@@ -42,25 +42,15 @@ export class LegatusGenetor {
 
     if (totalCreeps >= maxCreeps) return;
 
-    // DON'T SPAWN if there are no available tasks (workers would just idle)
-    const availableTasks = tasks.filter(task => {
-      const openSlots = task.creepsNeeded - task.assignedCreeps.length;
-      return openSlots > 0;
-    });
-
-    if (availableTasks.length === 0 && totalCreeps >= minCreeps) {
-      return; // No tasks available, don't spawn
-    }
-
     const energy = room.energyAvailable;
     const minEnergyToSpawn = totalCreeps < minCreeps ? 200 : 300;
     if (energy < minEnergyToSpawn) return;
 
     // PRIORITY SPAWN ORDER:
     // 1. Defenders (if hostiles present)
-    // 2. Harvesters (1 per source, target 5 WORK parts)
-    // 3. Haulers (2-3 for logistics)
-    // 4. Workers (versatile, fill remaining slots)
+    // 2. Harvesters (1 per source, target 5 WORK parts) - ALWAYS SPAWN IF NEEDED
+    // 3. Haulers (2-3 for logistics) - ALWAYS SPAWN IF NEEDED
+    // 4. Workers (versatile, fill remaining slots) - ONLY if tasks available
 
     const hostiles = room.find(FIND_HOSTILE_CREEPS);
     if (hostiles.length > 0 && defenderCount < 2) {
@@ -72,6 +62,7 @@ export class LegatusGenetor {
     const sources = room.find(FIND_SOURCES);
     const targetHarvesters = sources.length; // 1 dedicated harvester per source
 
+    // ALWAYS spawn harvesters if below target - they're critical infrastructure
     if (harvesterCount < targetHarvesters) {
       this.spawnCreepByType('harvester', spawns[0], energy, totalCreeps < minCreeps);
       return;
@@ -79,9 +70,21 @@ export class LegatusGenetor {
 
     // Target 2-3 haulers for efficient logistics
     const targetHaulers = Math.min(3, sources.length * 2);
+    
+    // ALWAYS spawn haulers if below target - they enable energy flow
     if (haulerCount < targetHaulers) {
       this.spawnCreepByType('hauler', spawns[0], energy, totalCreeps < minCreeps);
       return;
+    }
+
+    // Only spawn workers if there are tasks available (they're versatile backup)
+    const availableTasks = tasks.filter(task => {
+      const openSlots = task.creepsNeeded - task.assignedCreeps.length;
+      return openSlots > 0;
+    });
+
+    if (availableTasks.length === 0 && totalCreeps >= minCreeps) {
+      return; // No tasks available for workers, don't spawn more
     }
 
     // Fill remaining slots with versatile workers
