@@ -117,9 +117,14 @@ export class LegatusLegionum {
         return false;
       }
       
-      // Haulers NEVER harvest (only pickup, haul, refill, withdraw)
-      if (role === 'hauler' && t.type === 'HARVEST_ENERGY') {
-        return false;
+      // Haulers ONLY haul energy (no WORK parts - can't build/upgrade/repair)
+      // Allowed: PICKUP, HAUL, REFILL, WITHDRAW
+      if (role === 'hauler') {
+        const haulerTasks = ['PICKUP_ENERGY', 'HAUL_ENERGY', 'REFILL_SPAWN', 
+                            'REFILL_EXTENSION', 'REFILL_TOWER', 'WITHDRAW_ENERGY'];
+        if (!haulerTasks.includes(t.type)) {
+          return false;
+        }
       }
       
       // Workers NEVER harvest (dedicated harvesters do that)
