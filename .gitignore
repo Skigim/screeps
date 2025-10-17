@@ -15,8 +15,9 @@
 # TypeScript definitions installed by Typings
 /typings
 
-# Screeps Config
+# Screeps Config - NEVER commit credentials!
 screeps.json
+.screepsrc.yaml
 
 # ScreepsServer data from integration tests
 /server

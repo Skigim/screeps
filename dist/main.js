@@ -722,6 +722,849 @@ class LegatusViae {
 }
 
 /**
+ * Task execution status enumeration
+ * Represents the outcome of a task execution attempt
+ */
+var TaskStatus;
+(function (TaskStatus) {
+    /** Task is currently being executed */
+    TaskStatus["IN_PROGRESS"] = "IN_PROGRESS";
+    /** Task has been completed successfully */
+    TaskStatus["COMPLETED"] = "COMPLETED";
+    /** Task execution failed */
+    TaskStatus["FAILED"] = "FAILED";
+    /** Task cannot be executed (e.g., target unreachable) */
+    TaskStatus["BLOCKED"] = "BLOCKED";
+})(TaskStatus || (TaskStatus = {}));
+
+/**
+ * Base class for task execution
+ *
+ * Responsibility: Execute specific task types with creeps
+ * Strategy: Each TaskType has a corresponding executor subclass
+ *
+ * This abstract class defines the interface that all task executors must implement,
+ * providing utility methods for common operations like movement and positioning checks.
+ */
+class TaskExecutor {
+    /**
+     * Check if a creep is at or adjacent to the target position
+     *
+     * @param creep - The creep to check
+     * @param target - The target position or object
+     * @returns true if creep is near target, false otherwise
+     */
+    isAtTarget(creep, target) {
+        return creep.pos.isNearTo(target);
+    }
+    /**
+     * Move a creep to the target position with standard pathfinding
+     *
+     * Uses visualized paths and path reuse for efficiency
+     *
+     * @param creep - The creep to move
+     * @param target - The target position or object
+     * @returns Screeps return code (OK, ERR_NO_PATH, etc.)
+     */
+    moveToTarget(creep, target) {
+        return creep.moveTo(target, {
+            visualizePathStyle: { stroke: '#ffffff' },
+            reusePath: 10
+        });
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * HarvestExecutor - Execute HARVEST_ENERGY tasks
+ *
+ * Creeps move to energy sources and harvest energy
+ * Returns COMPLETED when creep is full or source is empty
+ */
+class HarvestExecutor extends TaskExecutor {
+    execute(creep, task) {
+        // Validate task has a target source
+        if (!task.targetId) {
+            return { status: TaskStatus.FAILED, message: 'No harvest target specified' };
+        }
+        // Get the source
+        const source = Game.getObjectById(task.targetId);
+        if (!source) {
+            return { status: TaskStatus.FAILED, message: 'Source not found' };
+        }
+        // Check if creep is full
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Creep full',
+                workDone: 0
+            };
+        }
+        // Check if source is depleted
+        if (source.energy === 0) {
+            return {
+                status: TaskStatus.BLOCKED,
+                message: 'Source empty',
+                workDone: 0
+            };
+        }
+        // Check if already adjacent to source
+        if (!this.isAtTarget(creep, source)) {
+            // Move towards source
+            const moveResult = this.moveToTarget(creep, source);
+            if (moveResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to source',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Failed to move: ${moveResult}`,
+                    workDone: 0
+                };
+            }
+        }
+        // Adjacent to source - perform harvest
+        const harvestResult = creep.harvest(source);
+        if (harvestResult === OK) {
+            const workParts = creep.getActiveBodyparts(WORK);
+            const energyHarvested = Math.min(source.energy, workParts * HARVEST_POWER);
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Harvesting',
+                workDone: energyHarvested
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Harvest failed: ${harvestResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * TransferExecutor - Execute energy transfer tasks
+ *
+ * Handles: REFILL_SPAWN, REFILL_EXTENSION, REFILL_TOWER tasks
+ * Creeps move to target structure and transfer energy
+ * Returns COMPLETED when creep is empty or structure is full
+ */
+class TransferExecutor extends TaskExecutor {
+    execute(creep, task) {
+        // Validate task has a target
+        if (!task.targetId) {
+            return { status: TaskStatus.FAILED, message: 'No transfer target specified' };
+        }
+        // Get the target structure
+        const target = Game.getObjectById(task.targetId);
+        if (!target) {
+            return { status: TaskStatus.FAILED, message: 'Target structure not found' };
+        }
+        // Validate target can store energy
+        const storableTarget = target;
+        if (!storableTarget.store) {
+            return { status: TaskStatus.FAILED, message: 'Target cannot store energy' };
+        }
+        // Check if creep is empty
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Creep empty',
+                workDone: 0
+            };
+        }
+        // Check if target is full
+        if (storableTarget.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Target full',
+                workDone: 0
+            };
+        }
+        // Check if adjacent to target
+        if (!this.isAtTarget(creep, target)) {
+            // Move towards target
+            const moveResult = this.moveToTarget(creep, target);
+            if (moveResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to target',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Failed to move: ${moveResult}`,
+                    workDone: 0
+                };
+            }
+        }
+        // Adjacent to target - perform transfer
+        const transferResult = creep.transfer(storableTarget, RESOURCE_ENERGY);
+        if (transferResult === OK) {
+            const energyTransferred = Math.min(creep.store.getUsedCapacity(RESOURCE_ENERGY), storableTarget.store.getFreeCapacity(RESOURCE_ENERGY));
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Transferring',
+                workDone: energyTransferred
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Transfer failed: ${transferResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * UpgradeExecutor - Execute UPGRADE_CONTROLLER tasks
+ *
+ * Creeps move to the room controller and upgrade it
+ * Returns COMPLETED when creep is empty of energy
+ */
+class UpgradeExecutor extends TaskExecutor {
+    execute(creep, _task) {
+        // Get the controller
+        const controller = creep.room.controller;
+        if (!controller) {
+            return { status: TaskStatus.FAILED, message: 'No controller in room' };
+        }
+        // Check if creep is out of energy
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'No energy',
+                workDone: 0
+            };
+        }
+        // Check if in range of controller (3 squares)
+        if (!creep.pos.inRangeTo(controller, 3)) {
+            // Move towards controller
+            const moveResult = this.moveToTarget(creep, controller);
+            if (moveResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to controller',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Failed to move: ${moveResult}`,
+                    workDone: 0
+                };
+            }
+        }
+        // In range - perform upgrade
+        const upgradeResult = creep.upgradeController(controller);
+        if (upgradeResult === OK) {
+            const workParts = creep.getActiveBodyparts(WORK);
+            const workDone = workParts * UPGRADE_CONTROLLER_POWER;
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Upgrading',
+                workDone: workDone
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Upgrade failed: ${upgradeResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * BuildExecutor - Execute BUILD tasks
+ *
+ * Creeps move to construction sites and build structures
+ * Returns COMPLETED when construction site is finished or creep is empty
+ */
+class BuildExecutor extends TaskExecutor {
+    execute(creep, task) {
+        // Validate task has a target construction site
+        if (!task.targetId) {
+            return { status: TaskStatus.FAILED, message: 'No construction site specified' };
+        }
+        // Get the construction site
+        const site = Game.getObjectById(task.targetId);
+        if (!site) {
+            return { status: TaskStatus.FAILED, message: 'Construction site not found' };
+        }
+        // Check if creep is out of energy
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'No energy',
+                workDone: 0
+            };
+        }
+        // Check if adjacent to construction site
+        if (!this.isAtTarget(creep, site)) {
+            // Move towards site
+            const moveResult = this.moveToTarget(creep, site);
+            if (moveResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to construction site',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Failed to move: ${moveResult}`,
+                    workDone: 0
+                };
+            }
+        }
+        // Adjacent to site - perform build
+        const buildResult = creep.build(site);
+        if (buildResult === OK) {
+            const workParts = creep.getActiveBodyparts(WORK);
+            const workDone = workParts * BUILD_POWER;
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Building',
+                workDone: workDone
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Build failed: ${buildResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * RepairExecutor - Execute REPAIR tasks
+ *
+ * Creeps move to damaged structures and repair them
+ * Returns COMPLETED when structure is fully repaired or creep is empty
+ */
+class RepairExecutor extends TaskExecutor {
+    execute(creep, task) {
+        // Validate task has a target structure
+        if (!task.targetId) {
+            return { status: TaskStatus.FAILED, message: 'No repair target specified' };
+        }
+        // Get the structure to repair
+        const structure = Game.getObjectById(task.targetId);
+        if (!structure) {
+            return { status: TaskStatus.FAILED, message: 'Target structure not found' };
+        }
+        // Check if structure is already fully repaired
+        if (structure.hits >= structure.hitsMax) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Structure repaired',
+                workDone: 0
+            };
+        }
+        // Check if creep is out of energy
+        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'No energy',
+                workDone: 0
+            };
+        }
+        // Check if adjacent to structure
+        if (!this.isAtTarget(creep, structure)) {
+            // Move towards structure
+            const moveResult = this.moveToTarget(creep, structure);
+            if (moveResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to repair target',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Failed to move: ${moveResult}`,
+                    workDone: 0
+                };
+            }
+        }
+        // Adjacent to structure - perform repair
+        const repairResult = creep.repair(structure);
+        if (repairResult === OK) {
+            const workParts = creep.getActiveBodyparts(WORK);
+            const workDone = workParts * REPAIR_POWER;
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Repairing',
+                workDone: workDone
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Repair failed: ${repairResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * WithdrawExecutor - Execute WITHDRAW_ENERGY tasks
+ *
+ * Creeps move to containers/storage and withdraw energy
+ * Returns COMPLETED when creep is full or structure is empty
+ */
+class WithdrawExecutor extends TaskExecutor {
+    execute(creep, task) {
+        // Validate task has a target
+        if (!task.targetId) {
+            return { status: TaskStatus.FAILED, message: 'No withdraw target specified' };
+        }
+        // Get the target structure
+        const target = Game.getObjectById(task.targetId);
+        if (!target) {
+            return { status: TaskStatus.FAILED, message: 'Target structure not found' };
+        }
+        // Validate target has a store
+        const storableTarget = target;
+        if (!storableTarget.store) {
+            return { status: TaskStatus.FAILED, message: 'Target has no store' };
+        }
+        // Check if creep is full
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Creep full',
+                workDone: 0
+            };
+        }
+        // Check if target is empty
+        if (storableTarget.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.BLOCKED,
+                message: 'Target empty',
+                workDone: 0
+            };
+        }
+        // Check if adjacent to target
+        if (!this.isAtTarget(creep, target)) {
+            // Move towards target
+            const moveResult = this.moveToTarget(creep, target);
+            if (moveResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Moving to target',
+                    workDone: 0
+                };
+            }
+            else {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Failed to move: ${moveResult}`,
+                    workDone: 0
+                };
+            }
+        }
+        // Adjacent to target - perform withdraw
+        const withdrawResult = creep.withdraw(storableTarget, RESOURCE_ENERGY);
+        if (withdrawResult === OK) {
+            const energyWithdrawn = Math.min(creep.store.getFreeCapacity(RESOURCE_ENERGY), storableTarget.store.getUsedCapacity(RESOURCE_ENERGY));
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Withdrawing',
+                workDone: energyWithdrawn
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Withdraw failed: ${withdrawResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * DefendExecutor - Execute DEFEND_ROOM tasks
+ *
+ * Creeps move to hostile creeps and attack them
+ * Uses melee attack if available, otherwise ranged attack
+ * Returns COMPLETED when no hostiles remain
+ */
+class DefendExecutor extends TaskExecutor {
+    execute(creep, task) {
+        // Get target hostile
+        let hostile = null;
+        if (task.targetId) {
+            // If specific target is assigned, try to use it
+            hostile = Game.getObjectById(task.targetId);
+        }
+        // If no target or target is gone, find nearest hostile
+        if (!hostile) {
+            const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+            if (hostiles.length === 0) {
+                return {
+                    status: TaskStatus.COMPLETED,
+                    message: 'No hostiles',
+                    workDone: 0
+                };
+            }
+            // Target nearest hostile
+            hostile = creep.pos.findClosestByPath(hostiles);
+            if (!hostile) {
+                hostile = creep.pos.findClosestByRange(hostiles);
+            }
+        }
+        // Validate we have a hostile to attack
+        if (!hostile) {
+            return {
+                status: TaskStatus.BLOCKED,
+                message: 'Hostile unreachable',
+                workDone: 0
+            };
+        }
+        // Check which attack types we have
+        const hasAttack = creep.getActiveBodyparts(ATTACK) > 0;
+        const hasRangedAttack = creep.getActiveBodyparts(RANGED_ATTACK) > 0;
+        // If adjacent to hostile, use melee attack
+        if (creep.pos.isNearTo(hostile)) {
+            if (hasAttack) {
+                const attackResult = creep.attack(hostile);
+                if (attackResult === OK) {
+                    return {
+                        status: TaskStatus.IN_PROGRESS,
+                        message: 'Attacking',
+                        workDone: creep.getActiveBodyparts(ATTACK) * ATTACK_POWER
+                    };
+                }
+            }
+            // Fall through to ranged attack
+        }
+        // Use ranged attack or move closer
+        if (hasRangedAttack && creep.pos.inRangeTo(hostile, 3)) {
+            const rangedResult = creep.rangedAttack(hostile);
+            if (rangedResult === OK) {
+                return {
+                    status: TaskStatus.IN_PROGRESS,
+                    message: 'Ranged attacking',
+                    workDone: creep.getActiveBodyparts(RANGED_ATTACK) * RANGED_ATTACK_POWER
+                };
+            }
+        }
+        // Move towards hostile
+        const moveResult = this.moveToTarget(creep, hostile);
+        if (moveResult === OK) {
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Moving to hostile',
+                workDone: 0
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Failed to move: ${moveResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * IdleExecutor - Execute IDLE tasks
+ *
+ * Default fallback executor for creeps without assigned tasks
+ * Moves to a safe parking position near the controller
+ * Returns IN_PROGRESS indefinitely until reassigned
+ */
+class IdleExecutor extends TaskExecutor {
+    execute(creep, _task) {
+        // Get the controller as a safe parking position
+        const controller = creep.room.controller;
+        if (!controller) {
+            // No controller - just stay put
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Idling (no controller)',
+                workDone: 0
+            };
+        }
+        // If already in parking area (adjacent to controller), stay put
+        if (creep.pos.inRangeTo(controller, 3)) {
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Parked',
+                workDone: 0
+            };
+        }
+        // Move to parking position
+        const moveResult = this.moveToTarget(creep, controller);
+        if (moveResult === OK) {
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Moving to parking',
+                workDone: 0
+            };
+        }
+        else if (moveResult === ERR_NO_PATH) {
+            // Can't reach parking - stay put
+            return {
+                status: TaskStatus.BLOCKED,
+                message: 'Parking unreachable',
+                workDone: 0
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Idling',
+                workDone: 0
+            };
+        }
+    }
+}
+
+/**
+ * Factory for task executors
+ *
+ * Responsibility: Provide the correct TaskExecutor for any given TaskType
+ * Strategy: Registry pattern - executors register themselves by task type
+ *
+ * This factory maintains a registry of TaskExecutor instances, one per TaskType.
+ * Specific executors are registered as they are implemented (Phase IV-B, Phase IV-C, etc.)
+ */
+class ExecutorFactory {
+    /**
+     * Get the executor responsible for a specific task type
+     *
+     * Initializes executor registry on first use
+     *
+     * @param taskType - The type of task to get an executor for
+     * @returns TaskExecutor instance or null if not yet implemented
+     */
+    static getExecutor(taskType) {
+        // Initialize executors on first use
+        if (this.executors.size === 0) {
+            this.initializeExecutors();
+        }
+        return this.executors.get(taskType) || null;
+    }
+    /**
+     * Register an executor for a task type
+     *
+     * Called during executor initialization phases to populate the registry
+     * Multiple registrations for the same TaskType will replace the previous executor
+     *
+     * @param taskType - The task type this executor handles
+     * @param executor - The executor instance
+     */
+    static registerExecutor(taskType, executor) {
+        this.executors.set(taskType, executor);
+    }
+    /**
+     * Initialize the executor registry
+     *
+     * This is called on first getExecutor() call
+     * Specific executors will be registered as they are created in subsequent phases:
+     * - Phase IV-B: Agent Secundus creates Harvest, Transfer, Upgrade executors
+     * - Phase IV-C: Additional executor implementations
+     */
+    static initializeExecutors() {
+        // Create executor instances
+        const harvestExecutor = new HarvestExecutor();
+        const transferExecutor = new TransferExecutor();
+        const upgradeExecutor = new UpgradeExecutor();
+        const buildExecutor = new BuildExecutor();
+        const repairExecutor = new RepairExecutor();
+        const withdrawExecutor = new WithdrawExecutor();
+        const defendExecutor = new DefendExecutor();
+        const idleExecutor = new IdleExecutor();
+        // Register energy management executors
+        this.registerExecutor(TaskType.HARVEST_ENERGY, harvestExecutor);
+        this.registerExecutor(TaskType.WITHDRAW_ENERGY, withdrawExecutor);
+        this.registerExecutor(TaskType.HAUL_ENERGY, transferExecutor); // Same logic as transfer
+        // Register construction & repair executors
+        this.registerExecutor(TaskType.BUILD, buildExecutor);
+        this.registerExecutor(TaskType.REPAIR, repairExecutor);
+        // Register controller operations
+        this.registerExecutor(TaskType.UPGRADE_CONTROLLER, upgradeExecutor);
+        // Register logistics executors (all use transfer logic)
+        this.registerExecutor(TaskType.REFILL_SPAWN, transferExecutor);
+        this.registerExecutor(TaskType.REFILL_EXTENSION, transferExecutor);
+        this.registerExecutor(TaskType.REFILL_TOWER, transferExecutor);
+        // Register defense executor
+        this.registerExecutor(TaskType.DEFEND_ROOM, defendExecutor);
+        this.registerExecutor(TaskType.TOWER_DEFENSE, defendExecutor);
+        // Register special operations
+        this.registerExecutor(TaskType.CLAIM_CONTROLLER, upgradeExecutor); // Temporary - will be updated
+        this.registerExecutor(TaskType.RESERVE_CONTROLLER, upgradeExecutor); // Temporary - will be updated
+        this.registerExecutor(TaskType.SCOUT_ROOM, idleExecutor); // Temporary - will be updated
+        // Register default idle
+        this.registerExecutor(TaskType.IDLE, idleExecutor);
+        console.log(`✅ ExecutorFactory initialized with ${this.executors.size} executors`);
+    }
+    /**
+     * Get count of registered executors (useful for debugging)
+     */
+    static getExecutorCount() {
+        return this.executors.size;
+    }
+    /**
+     * Get list of registered task types (useful for debugging)
+     */
+    static getRegisteredTaskTypes() {
+        return Array.from(this.executors.keys());
+    }
+}
+/** Registry mapping task types to their executors */
+ExecutorFactory.executors = new Map();
+
+/**
+ * Legatus Legionum - The Legion Commander
+ *
+ * Responsibility: Execute tasks assigned to creeps
+ * Philosophy: Every creep is a soldier executing orders
+ *
+ * The Legion Commander ensures each creep executes its assigned task.
+ * It coordinates with ExecutorFactory to delegate task execution to
+ * specialized executors, then handles the results (completion, failure, etc.)
+ */
+class LegatusLegionum {
+    constructor(roomName) {
+        this.roomName = roomName;
+    }
+    /**
+     * Execute tasks for all creeps in the room
+     *
+     * For each creep:
+     * 1. Check if it has an assigned task
+     * 2. If no task, try to assign one from available tasks
+     * 3. If it has a task, execute it using the appropriate executor
+     * 4. Handle the result (mark complete, reassign, etc.)
+     */
+    run(tasks) {
+        const room = Game.rooms[this.roomName];
+        if (!room)
+            return;
+        const creeps = room.find(FIND_MY_CREEPS);
+        creeps.forEach(creep => {
+            this.executeCreepTask(creep, tasks);
+        });
+    }
+    /**
+     * Execute the assigned task for a specific creep
+     *
+     * @param creep - The creep to execute a task for
+     * @param tasks - Available tasks in the room
+     */
+    executeCreepTask(creep, tasks) {
+        // Get creep's assigned task
+        const taskId = creep.memory.task;
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) {
+            // Creep has no task - assign one
+            this.assignTask(creep, tasks);
+            return;
+        }
+        // Get executor for this task type
+        const executor = ExecutorFactory.getExecutor(task.type);
+        if (!executor) {
+            console.log(`⚠️ ${creep.name}: No executor for task type ${task.type}`);
+            return;
+        }
+        // Execute the task
+        const result = executor.execute(creep, task);
+        // Handle result
+        this.handleTaskResult(creep, task, result);
+    }
+    /**
+     * Assign a task to an idle creep
+     *
+     * Finds the highest priority task that needs more creeps assigned
+     *
+     * @param creep - The creep to assign a task to
+     * @param tasks - Available tasks
+     */
+    assignTask(creep, tasks) {
+        // Find highest priority task needing creeps
+        const availableTask = tasks.find(t => t.assignedCreeps.length < t.creepsNeeded &&
+            !t.assignedCreeps.includes(creep.name));
+        if (availableTask) {
+            creep.memory.task = availableTask.id;
+            availableTask.assignedCreeps.push(creep.name);
+            console.log(`📋 ${creep.name} assigned to ${availableTask.type}`);
+        }
+        else {
+            // No tasks available - assign idle task
+            creep.memory.task = 'idle';
+            console.log(`💤 ${creep.name} idle - no tasks available`);
+        }
+    }
+    /**
+     * Handle the result of a task execution
+     *
+     * @param creep - The creep that executed the task
+     * @param task - The task that was executed
+     * @param result - The result of the execution
+     */
+    handleTaskResult(creep, task, result) {
+        if (result.status === TaskStatus.COMPLETED) {
+            // Task complete - clear assignment
+            creep.memory.task = undefined;
+            const index = task.assignedCreeps.indexOf(creep.name);
+            if (index > -1) {
+                task.assignedCreeps.splice(index, 1);
+            }
+            console.log(`✅ ${creep.name} completed ${task.type}`);
+        }
+        else if (result.status === TaskStatus.FAILED) {
+            // Task failed - log and clear
+            console.log(`❌ ${creep.name} failed ${task.type}: ${result.message || 'Unknown error'}`);
+            creep.memory.task = undefined;
+            const index = task.assignedCreeps.indexOf(creep.name);
+            if (index > -1) {
+                task.assignedCreeps.splice(index, 1);
+            }
+        }
+        else if (result.status === TaskStatus.BLOCKED) {
+            // Task blocked - log and clear for reassignment
+            console.log(`🚫 ${creep.name} blocked on ${task.type}: ${result.message || 'Task blocked'}`);
+            creep.memory.task = undefined;
+            const index = task.assignedCreeps.indexOf(creep.name);
+            if (index > -1) {
+                task.assignedCreeps.splice(index, 1);
+            }
+        }
+        // IN_PROGRESS: Continue normally next tick
+    }
+}
+
+/**
  * The Empire - The Principate
  *
  * The highest authority in Project Imperium. Orchestrates all subordinate systems
@@ -778,7 +1621,8 @@ class Empire {
                 taskmaster: new LegatusOfficio(room.name),
                 broodmother: new LegatusGenetor(room.name),
                 architect: new LegatusFabrum(room.name),
-                trailblazer: new LegatusViae(room.name)
+                trailblazer: new LegatusViae(room.name),
+                legionCommander: new LegatusLegionum(room.name)
             });
         }
         const magistrates = this.magistratesByRoom.get(room.name);
@@ -789,9 +1633,11 @@ class Empire {
         const tasks = magistrates.taskmaster.run(report);
         // 3. Broodmother spawns creeps based on tasks
         magistrates.broodmother.run(tasks);
-        // 4. Architect handles construction
+        // 4. Legion Commander executes tasks with existing creeps
+        magistrates.legionCommander.run(tasks);
+        // 5. Architect handles construction
         magistrates.architect.run();
-        // 5. Trailblazer handles pathfinding and movement
+        // 6. Trailblazer handles pathfinding and movement
         magistrates.trailblazer.run();
     }
 }
