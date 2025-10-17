@@ -3,6 +3,7 @@ import { LegatusOfficio } from '../magistrates/LegatusOfficio';
 import { LegatusGenetor } from '../magistrates/LegatusGenetor';
 import { LegatusFabrum } from '../magistrates/LegatusFabrum';
 import { LegatusViae } from '../magistrates/LegatusViae';
+import { LegatusLegionum } from '../magistrates/LegatusLegionum';
 
 /**
  * Room-specific magistrate instances
@@ -13,6 +14,7 @@ interface RoomMagistrates {
   broodmother: LegatusGenetor;
   architect: LegatusFabrum;
   trailblazer: LegatusViae;
+  legionCommander: LegatusLegionum;
 }
 
 /**
@@ -82,7 +84,8 @@ export class Empire {
         taskmaster: new LegatusOfficio(room.name),
         broodmother: new LegatusGenetor(room.name),
         architect: new LegatusFabrum(room.name),
-        trailblazer: new LegatusViae(room.name)
+        trailblazer: new LegatusViae(room.name),
+        legionCommander: new LegatusLegionum(room.name)
       });
     }
 
@@ -98,10 +101,13 @@ export class Empire {
     // 3. Broodmother spawns creeps based on tasks
     magistrates.broodmother.run(tasks);
     
-    // 4. Architect handles construction
+    // 4. Legion Commander executes tasks with existing creeps
+    magistrates.legionCommander.run(tasks);
+    
+    // 5. Architect handles construction
     magistrates.architect.run();
     
-    // 5. Trailblazer handles pathfinding and movement
+    // 6. Trailblazer handles pathfinding and movement
     magistrates.trailblazer.run();
   }
 }
