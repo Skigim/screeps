@@ -52,19 +52,21 @@ export class TransferExecutor extends TaskExecutor {
     if (!this.isAtTarget(creep, target)) {
       // Move towards target
       const moveResult = this.moveToTarget(creep, target);
-      if (moveResult === OK) {
-        return { 
-          status: TaskStatus.IN_PROGRESS, 
-          message: 'Moving to target',
-          workDone: 0
-        };
-      } else {
+      
+      // Movement errors are usually not fatal - creep just needs to keep trying
+      if (moveResult !== OK && moveResult !== ERR_TIRED && moveResult !== ERR_BUSY) {
         return { 
           status: TaskStatus.FAILED, 
           message: `Failed to move: ${moveResult}`,
           workDone: 0
         };
       }
+      
+      return { 
+        status: TaskStatus.IN_PROGRESS, 
+        message: 'Moving to target',
+        workDone: 0
+      };
     }
 
     // Adjacent to target - perform transfer

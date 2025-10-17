@@ -98,7 +98,30 @@ export class LegatusOfficio {
       }
     });
 
-    // Haul energy from containers to spawns/extensions
+    // DIRECT TRANSFER to spawns/extensions (early game - no containers yet)
+    if (report.energyDeficit > 0) {
+      // Find spawns and extensions that need energy
+      report.spawns.forEach(spawn => {
+        const freeCapacity = spawn.energyCapacity - spawn.energy;
+        if (freeCapacity > 0) {
+          tasks.push({
+            id: this.generateTaskId(),
+            type: TaskType.REFILL_SPAWN,
+            priority: 90, // Higher than harvest - we need energy NOW
+            targetId: spawn.id,
+            creepsNeeded: 1,
+            assignedCreeps: [],
+            metadata: {
+              energyNeeded: freeCapacity
+            }
+          });
+        }
+      });
+
+      // TODO: Add REFILL_EXTENSION tasks when we have extensions
+    }
+
+    // Haul energy from containers to spawns/extensions (mid-game onwards)
     report.containers.forEach(container => {
       if (container.store.energy > 100 && report.energyDeficit > 0) {
         tasks.push({

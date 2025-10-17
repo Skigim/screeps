@@ -355,7 +355,28 @@ class LegatusOfficio {
                 });
             }
         });
-        // Haul energy from containers to spawns/extensions
+        // DIRECT TRANSFER to spawns/extensions (early game - no containers yet)
+        if (report.energyDeficit > 0) {
+            // Find spawns and extensions that need energy
+            report.spawns.forEach(spawn => {
+                const freeCapacity = spawn.energyCapacity - spawn.energy;
+                if (freeCapacity > 0) {
+                    tasks.push({
+                        id: this.generateTaskId(),
+                        type: TaskType.REFILL_SPAWN,
+                        priority: 90, // Higher than harvest - we need energy NOW
+                        targetId: spawn.id,
+                        creepsNeeded: 1,
+                        assignedCreeps: [],
+                        metadata: {
+                            energyNeeded: freeCapacity
+                        }
+                    });
+                }
+            });
+            // TODO: Add REFILL_EXTENSION tasks when we have extensions
+        }
+        // Haul energy from containers to spawns/extensions (mid-game onwards)
         report.containers.forEach(container => {
             if (container.store.energy > 100 && report.energyDeficit > 0) {
                 tasks.push({
@@ -891,20 +912,19 @@ class TransferExecutor extends TaskExecutor {
         if (!this.isAtTarget(creep, target)) {
             // Move towards target
             const moveResult = this.moveToTarget(creep, target);
-            if (moveResult === OK) {
-                return {
-                    status: TaskStatus.IN_PROGRESS,
-                    message: 'Moving to target',
-                    workDone: 0
-                };
-            }
-            else {
+            // Movement errors are usually not fatal - creep just needs to keep trying
+            if (moveResult !== OK && moveResult !== ERR_TIRED && moveResult !== ERR_BUSY) {
                 return {
                     status: TaskStatus.FAILED,
                     message: `Failed to move: ${moveResult}`,
                     workDone: 0
                 };
             }
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Moving to target',
+                workDone: 0
+            };
         }
         // Adjacent to target - perform transfer
         const transferResult = creep.transfer(storableTarget, RESOURCE_ENERGY);
