@@ -17,6 +17,25 @@ export class LegatusOfficio {
   }
 
   /**
+   * Check if economy bootstrap phase is complete
+   * Bootstrap = harvesters + haulers established
+   */
+  private isEconomyBootstrapped(): boolean {
+    const room = Game.rooms[this.roomName];
+    if (!room) return false;
+    
+    const creeps = Object.values(Game.creeps).filter(c => c.memory.room === this.roomName);
+    const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+    const haulerCount = creeps.filter(c => c.memory.role === 'hauler').length;
+    
+    const sources = room.find(FIND_SOURCES);
+    const harvestersReady = harvesterCount >= sources.length;
+    const haulersReady = haulerCount >= 2;
+    
+    return harvestersReady && haulersReady;
+  }
+
+  /**
    * Analyze the room report and generate prioritized tasks
    */
   public run(report: ArchivistReport): Task[] {
@@ -135,10 +154,14 @@ export class LegatusOfficio {
         
         const freeCapacity = spawnObj.store.getFreeCapacity(RESOURCE_ENERGY);
         if (freeCapacity > 0) {
+          // BOOTSTRAP MODE: Highest priority during bootstrap - establish supply chain first
+          const bootstrapped = this.isEconomyBootstrapped();
+          const priority = bootstrapped ? 82 : 98; // CRITICAL during bootstrap
+          
           tasks.push({
             id: `refill_spawn_${spawn.id}`, // Stable ID based on spawn
             type: TaskType.REFILL_SPAWN,
-            priority: 82, // Below BUILD, above HARVEST - ensures spawn energy for creep replacement
+            priority: priority, // Below BUILD normally, HIGHEST during bootstrap
             targetId: spawn.id,
             creepsNeeded: Math.ceil(freeCapacity / 50), // 1 creep per 50 energy needed
             assignedCreeps: [],
@@ -198,6 +221,11 @@ export class LegatusOfficio {
 
   private createConstructionTasks(report: ArchivistReport): Task[] {
     const tasks: Task[] = [];
+
+    // BOOTSTRAP MODE: No building until economy is established
+    if (!this.isEconomyBootstrapped()) {
+      return tasks;
+    }
 
     report.constructionSites.forEach(site => {
       // CONSTRUCTION IS TOP PRIORITY - infrastructure expansion is critical
@@ -290,6 +318,11 @@ export class LegatusOfficio {
     const tasks: Task[] = [];
     const room = Game.rooms[this.roomName];
     if (!room) return tasks;
+
+    // BOOTSTRAP MODE: No spawn withdrawal until economy is established
+    if (!this.isEconomyBootstrapped()) {
+      return tasks;
+    }
 
     // Check for dropped energy first - always prefer pickup over anything
     const droppedResources = room.find(FIND_DROPPED_RESOURCES, {
