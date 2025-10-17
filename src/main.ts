@@ -1,45 +1,24 @@
-import { Traveler } from "./vendor/traveler";
-import "./vendor/creep-tasks/runtime";
-import Tasks from "./vendor/creep-tasks";
-import { runTick } from "./tick";
-import { registerEngineConsole } from "./console/engine";
+import { Empire } from './principate/Empire';
 
-const bootstrapVendors = (): void => {
-  global.Traveler = Traveler;
-  global.Tasks = Tasks;
-};
+// Initialize the Empire once (persists across ticks via global scope)
+const empire = new Empire();
 
-bootstrapVendors();
-registerEngineConsole();
-
-const cleanupCreepMemory = (): void => {
-  if (typeof Memory === "undefined" || typeof Game === "undefined") {
-    return;
-  }
-
-  for (const name of Object.keys(Memory.creeps)) {
-    if (!Game.creeps[name]) {
-      delete Memory.creeps[name];
-    }
-  }
-};
-
-const getGitHash = (): string => {
-  try {
-    return (Reflect.get(global, "__GIT_HASH__") as string | undefined) ?? "development";
-  } catch (_error) {
-    return "development";
-  }
-};
-
-// @GIT_HASH@
-
+// This is the main game loop - called every tick by Screeps
 export const loop = (): void => {
-  cleanupCreepMemory();
-  runTick();
+  try {
+    // Clear dead creep memory
+    for (const name in Memory.creeps) {
+      if (!(name in Game.creeps)) {
+        delete Memory.creeps[name];
+      }
+    }
 
-  if (typeof Game !== "undefined" && Game.time % 150 === 0) {
-    const gitHash = getGitHash();
-    console.log(`Loop tick=${Game.time} hash=${gitHash}`);
+    // Execute the Empire's master plan
+    empire.run();
+  } catch (error) {
+    console.log(`❌ CRITICAL ERROR in main loop: ${error}`);
+    if (error instanceof Error) {
+      console.log(`Stack: ${error.stack}`);
+    }
   }
 };
