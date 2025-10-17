@@ -47,10 +47,19 @@ export class LegatusLegionum {
   private executeCreepTask(creep: Creep, tasks: Task[]): void {
     // Get creep's assigned task
     const taskId = creep.memory.task;
+    
+    if (!taskId) {
+      // Creep has no task - assign one
+      this.assignTask(creep, tasks);
+      return;
+    }
+    
     const task = tasks.find(t => t.id === taskId);
     
     if (!task) {
-      // Creep has no task - assign one
+      // Task no longer exists - clear and reassign
+      console.log(`⚠️ ${creep.name}: Task ${taskId} not found, reassigning`);
+      creep.memory.task = undefined;
       this.assignTask(creep, tasks);
       return;
     }
@@ -63,7 +72,9 @@ export class LegatusLegionum {
     }
     
     // Execute the task
+    console.log(`⚙️ ${creep.name}: Executing ${task.type} (${task.id})`);
     const result = executor.execute(creep, task);
+    console.log(`📊 ${creep.name}: Result = ${result.status}, ${result.message}`);
     
     // Handle result
     this.handleTaskResult(creep, task, result);

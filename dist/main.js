@@ -941,8 +941,12 @@ class UpgradeExecutor extends TaskExecutor {
         if (!controller) {
             return { status: TaskStatus.FAILED, message: 'No controller in room' };
         }
+        const energyAmount = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+        const distance = creep.pos.getRangeTo(controller);
+        // Debug logging
+        console.log(`🔧 ${creep.name}: Energy=${energyAmount}, Distance=${distance}, Pos=${creep.pos}`);
         // Check if creep is out of energy
-        if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        if (energyAmount === 0) {
             return {
                 status: TaskStatus.COMPLETED,
                 message: 'No energy',
@@ -952,11 +956,13 @@ class UpgradeExecutor extends TaskExecutor {
         // Check if in range of controller (3 squares)
         if (!creep.pos.inRangeTo(controller, 3)) {
             // Move towards controller
+            console.log(`🚶 ${creep.name}: Moving to controller at ${controller.pos}`);
             const moveResult = this.moveToTarget(creep, controller);
-            if (moveResult === OK) {
+            console.log(`📍 ${creep.name}: moveTo result = ${moveResult}`);
+            if (moveResult === OK || moveResult === ERR_TIRED) {
                 return {
                     status: TaskStatus.IN_PROGRESS,
-                    message: 'Moving to controller',
+                    message: `Moving to controller (${moveResult})`,
                     workDone: 0
                 };
             }
@@ -1485,9 +1491,16 @@ class LegatusLegionum {
     executeCreepTask(creep, tasks) {
         // Get creep's assigned task
         const taskId = creep.memory.task;
+        if (!taskId) {
+            // Creep has no task - assign one
+            this.assignTask(creep, tasks);
+            return;
+        }
         const task = tasks.find(t => t.id === taskId);
         if (!task) {
-            // Creep has no task - assign one
+            // Task no longer exists - clear and reassign
+            console.log(`⚠️ ${creep.name}: Task ${taskId} not found, reassigning`);
+            creep.memory.task = undefined;
             this.assignTask(creep, tasks);
             return;
         }
@@ -1498,7 +1511,9 @@ class LegatusLegionum {
             return;
         }
         // Execute the task
+        console.log(`⚙️ ${creep.name}: Executing ${task.type} (${task.id})`);
         const result = executor.execute(creep, task);
+        console.log(`📊 ${creep.name}: Result = ${result.status}, ${result.message}`);
         // Handle result
         this.handleTaskResult(creep, task, result);
     }

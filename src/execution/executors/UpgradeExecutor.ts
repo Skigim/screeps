@@ -18,8 +18,14 @@ export class UpgradeExecutor extends TaskExecutor {
       return { status: TaskStatus.FAILED, message: 'No controller in room' };
     }
 
+    const energyAmount = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+    const distance = creep.pos.getRangeTo(controller);
+    
+    // Debug logging
+    console.log(`🔧 ${creep.name}: Energy=${energyAmount}, Distance=${distance}, Pos=${creep.pos}`);
+
     // Check if creep is out of energy
-    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+    if (energyAmount === 0) {
       return { 
         status: TaskStatus.COMPLETED, 
         message: 'No energy',
@@ -30,11 +36,14 @@ export class UpgradeExecutor extends TaskExecutor {
     // Check if in range of controller (3 squares)
     if (!creep.pos.inRangeTo(controller, 3)) {
       // Move towards controller
+      console.log(`🚶 ${creep.name}: Moving to controller at ${controller.pos}`);
       const moveResult = this.moveToTarget(creep, controller);
-      if (moveResult === OK) {
+      console.log(`📍 ${creep.name}: moveTo result = ${moveResult}`);
+      
+      if (moveResult === OK || moveResult === ERR_TIRED) {
         return { 
           status: TaskStatus.IN_PROGRESS, 
-          message: 'Moving to controller',
+          message: `Moving to controller (${moveResult})`,
           workDone: 0
         };
       } else {
