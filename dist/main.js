@@ -476,15 +476,22 @@ class LegatusOfficio {
         const tasks = [];
         report.constructionSites.forEach(site => {
             // CONSTRUCTION IS TOP PRIORITY - infrastructure expansion is critical
-            // Higher priority than harvesting (except for dedicated harvesters)
+            // Extensions are CRITICAL - they unlock better creeps!
             let priority = 85; // Base: higher than most tasks
-            // Critical structures get even higher priority
-            if (site.structureType === STRUCTURE_SPAWN)
+            let creepsNeeded = Math.ceil((site.progressTotal - site.progress) / 5000);
+            // Critical structures get even higher priority and more workers
+            if (site.structureType === STRUCTURE_SPAWN) {
                 priority = 95;
-            if (site.structureType === STRUCTURE_TOWER)
+                creepsNeeded = Math.max(2, creepsNeeded);
+            }
+            if (site.structureType === STRUCTURE_EXTENSION) {
+                priority = 93; // HIGHEST - extensions unlock better economy
+                creepsNeeded = Math.max(3, creepsNeeded); // ALL HANDS ON DECK
+            }
+            if (site.structureType === STRUCTURE_TOWER) {
                 priority = 92;
-            if (site.structureType === STRUCTURE_EXTENSION)
-                priority = 90;
+                creepsNeeded = Math.max(2, creepsNeeded);
+            }
             // Roads, containers, walls = 85 (still high)
             tasks.push({
                 id: `build_${site.id}`, // Stable ID based on construction site
@@ -492,7 +499,7 @@ class LegatusOfficio {
                 priority: priority,
                 targetId: site.id,
                 targetPos: { x: site.pos.x, y: site.pos.y, roomName: this.roomName },
-                creepsNeeded: Math.ceil((site.progressTotal - site.progress) / 5000),
+                creepsNeeded: creepsNeeded,
                 assignedCreeps: [],
                 metadata: {
                     structureType: site.structureType,
@@ -639,9 +646,9 @@ class LegatusGenetor {
         const defenderCount = creeps.filter(c => c.memory.role === 'defender').length;
         const totalCreeps = creeps.length;
         const minCreeps = 6;
-        // Dynamic max based on available tasks (scale up during construction boom)
-        const totalTaskSlots = tasks.reduce((sum, t) => sum + t.creepsNeeded, 0);
-        const maxCreeps = Math.max(15, Math.min(30, totalTaskSlots + 5)); // 15-30 range
+        // Moderate max - focus on quality over quantity
+        // Once we get extensions, we can spawn better creeps
+        const maxCreeps = 12; // Conservative cap - let extensions expand capacity
         if (totalCreeps >= maxCreeps)
             return;
         const energy = room.energyAvailable;

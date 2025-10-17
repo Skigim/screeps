@@ -200,13 +200,23 @@ export class LegatusOfficio {
 
     report.constructionSites.forEach(site => {
       // CONSTRUCTION IS TOP PRIORITY - infrastructure expansion is critical
-      // Higher priority than harvesting (except for dedicated harvesters)
+      // Extensions are CRITICAL - they unlock better creeps!
       let priority = 85; // Base: higher than most tasks
+      let creepsNeeded = Math.ceil((site.progressTotal - site.progress) / 5000);
       
-      // Critical structures get even higher priority
-      if (site.structureType === STRUCTURE_SPAWN) priority = 95;
-      if (site.structureType === STRUCTURE_TOWER) priority = 92;
-      if (site.structureType === STRUCTURE_EXTENSION) priority = 90;
+      // Critical structures get even higher priority and more workers
+      if (site.structureType === STRUCTURE_SPAWN) {
+        priority = 95;
+        creepsNeeded = Math.max(2, creepsNeeded);
+      }
+      if (site.structureType === STRUCTURE_EXTENSION) {
+        priority = 93; // HIGHEST - extensions unlock better economy
+        creepsNeeded = Math.max(3, creepsNeeded); // ALL HANDS ON DECK
+      }
+      if (site.structureType === STRUCTURE_TOWER) {
+        priority = 92;
+        creepsNeeded = Math.max(2, creepsNeeded);
+      }
       // Roads, containers, walls = 85 (still high)
 
       tasks.push({
@@ -215,7 +225,7 @@ export class LegatusOfficio {
         priority: priority,
         targetId: site.id,
         targetPos: { x: site.pos.x, y: site.pos.y, roomName: this.roomName },
-        creepsNeeded: Math.ceil((site.progressTotal - site.progress) / 5000),
+        creepsNeeded: creepsNeeded,
         assignedCreeps: [],
         metadata: {
           structureType: site.structureType,

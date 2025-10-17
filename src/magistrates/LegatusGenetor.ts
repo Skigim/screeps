@@ -39,9 +39,9 @@ export class LegatusGenetor {
     const totalCreeps = creeps.length;
     const minCreeps = 6;
     
-    // Dynamic max based on available tasks (scale up during construction boom)
-    const totalTaskSlots = tasks.reduce((sum, t) => sum + t.creepsNeeded, 0);
-    const maxCreeps = Math.max(15, Math.min(30, totalTaskSlots + 5)); // 15-30 range
+    // Moderate max - focus on quality over quantity
+    // Once we get extensions, we can spawn better creeps
+    const maxCreeps = 12; // Conservative cap - let extensions expand capacity
 
     if (totalCreeps >= maxCreeps) return;
 
