@@ -1652,7 +1652,7 @@ class LegatusLegionum {
         // Analyze creep body composition
         const workParts = creep.body.filter(p => p.type === WORK).length;
         const carryParts = creep.body.filter(p => p.type === CARRY).length;
-        const isSpecializedHarvester = workParts > carryParts; // More WORK than CARRY = harvester
+        const attackParts = creep.body.filter(p => p.type === ATTACK || p.type === RANGED_ATTACK).length;
         // Check if creep can do this task based on energy state
         const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
         const hasSpace = creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
@@ -1661,33 +1661,19 @@ class LegatusLegionum {
             // Check if already assigned to this task
             if (t.assignedCreeps.includes(creep.name))
                 return false;
-            // For HARVEST tasks: Check if this creep can displace a weaker harvester
-            if (t.type === 'HARVEST_ENERGY') {
-                if (t.assignedCreeps.length < t.creepsNeeded) ;
-                else if (isSpecializedHarvester) {
-                    // Task is full, but check if we can displace a weaker harvester
-                    const canDisplace = this.canDisplaceHarvester(creep, t, workParts);
-                    if (!canDisplace)
-                        return false;
-                }
-                else {
-                    // Task full and we're not elite - skip
+            // Check if task is full - if so, can we displace someone less suitable?
+            if (t.assignedCreeps.length >= t.creepsNeeded) {
+                const myScore = this.calculateTaskSuitability(creep, t, workParts, carryParts, attackParts);
+                const canDisplace = this.canDisplaceForTask(creep, t, myScore);
+                if (!canDisplace)
                     return false;
-                }
-            }
-            else {
-                // Non-harvest tasks: normal slot checking
-                if (t.assignedCreeps.length >= t.creepsNeeded)
-                    return false;
-            }
-            // Specialized harvesters should focus on harvesting, not pickup
-            if (t.type === 'PICKUP_ENERGY' && isSpecializedHarvester) {
-                return false; // Let general workers handle pickup
             }
             // Energy transfer tasks require energy
             if (t.type === 'REFILL_SPAWN' || t.type === 'REFILL_EXTENSION' ||
-                t.type === 'REFILL_TOWER' || t.type === 'HAUL_ENERGY') {
-                if (!hasEnergy)
+                t.type === 'REFILL_TOWER' || t.type === 'HAUL_ENERGY' || t.type === 'PICKUP_ENERGY') {
+                if (!hasEnergy && t.type === 'PICKUP_ENERGY')
+                    return true; // Pickup needs space, not energy
+                if (t.type !== 'PICKUP_ENERGY' && !hasEnergy)
                     return false;
             }
             // Harvest and pickup tasks require space
@@ -1700,13 +1686,16 @@ class LegatusLegionum {
                 if (!hasEnergy)
                     return false;
             }
+            // Defense tasks require attack parts
+            if (t.type === 'DEFEND_ROOM' && attackParts === 0)
+                return false;
             return true;
         });
         // Debug: Log why no tasks available
         if (suitableTasks.length === 0) {
             console.log(`🔍 ${creep.name} - NO SUITABLE TASKS`);
             console.log(`  Energy: ${creep.store[RESOURCE_ENERGY]}/${creep.store.getCapacity(RESOURCE_ENERGY)} (hasEnergy:${hasEnergy}, hasSpace:${hasSpace})`);
-            console.log(`  Body: WORK:${workParts} CARRY:${carryParts} (specialized:${isSpecializedHarvester})`);
+            console.log(`  Body: WORK:${workParts} CARRY:${carryParts} ATTACK:${attackParts}`);
             console.log(`  Total tasks: ${tasks.length}`);
             tasks.forEach(t => {
                 const reason = [];
@@ -1714,8 +1703,6 @@ class LegatusLegionum {
                     reason.push('FULL');
                 if (t.assignedCreeps.includes(creep.name))
                     reason.push('ALREADY_ASSIGNED');
-                if (t.type === 'PICKUP_ENERGY' && isSpecializedHarvester)
-                    reason.push('SPECIALIZED_HARVESTER');
                 if (['REFILL_SPAWN', 'REFILL_EXTENSION', 'REFILL_TOWER', 'HAUL_ENERGY'].includes(t.type) && !hasEnergy)
                     reason.push('NEEDS_ENERGY');
                 if (['HARVEST_ENERGY', 'PICKUP_ENERGY', 'WITHDRAW_ENERGY'].includes(t.type) && !hasSpace)
@@ -1729,10 +1716,10 @@ class LegatusLegionum {
         suitableTasks.sort((a, b) => b.priority - a.priority);
         const availableTask = suitableTasks[0];
         if (availableTask) {
-            // For HARVEST tasks that are full, displace the weakest harvester
-            if (availableTask.type === 'HARVEST_ENERGY' &&
-                availableTask.assignedCreeps.length >= availableTask.creepsNeeded) {
-                this.displaceWeakestHarvester(creep, availableTask, workParts);
+            // Check if task is full and we need to displace someone
+            if (availableTask.assignedCreeps.length >= availableTask.creepsNeeded) {
+                const myScore = this.calculateTaskSuitability(creep, availableTask, workParts, carryParts, attackParts);
+                this.displaceWeakestForTask(creep, availableTask, myScore);
             }
             else {
                 // Normal assignment
@@ -1750,51 +1737,95 @@ class LegatusLegionum {
         }
     }
     /**
-     * Check if this creep can displace a weaker harvester from a task
+     * Calculate how suitable a creep is for a specific task type
+     * Higher score = better fit
      */
-    canDisplaceHarvester(_creep, task, myWorkParts) {
-        // Find weakest assigned harvester
+    calculateTaskSuitability(_creep, task, workParts, carryParts, attackParts) {
+        let score = 0;
+        switch (task.type) {
+            case 'HARVEST_ENERGY':
+                // Harvesters: WORK parts are king
+                score = workParts * 10;
+                break;
+            case 'PICKUP_ENERGY':
+            case 'REFILL_SPAWN':
+            case 'REFILL_EXTENSION':
+            case 'REFILL_TOWER':
+            case 'HAUL_ENERGY':
+                // Haulers: CARRY parts matter most, penalize WORK parts
+                score = carryParts * 10 - workParts * 5;
+                break;
+            case 'UPGRADE_CONTROLLER':
+                // Upgraders: WORK parts for speed
+                score = workParts * 8;
+                break;
+            case 'BUILD':
+            case 'REPAIR':
+                // Builders: WORK and CARRY both useful
+                score = workParts * 6 + carryParts * 4;
+                break;
+            case 'DEFEND_ROOM':
+                // Defenders: ATTACK parts essential
+                score = attackParts * 10;
+                break;
+            default:
+                // Generic tasks: balanced creeps preferred
+                score = workParts + carryParts;
+        }
+        return score;
+    }
+    /**
+     * Check if this creep can displace someone less suitable for the task
+     */
+    canDisplaceForTask(_creep, task, myScore) {
+        // Find least suitable assigned creep
         for (const assignedName of task.assignedCreeps) {
             const assignedCreep = Game.creeps[assignedName];
             if (!assignedCreep)
                 continue;
-            const theirWorkParts = assignedCreep.body.filter(p => p.type === WORK).length;
-            if (myWorkParts > theirWorkParts) {
-                return true; // We can displace at least one weaker harvester
+            const workParts = assignedCreep.body.filter(p => p.type === WORK).length;
+            const carryParts = assignedCreep.body.filter(p => p.type === CARRY).length;
+            const attackParts = assignedCreep.body.filter(p => p.type === ATTACK || p.type === RANGED_ATTACK).length;
+            const theirScore = this.calculateTaskSuitability(assignedCreep, task, workParts, carryParts, attackParts);
+            if (myScore > theirScore) {
+                return true; // We can displace at least one less suitable creep
             }
         }
         return false;
     }
     /**
-     * Displace the weakest harvester and assign this creep instead
+     * Displace the least suitable creep and assign this one instead
      */
-    displaceWeakestHarvester(creep, task, myWorkParts) {
+    displaceWeakestForTask(creep, task, myScore) {
         let weakestCreep = null;
-        let weakestWorkParts = myWorkParts;
-        // Find the weakest assigned harvester
+        let weakestScore = myScore;
+        // Find the least suitable assigned creep
         for (const assignedName of task.assignedCreeps) {
             const assignedCreep = Game.creeps[assignedName];
             if (!assignedCreep)
                 continue;
-            const theirWorkParts = assignedCreep.body.filter(p => p.type === WORK).length;
-            if (theirWorkParts < weakestWorkParts) {
+            const workParts = assignedCreep.body.filter(p => p.type === WORK).length;
+            const carryParts = assignedCreep.body.filter(p => p.type === CARRY).length;
+            const attackParts = assignedCreep.body.filter(p => p.type === ATTACK || p.type === RANGED_ATTACK).length;
+            const theirScore = this.calculateTaskSuitability(assignedCreep, task, workParts, carryParts, attackParts);
+            if (theirScore < weakestScore) {
                 weakestCreep = assignedCreep;
-                weakestWorkParts = theirWorkParts;
+                weakestScore = theirScore;
             }
         }
         if (weakestCreep) {
-            // Remove weak harvester from task
+            // Remove less suitable creep from task
             const index = task.assignedCreeps.indexOf(weakestCreep.name);
             if (index > -1) {
                 task.assignedCreeps.splice(index, 1);
             }
             weakestCreep.memory.task = undefined;
             weakestCreep.memory.targetId = undefined;
-            // Assign elite harvester
+            // Assign better suited creep
             creep.memory.task = task.id;
             creep.memory.targetId = task.targetId;
             task.assignedCreeps.push(creep.name);
-            console.log(`⚔️ ${creep.name} (WORK:${myWorkParts}) displaced ${weakestCreep.name} (WORK:${weakestWorkParts}) from ${task.type}`);
+            console.log(`⚔️ ${creep.name} (score:${myScore}) displaced ${weakestCreep.name} (score:${weakestScore}) from ${task.type}`);
         }
     }
     /**

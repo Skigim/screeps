@@ -41,13 +41,18 @@ export declare class LegatusLegionum {
      */
     private assignTask;
     /**
-     * Check if this creep can displace a weaker harvester from a task
+     * Calculate how suitable a creep is for a specific task type
+     * Higher score = better fit
      */
-    private canDisplaceHarvester;
+    private calculateTaskSuitability;
     /**
-     * Displace the weakest harvester and assign this creep instead
+     * Check if this creep can displace someone less suitable for the task
      */
-    private displaceWeakestHarvester;
+    private canDisplaceForTask;
+    /**
+     * Displace the least suitable creep and assign this one instead
+     */
+    private displaceWeakestForTask;
     /**
      * Handle the result of a task execution
      *
