@@ -116,7 +116,18 @@ export class LegatusLegionum {
         const hasAllParts = t.requiredParts.every(partType => 
           creep.body.some(bodyPart => bodyPart.type === partType)
         );
-        if (!hasAllParts) return false; // Creep lacks required parts
+        if (!hasAllParts) {
+          // Debug: Log when filtering out tasks
+          if (creep.memory.role === 'hauler' && t.type === 'BUILD') {
+            console.log(`🚫 ${creep.name} filtered from ${t.type}: missing required parts [${t.requiredParts.join(',')}]`);
+          }
+          return false; // Creep lacks required parts
+        }
+      } else {
+        // Debug: Warn if task has no requiredParts (legacy behavior)
+        if (t.type === 'BUILD' || t.type === 'UPGRADE_CONTROLLER' || t.type === 'REPAIR') {
+          console.log(`⚠️ Task ${t.type} (${t.id}) has no requiredParts! Using legacy filtering.`);
+        }
       }
       
       // Check if task is full - if so, can we displace someone less suitable?
