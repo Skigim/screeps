@@ -83,6 +83,29 @@ export class LegatusOfficio {
   private createEnergyTasks(report: ArchivistReport): Task[] {
     const tasks: Task[] = [];
 
+    // Pickup dropped energy (highest priority - don't waste energy)
+    const room = Game.rooms[this.roomName];
+    if (room) {
+      const droppedResources = room.find(FIND_DROPPED_RESOURCES, {
+        filter: (resource) => resource.resourceType === RESOURCE_ENERGY && resource.amount > 50
+      });
+      
+      droppedResources.forEach(resource => {
+        tasks.push({
+          id: this.generateTaskId(),
+          type: TaskType.PICKUP_ENERGY,
+          priority: 88, // Higher than harvest, lower than refill
+          targetId: resource.id,
+          targetPos: { x: resource.pos.x, y: resource.pos.y, roomName: this.roomName },
+          creepsNeeded: 1,
+          assignedCreeps: [],
+          metadata: {
+            energyAmount: resource.amount
+          }
+        });
+      });
+    }
+
     // Harvest from sources
     report.sources.forEach(source => {
       if (source.energy > 0 && source.harvestersPresent < source.harvestersNeeded) {

@@ -107,8 +107,8 @@ export class LegatusLegionum {
         if (!hasEnergy) return false;
       }
       
-      // Harvest tasks require space
-      if (t.type === 'HARVEST_ENERGY' || t.type === 'WITHDRAW_ENERGY') {
+      // Harvest and pickup tasks require space
+      if (t.type === 'HARVEST_ENERGY' || t.type === 'PICKUP_ENERGY' || t.type === 'WITHDRAW_ENERGY') {
         if (!hasSpace) return false;
       }
       

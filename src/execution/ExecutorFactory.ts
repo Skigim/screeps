@@ -1,6 +1,7 @@
 import { TaskType } from '../interfaces';
 import { TaskExecutor } from './TaskExecutor';
 import { HarvestExecutor } from './executors/HarvestExecutor';
+import { PickupExecutor } from './executors/PickupExecutor';
 import { TransferExecutor } from './executors/TransferExecutor';
 import { UpgradeExecutor } from './executors/UpgradeExecutor';
 import { BuildExecutor } from './executors/BuildExecutor';
@@ -63,6 +64,7 @@ export class ExecutorFactory {
   private static initializeExecutors(): void {
     // Create executor instances
     const harvestExecutor = new HarvestExecutor();
+    const pickupExecutor = new PickupExecutor();
     const transferExecutor = new TransferExecutor();
     const upgradeExecutor = new UpgradeExecutor();
     const buildExecutor = new BuildExecutor();
@@ -73,6 +75,7 @@ export class ExecutorFactory {
 
     // Register energy management executors
     this.registerExecutor(TaskType.HARVEST_ENERGY, harvestExecutor);
+    this.registerExecutor(TaskType.PICKUP_ENERGY, pickupExecutor);
     this.registerExecutor(TaskType.WITHDRAW_ENERGY, withdrawExecutor);
     this.registerExecutor(TaskType.HAUL_ENERGY, transferExecutor); // Same logic as transfer
 

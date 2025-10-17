@@ -5,6 +5,7 @@
  * Executors handle movement, action validation, and result tracking
  */
 export * from './HarvestExecutor';
+export * from './PickupExecutor';
 export * from './TransferExecutor';
 export * from './UpgradeExecutor';
 export * from './BuildExecutor';

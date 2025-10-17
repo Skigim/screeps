@@ -5,6 +5,7 @@
 export enum TaskType {
   // Energy Management
   HARVEST_ENERGY = 'HARVEST_ENERGY',
+  PICKUP_ENERGY = 'PICKUP_ENERGY',
   HAUL_ENERGY = 'HAUL_ENERGY',
   WITHDRAW_ENERGY = 'WITHDRAW_ENERGY',
   

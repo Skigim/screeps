@@ -252,6 +252,7 @@ var TaskType;
 (function (TaskType) {
     // Energy Management
     TaskType["HARVEST_ENERGY"] = "HARVEST_ENERGY";
+    TaskType["PICKUP_ENERGY"] = "PICKUP_ENERGY";
     TaskType["HAUL_ENERGY"] = "HAUL_ENERGY";
     TaskType["WITHDRAW_ENERGY"] = "WITHDRAW_ENERGY";
     // Construction & Repair
@@ -341,6 +342,27 @@ class LegatusOfficio {
     }
     createEnergyTasks(report) {
         const tasks = [];
+        // Pickup dropped energy (highest priority - don't waste energy)
+        const room = Game.rooms[this.roomName];
+        if (room) {
+            const droppedResources = room.find(FIND_DROPPED_RESOURCES, {
+                filter: (resource) => resource.resourceType === RESOURCE_ENERGY && resource.amount > 50
+            });
+            droppedResources.forEach(resource => {
+                tasks.push({
+                    id: this.generateTaskId(),
+                    type: TaskType.PICKUP_ENERGY,
+                    priority: 88, // Higher than harvest, lower than refill
+                    targetId: resource.id,
+                    targetPos: { x: resource.pos.x, y: resource.pos.y, roomName: this.roomName },
+                    creepsNeeded: 1,
+                    assignedCreeps: [],
+                    metadata: {
+                        energyAmount: resource.amount
+                    }
+                });
+            });
+        }
         // Harvest from sources
         report.sources.forEach(source => {
             if (source.energy > 0 && source.harvestersPresent < source.harvestersNeeded) {
@@ -840,6 +862,78 @@ class HarvestExecutor extends TaskExecutor {
             return {
                 status: TaskStatus.FAILED,
                 message: `Harvest failed: ${harvestResult}`,
+                workDone: 0
+            };
+        }
+    }
+}
+
+/// <reference types="screeps" />
+/**
+ * PickupExecutor - Execute PICKUP_ENERGY tasks
+ *
+ * Creeps move to dropped energy and pick it up
+ * Returns COMPLETED when creep is full or energy is gone
+ */
+class PickupExecutor extends TaskExecutor {
+    execute(creep, task) {
+        // Validate task has a target
+        if (!task.targetId) {
+            return { status: TaskStatus.FAILED, message: 'No pickup target specified' };
+        }
+        // Get the dropped resource
+        const resource = Game.getObjectById(task.targetId);
+        if (!resource) {
+            return { status: TaskStatus.FAILED, message: 'Dropped resource not found' };
+        }
+        // Check if creep is full
+        if (creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Creep full',
+                workDone: 0
+            };
+        }
+        // Check if resource still exists and has energy
+        if (resource.amount === 0) {
+            return {
+                status: TaskStatus.COMPLETED,
+                message: 'Resource depleted',
+                workDone: 0
+            };
+        }
+        // Check if in range to pickup (must be adjacent)
+        if (!this.isAtTarget(creep, resource)) {
+            // Move towards resource
+            const moveResult = this.moveToTarget(creep, resource);
+            // Movement errors are usually not fatal
+            if (moveResult !== OK && moveResult !== ERR_TIRED && moveResult !== ERR_BUSY) {
+                return {
+                    status: TaskStatus.FAILED,
+                    message: `Failed to move: ${moveResult}`,
+                    workDone: 0
+                };
+            }
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Moving to resource',
+                workDone: 0
+            };
+        }
+        // Adjacent to resource - perform pickup
+        const pickupResult = creep.pickup(resource);
+        if (pickupResult === OK) {
+            const amountPickedUp = Math.min(resource.amount, creep.store.getFreeCapacity(RESOURCE_ENERGY));
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Picking up energy',
+                workDone: amountPickedUp
+            };
+        }
+        else {
+            return {
+                status: TaskStatus.FAILED,
+                message: `Pickup failed: ${pickupResult}`,
                 workDone: 0
             };
         }
@@ -1399,6 +1493,7 @@ class ExecutorFactory {
     static initializeExecutors() {
         // Create executor instances
         const harvestExecutor = new HarvestExecutor();
+        const pickupExecutor = new PickupExecutor();
         const transferExecutor = new TransferExecutor();
         const upgradeExecutor = new UpgradeExecutor();
         const buildExecutor = new BuildExecutor();
@@ -1408,6 +1503,7 @@ class ExecutorFactory {
         const idleExecutor = new IdleExecutor();
         // Register energy management executors
         this.registerExecutor(TaskType.HARVEST_ENERGY, harvestExecutor);
+        this.registerExecutor(TaskType.PICKUP_ENERGY, pickupExecutor);
         this.registerExecutor(TaskType.WITHDRAW_ENERGY, withdrawExecutor);
         this.registerExecutor(TaskType.HAUL_ENERGY, transferExecutor); // Same logic as transfer
         // Register construction & repair executors
@@ -1540,8 +1636,8 @@ class LegatusLegionum {
                 if (!hasEnergy)
                     return false;
             }
-            // Harvest tasks require space
-            if (t.type === 'HARVEST_ENERGY' || t.type === 'WITHDRAW_ENERGY') {
+            // Harvest and pickup tasks require space
+            if (t.type === 'HARVEST_ENERGY' || t.type === 'PICKUP_ENERGY' || t.type === 'WITHDRAW_ENERGY') {
                 if (!hasSpace)
                     return false;
             }
