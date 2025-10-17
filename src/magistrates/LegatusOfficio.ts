@@ -296,11 +296,24 @@ export class LegatusOfficio {
     const upgraderShortage = report.controller.upgraderRecommendation - 
                              report.controller.upgraderCount;
 
-    // Priority: LOWEST - only upgrade when all construction is done
-    // Emergency: 96 if downgrade imminent (higher than all BUILD)
-    // Normal: 40 (below all other tasks - construction first!)
-    const priority = report.controller.ticksToDowngrade < 5000 ? 96 : 40;
-    const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps with energy
+    // DOWNGRADE PROTECTION: Track time to downgrade and require minimum upgraders
+    const ticksToDowngrade = report.controller.ticksToDowngrade;
+    const downgradeThreshold = 10000; // Start requiring upgraders below 10k ticks
+    const criticalThreshold = 5000;   // Critical priority below 5k ticks
+    
+    // Priority escalation based on downgrade risk
+    let priority = 40; // Normal: LOWEST - construction first
+    if (ticksToDowngrade < criticalThreshold) {
+      priority = 96; // CRITICAL - higher than all BUILD tasks!
+    } else if (ticksToDowngrade < downgradeThreshold) {
+      priority = 50; // WARNING - slightly higher than normal
+    }
+    
+    // Guarantee at least 1 upgrader when downgrade timer is below threshold
+    let creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps
+    if (ticksToDowngrade < downgradeThreshold) {
+      creepsNeeded = Math.max(1, creepsNeeded); // REQUIRE at least 1 upgrader
+    }
     
     tasks.push({
       id: `upgrade_${report.controller.id}`, // Stable ID based on controller
@@ -308,7 +321,11 @@ export class LegatusOfficio {
       priority: priority,
       targetId: report.controller.id,
       creepsNeeded: creepsNeeded, // Controller can handle many upgraders
-      assignedCreeps: []
+      assignedCreeps: [],
+      metadata: {
+        ticksToDowngrade: ticksToDowngrade,
+        downgradeRisk: ticksToDowngrade < downgradeThreshold ? 'WARNING' : 'SAFE'
+      }
     });
 
     return tasks;
