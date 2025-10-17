@@ -1509,9 +1509,38 @@ class BuildExecutor extends TaskExecutor {
         if (!site) {
             return { status: TaskStatus.FAILED, message: 'Construction site not found' };
         }
-        // If creep has no energy, acquire energy first (pickup > withdraw from spawn)
+        // If creep has no energy, acquire energy first
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            // Priority 1: Look for dropped energy first (don't waste it)
+            // Check if economy is bootstrapped (harvesters + haulers ready)
+            const creeps = Object.values(Game.creeps).filter(c => c.memory.room === creep.room.name);
+            const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+            const haulerCount = creeps.filter(c => c.memory.role === 'hauler').length;
+            const sources = creep.room.find(FIND_SOURCES);
+            const economyBootstrapped = harvesterCount >= sources.length && haulerCount >= 2;
+            // Priority 1: Withdraw from spawn (if economy bootstrapped and spawn has excess)
+            // This frees haulers to focus on hauling
+            if (economyBootstrapped) {
+                const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
+                if (spawn && spawn.store.getUsedCapacity(RESOURCE_ENERGY) > 100) {
+                    if (!creep.pos.isNearTo(spawn)) {
+                        creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                        return {
+                            status: TaskStatus.IN_PROGRESS,
+                            message: 'Moving to withdraw from spawn',
+                            workDone: 0
+                        };
+                    }
+                    const withdrawResult = creep.withdraw(spawn, RESOURCE_ENERGY);
+                    if (withdrawResult === OK) {
+                        return {
+                            status: TaskStatus.IN_PROGRESS,
+                            message: 'Withdrawing energy for build',
+                            workDone: 0
+                        };
+                    }
+                }
+            }
+            // Priority 2: Look for dropped energy (fallback or during bootstrap)
             const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
                 filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
             });
@@ -1529,26 +1558,6 @@ class BuildExecutor extends TaskExecutor {
                     return {
                         status: TaskStatus.IN_PROGRESS,
                         message: 'Picking up energy for build',
-                        workDone: 0
-                    };
-                }
-            }
-            // Priority 2: Withdraw from spawn (if spawn has excess energy)
-            const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
-            if (spawn && spawn.store.getUsedCapacity(RESOURCE_ENERGY) > 100) {
-                if (!creep.pos.isNearTo(spawn)) {
-                    creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
-                    return {
-                        status: TaskStatus.IN_PROGRESS,
-                        message: 'Moving to withdraw from spawn',
-                        workDone: 0
-                    };
-                }
-                const withdrawResult = creep.withdraw(spawn, RESOURCE_ENERGY);
-                if (withdrawResult === OK) {
-                    return {
-                        status: TaskStatus.IN_PROGRESS,
-                        message: 'Withdrawing energy for build',
                         workDone: 0
                     };
                 }
@@ -1626,9 +1635,38 @@ class RepairExecutor extends TaskExecutor {
                 workDone: 0
             };
         }
-        // If creep has no energy, acquire energy first (pickup > withdraw from spawn)
+        // If creep has no energy, acquire energy first
         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-            // Priority 1: Look for dropped energy first (don't waste it)
+            // Check if economy is bootstrapped (harvesters + haulers ready)
+            const creeps = Object.values(Game.creeps).filter(c => c.memory.room === creep.room.name);
+            const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+            const haulerCount = creeps.filter(c => c.memory.role === 'hauler').length;
+            const sources = creep.room.find(FIND_SOURCES);
+            const economyBootstrapped = harvesterCount >= sources.length && haulerCount >= 2;
+            // Priority 1: Withdraw from spawn (if economy bootstrapped and spawn has excess)
+            // This frees haulers to focus on hauling
+            if (economyBootstrapped) {
+                const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
+                if (spawn && spawn.store.getUsedCapacity(RESOURCE_ENERGY) > 100) {
+                    if (!creep.pos.isNearTo(spawn)) {
+                        creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                        return {
+                            status: TaskStatus.IN_PROGRESS,
+                            message: 'Moving to withdraw from spawn',
+                            workDone: 0
+                        };
+                    }
+                    const withdrawResult = creep.withdraw(spawn, RESOURCE_ENERGY);
+                    if (withdrawResult === OK) {
+                        return {
+                            status: TaskStatus.IN_PROGRESS,
+                            message: 'Withdrawing energy for repair',
+                            workDone: 0
+                        };
+                    }
+                }
+            }
+            // Priority 2: Look for dropped energy (fallback or during bootstrap)
             const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
                 filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
             });
@@ -1646,26 +1684,6 @@ class RepairExecutor extends TaskExecutor {
                     return {
                         status: TaskStatus.IN_PROGRESS,
                         message: 'Picking up energy for repair',
-                        workDone: 0
-                    };
-                }
-            }
-            // Priority 2: Withdraw from spawn (if spawn has excess energy)
-            const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
-            if (spawn && spawn.store.getUsedCapacity(RESOURCE_ENERGY) > 100) {
-                if (!creep.pos.isNearTo(spawn)) {
-                    creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
-                    return {
-                        status: TaskStatus.IN_PROGRESS,
-                        message: 'Moving to withdraw from spawn',
-                        workDone: 0
-                    };
-                }
-                const withdrawResult = creep.withdraw(spawn, RESOURCE_ENERGY);
-                if (withdrawResult === OK) {
-                    return {
-                        status: TaskStatus.IN_PROGRESS,
-                        message: 'Withdrawing energy for repair',
                         workDone: 0
                     };
                 }
