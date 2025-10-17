@@ -523,7 +523,9 @@ class LegatusOfficio {
         // The controller can handle unlimited upgraders, so set a high limit
         const upgraderShortage = report.controller.upgraderRecommendation -
             report.controller.upgraderCount;
-        const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 55;
+        // Priority: 90 if downgrade imminent, 45 otherwise (below all construction)
+        // Building infrastructure should take priority over upgrading
+        const priority = report.controller.ticksToDowngrade < 5000 ? 90 : 45;
         const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps with energy
         tasks.push({
             id: `upgrade_${report.controller.id}`, // Stable ID based on controller
