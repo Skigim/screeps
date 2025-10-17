@@ -395,19 +395,20 @@ class LegatusOfficio {
             });
         }
         // Harvest from sources (for dedicated harvesters only)
+        // ALWAYS create harvest tasks - harvesters stay permanently assigned
         // Priority: Lower than BUILD - we only harvest to GET energy FOR building
         report.sources.forEach(source => {
-            if (source.energy > 0 && source.harvestersPresent < source.harvestersNeeded) {
-                tasks.push({
-                    id: `harvest_${source.id}`, // Stable ID based on source
-                    type: TaskType.HARVEST_ENERGY,
-                    priority: 80, // Below BUILD (85+), ensures dedicated harvesters only
-                    targetId: source.id,
-                    targetPos: { x: source.pos.x, y: source.pos.y, roomName: this.roomName },
-                    creepsNeeded: source.harvestersNeeded - source.harvestersPresent,
-                    assignedCreeps: []
-                });
-            }
+            // Create task if source has energy OR if source exists (harvesters wait at empty sources)
+            // Don't check harvestersPresent - we need the task to persist for assigned harvesters
+            tasks.push({
+                id: `harvest_${source.id}`, // Stable ID based on source
+                type: TaskType.HARVEST_ENERGY,
+                priority: 80, // Below BUILD (85+), ensures dedicated harvesters only
+                targetId: source.id,
+                targetPos: { x: source.pos.x, y: source.pos.y, roomName: this.roomName },
+                creepsNeeded: source.harvestersNeeded, // Total needed, not shortage
+                assignedCreeps: []
+            });
         });
         // DIRECT TRANSFER to spawns/extensions (early game - no containers yet)
         if (report.energyDeficit > 0) {
