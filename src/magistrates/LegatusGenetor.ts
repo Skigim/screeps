@@ -30,90 +30,93 @@ export class LegatusGenetor {
 
     if (spawns.length === 0) return;
 
-    // Check if we need more creeps
-    const creepCount = Object.keys(Game.creeps).filter(name => 
-      Game.creeps[name].memory.room === this.roomName
-    ).length;
-
-    // Early game: maintain minimum population
+    // Get current creep census by role
+    const creeps = Object.values(Game.creeps).filter(c => c.memory.room === this.roomName);
+    const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+    const haulerCount = creeps.filter(c => c.memory.role === 'hauler').length;
+    const defenderCount = creeps.filter(c => c.memory.role === 'defender').length;
+    
+    const totalCreeps = creeps.length;
     const minCreeps = 6;
     const maxCreeps = 15;
 
-    if (creepCount >= maxCreeps) return;
+    if (totalCreeps >= maxCreeps) return;
 
     // DON'T SPAWN if there are no available tasks (workers would just idle)
-    // Check if there are ANY tasks that have open slots
     const availableTasks = tasks.filter(task => {
       const openSlots = task.creepsNeeded - task.assignedCreeps.length;
       return openSlots > 0;
     });
 
-    if (availableTasks.length === 0 && creepCount >= minCreeps) {
-      // No tasks available and we have minimum population - don't spawn
-      // Let existing creeps renew instead
+    if (availableTasks.length === 0 && totalCreeps >= minCreeps) {
+      return; // No tasks available, don't spawn
+    }
+
+    const energy = room.energyAvailable;
+    const minEnergyToSpawn = totalCreeps < minCreeps ? 200 : 300;
+    if (energy < minEnergyToSpawn) return;
+
+    // PRIORITY SPAWN ORDER:
+    // 1. Defenders (if hostiles present)
+    // 2. Harvesters (1 per source, target 5 WORK parts)
+    // 3. Haulers (2-3 for logistics)
+    // 4. Workers (versatile, fill remaining slots)
+
+    const hostiles = room.find(FIND_HOSTILE_CREEPS);
+    if (hostiles.length > 0 && defenderCount < 2) {
+      this.spawnCreepByType('defender', spawns[0], energy, totalCreeps < minCreeps);
       return;
     }
 
-    // Determine what type of creep to spawn based on room needs
-    const energy = room.energyAvailable;
-    
-    // Only spawn if we have enough energy (don't spawn weak creeps)
-    const minEnergyToSpawn = creepCount < minCreeps ? 200 : 300;
-    if (energy < minEnergyToSpawn) return;
+    // Count sources in room
+    const sources = room.find(FIND_SOURCES);
+    const targetHarvesters = sources.length; // 1 dedicated harvester per source
 
-    // Decide body type based on current population and needs
-    const creepType = this.determineNeededCreepType(room, tasks);
-    const body = this.designCreepBody(creepType, energy);
-    
-    if (body.length === 0) return;
+    if (harvesterCount < targetHarvesters) {
+      this.spawnCreepByType('harvester', spawns[0], energy, totalCreeps < minCreeps);
+      return;
+    }
 
-    const cost = this.calculateBodyCost(body);
-    const role = creepType; // 'worker', 'hauler', 'defender', etc.
+    // Target 2-3 haulers for efficient logistics
+    const targetHaulers = Math.min(3, sources.length * 2);
+    if (haulerCount < targetHaulers) {
+      this.spawnCreepByType('hauler', spawns[0], energy, totalCreeps < minCreeps);
+      return;
+    }
 
-    const request: CreepRequest = {
-      priority: creepCount < minCreeps ? 100 : 50, // Emergency priority if below min
-      body: body,
-      memory: {
-        role: role,
-        room: this.roomName
-      },
-      initialTask: undefined, // Workers are not spawned for specific tasks
-      cost: cost,
-      role: role
-    };
-
-    this.spawnCreep(spawns[0], request);
+    // Fill remaining slots with versatile workers
+    this.spawnCreepByType('worker', spawns[0], energy, totalCreeps < minCreeps);
   }
 
   /**
-   * Determine what type of creep the room needs most
+   * Spawn a specific creep type with appropriate body design
    */
-  private determineNeededCreepType(room: Room, _tasks: Task[]): string {
-    const creeps = Object.values(Game.creeps).filter(c => c.memory.room === this.roomName);
-    
-    // Count creeps by capability
-    const workCreeps = creeps.filter(c => c.getActiveBodyparts(WORK) > 0).length;
-    const carryCreeps = creeps.filter(c => c.getActiveBodyparts(CARRY) > 0).length;
-    const attackCreeps = creeps.filter(c => c.getActiveBodyparts(ATTACK) > 0).length;
+  private spawnCreepByType(type: string, spawn: StructureSpawn, energy: number, isEmergency: boolean): void {
+    const body = this.designCreepBody(type, energy);
+    if (body.length === 0) return;
 
-    // Check for defense needs
-    const hostiles = room.find(FIND_HOSTILE_CREEPS);
-    if (hostiles.length > 0 && attackCreeps < 2) {
-      return 'defender';
+    const cost = this.calculateBodyCost(body);
+    const name = `${type}_${Game.time}`;
+
+    const request: CreepRequest = {
+      priority: isEmergency ? 100 : 50,
+      body: body,
+      memory: {
+        role: type,
+        room: this.roomName
+      },
+      initialTask: undefined,
+      cost: cost,
+      role: type
+    };
+
+    const result = spawn.spawnCreep(request.body, name, { memory: request.memory });
+
+    if (result === OK) {
+      console.log(`🏛️ Spawning ${type}: ${name} (${cost} energy, ${body.length} parts)`);
+    } else if (result !== ERR_NOT_ENOUGH_ENERGY) {
+      console.log(`⚠️ Failed to spawn ${type}: ${result}`);
     }
-
-    // Early game: need workers who can do everything
-    if (workCreeps < 4) {
-      return 'worker'; // WORK + CARRY + MOVE - can harvest, build, upgrade, transfer
-    }
-
-    // Mid game: specialized haulers for efficiency
-    if (carryCreeps < workCreeps * 0.5) {
-      return 'hauler'; // Mostly CARRY + MOVE - fast energy transport
-    }
-
-    // Default: balanced worker
-    return 'worker';
   }
 
   /**
@@ -121,15 +124,58 @@ export class LegatusGenetor {
    */
   private designCreepBody(type: string, energy: number): BodyPartConstant[] {
     switch (type) {
-      case 'worker':
-        return this.designWorker(energy);
+      case 'harvester':
+        return this.designHarvester(energy);
       case 'hauler':
         return this.designHauler(energy);
+      case 'worker':
+        return this.designWorker(energy);
       case 'defender':
         return this.designDefender(energy);
       default:
         return this.designWorker(energy);
     }
+  }
+
+  /**
+   * Design a dedicated harvester: Target 5 WORK parts, minimal CARRY, MOVE for speed
+   * These creeps ONLY harvest, haulers will pick up the energy
+   */
+  private designHarvester(energy: number): BodyPartConstant[] {
+    const parts: BodyPartConstant[] = [];
+    
+    // Target: 5 WORK parts for maximum harvest efficiency (10 energy/tick)
+    // Formula: [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE]
+    // Cost: 550 energy (ideal)
+    
+    // Scale down if low energy:
+    // 550+ = 5 WORK (ideal)
+    // 400-549 = 4 WORK
+    // 300-399 = 3 WORK  
+    // 200-299 = 2 WORK
+    // <200 = 1 WORK (emergency)
+    
+    let workParts = 1;
+    if (energy >= 550) workParts = 5;
+    else if (energy >= 450) workParts = 4;
+    else if (energy >= 350) workParts = 3;
+    else if (energy >= 250) workParts = 2;
+    
+    // Add WORK parts
+    for (let i = 0; i < workParts; i++) {
+      parts.push(WORK);
+    }
+    
+    // Add 1 CARRY (to hold harvested energy temporarily)
+    parts.push(CARRY);
+    
+    // Add MOVE parts (1 per 2 body parts for unburdened speed)
+    const moveParts = Math.ceil(parts.length / 2);
+    for (let i = 0; i < moveParts; i++) {
+      parts.push(MOVE);
+    }
+    
+    return parts;
   }
 
   /**
@@ -151,29 +197,28 @@ export class LegatusGenetor {
   }
 
   /**
-   * Design a specialized hauler: Mostly CARRY + MOVE
-   * Fast energy transport
+   * Design a specialized hauler: Maximize CARRY, no WORK parts
+   * Pure logistics - pickup, transfer, refill only
    */
   private designHauler(energy: number): BodyPartConstant[] {
-    // Hauler: Maximize CARRY with MOVE for speed
     const parts: BodyPartConstant[] = [];
     
-    // At least 1 WORK for emergency harvesting
-    if (energy >= 150) {
-      parts.push(WORK);
-      parts.push(CARRY);
-      parts.push(MOVE);
-      energy -= 150;
-    }
+    // NO WORK PARTS - haulers are pure logistics
+    // Formula: [CARRY, CARRY, MOVE, MOVE] repeating
+    // Each pair costs 100 energy and gives 100 capacity
     
-    // Rest is CARRY + MOVE
-    while (energy >= 100) {
+    while (energy >= 100 && parts.length < 16) { // Cap at 16 parts (8 CARRY + 8 MOVE)
       parts.push(CARRY);
       parts.push(MOVE);
       energy -= 100;
     }
-
-    return parts.length > 0 ? parts : [CARRY, MOVE];
+    
+    // Minimum: 2 CARRY + 2 MOVE
+    if (parts.length === 0) {
+      parts.push(CARRY, MOVE);
+    }
+    
+    return parts;
   }
 
   private designDefender(energy: number): BodyPartConstant[] {
@@ -209,18 +254,5 @@ export class LegatusGenetor {
     };
 
     return body.reduce((sum, part) => sum + (costs[part] || 0), 0);
-  }
-
-  private spawnCreep(spawn: StructureSpawn, request: CreepRequest): void {
-    const name = `${request.role}_${Game.time}`;
-    const result = spawn.spawnCreep(request.body, name, { memory: request.memory });
-
-    if (result === OK) {
-      console.log(`🏛️ Spawning ${request.role}: ${name} (${request.cost} energy)`);
-    } else if (result === ERR_NOT_ENOUGH_ENERGY) {
-      // This is fine - we'll try again next tick
-    } else {
-      console.log(`⚠️ Failed to spawn ${request.role}: ${result}`);
-    }
   }
 }

@@ -16,25 +16,29 @@ export declare class LegatusGenetor {
      */
     run(tasks: Task[]): void;
     /**
-     * Determine what type of creep the room needs most
+     * Spawn a specific creep type with appropriate body design
      */
-    private determineNeededCreepType;
+    private spawnCreepByType;
     /**
      * Design a creep body based on type and available energy
      */
     private designCreepBody;
+    /**
+     * Design a dedicated harvester: Target 5 WORK parts, minimal CARRY, MOVE for speed
+     * These creeps ONLY harvest, haulers will pick up the energy
+     */
+    private designHarvester;
     /**
      * Design a general-purpose worker: WORK + CARRY + MOVE
      * Can harvest, build, upgrade, repair, and transfer
      */
     private designWorker;
     /**
-     * Design a specialized hauler: Mostly CARRY + MOVE
-     * Fast energy transport
+     * Design a specialized hauler: Maximize CARRY, no WORK parts
+     * Pure logistics - pickup, transfer, refill only
      */
     private designHauler;
     private designDefender;
     private calculateBodyCost;
-    private spawnCreep;
 }
 //# sourceMappingURL=LegatusGenetor.d.ts.map

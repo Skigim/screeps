@@ -96,6 +96,9 @@ export class LegatusLegionum {
     const carryParts = creep.body.filter(p => p.type === CARRY).length;
     const attackParts = creep.body.filter(p => p.type === ATTACK || p.type === RANGED_ATTACK).length;
     
+    // Check creep role for specialized filtering
+    const role = creep.memory.role || 'worker';
+    
     // Check if creep can do this task based on energy state
     const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
     const hasSpace = creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
@@ -104,6 +107,17 @@ export class LegatusLegionum {
     const suitableTasks = tasks.filter(t => {
       // Check if already assigned to this task
       if (t.assignedCreeps.includes(creep.name)) return false;
+      
+      // SPECIALIZED ROLE FILTERING:
+      // Harvesters ONLY harvest (never haul, build, upgrade, etc.)
+      if (role === 'harvester' && t.type !== 'HARVEST_ENERGY') {
+        return false;
+      }
+      
+      // Haulers NEVER harvest (only pickup, haul, refill, withdraw)
+      if (role === 'hauler' && t.type === 'HARVEST_ENERGY') {
+        return false;
+      }
       
       // Check if task is full - if so, can we displace someone less suitable?
       if (t.assignedCreeps.length >= t.creepsNeeded) {
