@@ -17,6 +17,7 @@ export declare class LegatusFabrum {
     /**
      * Place extensions near spawn
      * RCL 2: 5 extensions, RCL 3: 10 extensions, etc.
+     * Strategy: Place ONE at a time, evenly distributed in rings
      */
     private placeExtensions;
     /**
@@ -31,6 +32,11 @@ export declare class LegatusFabrum {
      * Get all positions in a specific range (ring) around a position
      */
     private getPositionsInRange;
+    /**
+     * Get evenly distributed positions around a point
+     * Prioritizes cardinal directions and diagonals for balanced spacing
+     */
+    private getEvenlyDistributedPositions;
     /**
      * Check if a structure can be placed at this position
      */

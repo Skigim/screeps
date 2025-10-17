@@ -39,6 +39,7 @@ export class LegatusFabrum {
   /**
    * Place extensions near spawn
    * RCL 2: 5 extensions, RCL 3: 10 extensions, etc.
+   * Strategy: Place ONE at a time, evenly distributed in rings
    */
   private placeExtensions(room: Room): void {
     const rcl = room.controller!.level;
@@ -69,17 +70,21 @@ export class LegatusFabrum {
     
     if (totalExtensions >= maxExtensions) return; // Already have enough
     
+    // ONLY place ONE construction site at a time
+    if (extensionSites > 0) return; // Wait for current site to be built
+    
     // Find spawn to build near
     const spawn = room.find(FIND_MY_SPAWNS)[0];
     if (!spawn) return;
     
-    // Place extensions in a grid pattern around spawn
-    const extensionsNeeded = maxExtensions - totalExtensions;
+    // Place extensions evenly distributed in rings
+    // Use a deterministic pattern to ensure even spacing
+    const extensionsNeeded = 1; // ONE AT A TIME
     let placed = 0;
     
     // Search in expanding rings around spawn
     for (let range = 2; range <= 5 && placed < extensionsNeeded; range++) {
-      const positions = this.getPositionsInRange(spawn.pos, range);
+      const positions = this.getEvenlyDistributedPositions(spawn.pos, range);
       
       for (const pos of positions) {
         if (placed >= extensionsNeeded) break;
@@ -89,14 +94,10 @@ export class LegatusFabrum {
           const result = room.createConstructionSite(pos.x, pos.y, STRUCTURE_EXTENSION);
           if (result === OK) {
             placed++;
-            console.log(`🏗️ Architect: Placed EXTENSION at ${pos.x},${pos.y}`);
+            console.log(`🏗️ Architect: Placed EXTENSION at ${pos.x},${pos.y} (${totalExtensions + 1}/${maxExtensions})`);
           }
         }
       }
-    }
-    
-    if (placed > 0) {
-      console.log(`🏛️ Architect: Placed ${placed} extension sites (${totalExtensions + placed}/${maxExtensions})`);
     }
   }
 
@@ -177,6 +178,56 @@ export class LegatusFabrum {
         const dx = Math.abs(x - pos.x);
         const dy = Math.abs(y - pos.y);
         if (Math.max(dx, dy) !== range) continue;
+        
+        if (x >= 0 && x <= 49 && y >= 0 && y <= 49) {
+          positions.push(new RoomPosition(x, y, pos.roomName));
+        }
+      }
+    }
+    
+    return positions;
+  }
+
+  /**
+   * Get evenly distributed positions around a point
+   * Prioritizes cardinal directions and diagonals for balanced spacing
+   */
+  private getEvenlyDistributedPositions(pos: RoomPosition, range: number): RoomPosition[] {
+    const positions: RoomPosition[] = [];
+    
+    // For each ring, prioritize 8 main directions (N, NE, E, SE, S, SW, W, NW)
+    // This creates balanced, cross-pattern distribution
+    const directions = [
+      { dx: 0, dy: -1 },  // North
+      { dx: 1, dy: -1 },  // Northeast
+      { dx: 1, dy: 0 },   // East
+      { dx: 1, dy: 1 },   // Southeast
+      { dx: 0, dy: 1 },   // South
+      { dx: -1, dy: 1 },  // Southwest
+      { dx: -1, dy: 0 },  // West
+      { dx: -1, dy: -1 }  // Northwest
+    ];
+    
+    // Add primary 8 directions at this range
+    for (const dir of directions) {
+      const x = pos.x + (dir.dx * range);
+      const y = pos.y + (dir.dy * range);
+      
+      if (x >= 0 && x <= 49 && y >= 0 && y <= 49) {
+        positions.push(new RoomPosition(x, y, pos.roomName));
+      }
+    }
+    
+    // Add remaining positions in the ring (fills gaps between cardinal/diagonal)
+    for (let x = pos.x - range; x <= pos.x + range; x++) {
+      for (let y = pos.y - range; y <= pos.y + range; y++) {
+        const dx = Math.abs(x - pos.x);
+        const dy = Math.abs(y - pos.y);
+        if (Math.max(dx, dy) !== range) continue;
+        
+        // Skip if already added (cardinal/diagonal)
+        const alreadyAdded = positions.some(p => p.x === x && p.y === y);
+        if (alreadyAdded) continue;
         
         if (x >= 0 && x <= 49 && y >= 0 && y <= 49) {
           positions.push(new RoomPosition(x, y, pos.roomName));
