@@ -2492,11 +2492,13 @@ class Empire {
         if (tasks.length === 0 || Game.time % 10 === 0) {
             const newTasks = magistrates.taskmaster.run(report);
             // Merge new tasks with existing ones (preserve assignments)
+            // Match by targetId to handle ID format changes
             newTasks.forEach(newTask => {
                 const existing = tasks.find(t => t.type === newTask.type &&
                     t.targetId === newTask.targetId);
                 if (existing) {
-                    // Update existing task's priority and needs
+                    // Update existing task with new ID format and priority
+                    existing.id = newTask.id; // CRITICAL: Update to new stable ID format
                     existing.priority = newTask.priority;
                     existing.creepsNeeded = newTask.creepsNeeded;
                 }
@@ -2505,6 +2507,8 @@ class Empire {
                     tasks.push(newTask);
                 }
             });
+            // Remove tasks that no longer exist in newTasks (target gone)
+            tasks = tasks.filter(t => newTasks.some(nt => nt.type === t.type && nt.targetId === t.targetId));
             console.log(`📋 ${room.name}: Refreshed tasks - ${tasks.length} total`);
         }
         if (tasks.length > 0) {
