@@ -99,9 +99,11 @@ export class Empire {
     // Execute the Magistrate chain in order
     // 1. Archivist observes the room state
     const report = magistrates.archivist.run(room);
+    console.log(`📊 ${room.name} Report: energyDeficit=${report.energyDeficit}, sources=${report.sources.length}, upgraderShortage=${report.controller.upgraderRecommendation - report.controller.upgraderCount}`);
     
     // 2. Taskmaster generates tasks based on the report
     const newTasks = magistrates.taskmaster.run(report);
+    console.log(`📋 ${room.name}: Generated ${newTasks.length} tasks`);
     
     // Store tasks in room memory for persistence
     room.memory.tasks = newTasks;
