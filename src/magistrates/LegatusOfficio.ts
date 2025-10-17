@@ -132,7 +132,7 @@ export class LegatusOfficio {
             type: TaskType.REFILL_SPAWN,
             priority: 90, // Higher than harvest - we need energy NOW
             targetId: spawn.id,
-            creepsNeeded: 1,
+            creepsNeeded: 99, // Accept all haulers - proximity will optimize
             assignedCreeps: [],
             metadata: {
               energyNeeded: freeCapacity
@@ -153,7 +153,7 @@ export class LegatusOfficio {
           priority: 80,
           targetId: container.id,
           targetPos: { x: container.pos.x, y: container.pos.y, roomName: this.roomName },
-          creepsNeeded: 1,
+          creepsNeeded: 99, // Multiple haulers acceptable - proximity optimizes
           assignedCreeps: [],
           metadata: {
             energyAvailable: container.store.energy
