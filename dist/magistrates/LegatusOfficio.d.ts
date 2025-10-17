@@ -12,6 +12,11 @@ export declare class LegatusOfficio {
     private roomName;
     constructor(roomName: string);
     /**
+     * Check if economy bootstrap phase is complete
+     * Bootstrap = harvesters + haulers established
+     */
+    private isEconomyBootstrapped;
+    /**
      * Analyze the room report and generate prioritized tasks
      */
     run(report: ArchivistReport): Task[];

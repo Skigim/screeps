@@ -318,6 +318,22 @@ class LegatusOfficio {
         this.roomName = roomName;
     }
     /**
+     * Check if economy bootstrap phase is complete
+     * Bootstrap = harvesters + haulers established
+     */
+    isEconomyBootstrapped() {
+        const room = Game.rooms[this.roomName];
+        if (!room)
+            return false;
+        const creeps = Object.values(Game.creeps).filter(c => c.memory.room === this.roomName);
+        const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+        const haulerCount = creeps.filter(c => c.memory.role === 'hauler').length;
+        const sources = room.find(FIND_SOURCES);
+        const harvestersReady = harvesterCount >= sources.length;
+        const haulersReady = haulerCount >= 2;
+        return harvestersReady && haulersReady;
+    }
+    /**
      * Analyze the room report and generate prioritized tasks
      */
     run(report) {
@@ -388,6 +404,7 @@ class LegatusOfficio {
                     targetPos: { x: resource.pos.x, y: resource.pos.y, roomName: this.roomName },
                     creepsNeeded: 1,
                     assignedCreeps: [],
+                    requiredParts: [CARRY], // Need CARRY to pick up resources
                     metadata: {
                         energyAmount: resource.amount
                     }
@@ -407,7 +424,8 @@ class LegatusOfficio {
                 targetId: source.id,
                 targetPos: { x: source.pos.x, y: source.pos.y, roomName: this.roomName },
                 creepsNeeded: source.harvestersNeeded, // Total needed, not shortage
-                assignedCreeps: []
+                assignedCreeps: [],
+                requiredParts: [WORK] // Need WORK to harvest
             });
         });
         // DIRECT TRANSFER to spawns/extensions (early game - no containers yet)
@@ -419,13 +437,17 @@ class LegatusOfficio {
                     return;
                 const freeCapacity = spawnObj.store.getFreeCapacity(RESOURCE_ENERGY);
                 if (freeCapacity > 0) {
+                    // BOOTSTRAP MODE: Highest priority during bootstrap - establish supply chain first
+                    const bootstrapped = this.isEconomyBootstrapped();
+                    const priority = bootstrapped ? 82 : 98; // CRITICAL during bootstrap
                     tasks.push({
                         id: `refill_spawn_${spawn.id}`, // Stable ID based on spawn
                         type: TaskType.REFILL_SPAWN,
-                        priority: 82, // Below BUILD, above HARVEST - ensures spawn energy for creep replacement
+                        priority: priority, // Below BUILD normally, HIGHEST during bootstrap
                         targetId: spawn.id,
                         creepsNeeded: Math.ceil(freeCapacity / 50), // 1 creep per 50 energy needed
                         assignedCreeps: [],
+                        requiredParts: [CARRY], // Need CARRY to transfer energy
                         metadata: {
                             energyNeeded: freeCapacity
                         }
@@ -445,6 +467,7 @@ class LegatusOfficio {
                     targetPos: { x: container.pos.x, y: container.pos.y, roomName: this.roomName },
                     creepsNeeded: 99, // Multiple haulers acceptable - proximity optimizes
                     assignedCreeps: [],
+                    requiredParts: [CARRY], // Need CARRY to haul energy
                     metadata: {
                         energyAvailable: container.store.energy
                     }
@@ -465,6 +488,7 @@ class LegatusOfficio {
                     targetId: tower.id,
                     creepsNeeded: Math.ceil(energyNeeded / 500),
                     assignedCreeps: [],
+                    requiredParts: [CARRY], // Need CARRY to transfer energy
                     metadata: {
                         energyRequired: energyNeeded
                     }
@@ -475,6 +499,10 @@ class LegatusOfficio {
     }
     createConstructionTasks(report) {
         const tasks = [];
+        // BOOTSTRAP MODE: No building until economy is established
+        if (!this.isEconomyBootstrapped()) {
+            return tasks;
+        }
         report.constructionSites.forEach(site => {
             // CONSTRUCTION IS TOP PRIORITY - infrastructure expansion is critical
             // Extensions are CRITICAL - they unlock better creeps!
@@ -502,6 +530,7 @@ class LegatusOfficio {
                 targetPos: { x: site.pos.x, y: site.pos.y, roomName: this.roomName },
                 creepsNeeded: creepsNeeded,
                 assignedCreeps: [],
+                requiredParts: [WORK, CARRY], // Need WORK to build, CARRY to transport energy
                 metadata: {
                     structureType: site.structureType,
                     remainingWork: site.progressTotal - site.progress
@@ -521,6 +550,7 @@ class LegatusOfficio {
                 targetPos: { x: target.pos.x, y: target.pos.y, roomName: this.roomName },
                 creepsNeeded: 1,
                 assignedCreeps: [],
+                requiredParts: [WORK, CARRY], // Need WORK to repair, CARRY to transport energy
                 metadata: {
                     structureType: target.structureType,
                     hitsNeeded: target.hitsMax - target.hits
@@ -535,18 +565,35 @@ class LegatusOfficio {
         // The controller can handle unlimited upgraders, so set a high limit
         const upgraderShortage = report.controller.upgraderRecommendation -
             report.controller.upgraderCount;
-        // Priority: LOWEST - only upgrade when all construction is done
-        // Emergency: 96 if downgrade imminent (higher than all BUILD)
-        // Normal: 40 (below all other tasks - construction first!)
-        const priority = report.controller.ticksToDowngrade < 5000 ? 96 : 40;
-        const creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps with energy
+        // DOWNGRADE PROTECTION: Track time to downgrade and require minimum upgraders
+        const ticksToDowngrade = report.controller.ticksToDowngrade;
+        const downgradeThreshold = 10000; // Start requiring upgraders below 10k ticks
+        const criticalThreshold = 5000; // Critical priority below 5k ticks
+        // Priority escalation based on downgrade risk
+        let priority = 40; // Normal: LOWEST - construction first
+        if (ticksToDowngrade < criticalThreshold) {
+            priority = 96; // CRITICAL - higher than all BUILD tasks!
+        }
+        else if (ticksToDowngrade < downgradeThreshold) {
+            priority = 50; // WARNING - slightly higher than normal
+        }
+        // Guarantee at least 1 upgrader when downgrade timer is below threshold
+        let creepsNeeded = upgraderShortage > 0 ? upgraderShortage : 99; // Accept all idle creeps
+        if (ticksToDowngrade < downgradeThreshold) {
+            creepsNeeded = Math.max(1, creepsNeeded); // REQUIRE at least 1 upgrader
+        }
         tasks.push({
             id: `upgrade_${report.controller.id}`, // Stable ID based on controller
             type: TaskType.UPGRADE_CONTROLLER,
             priority: priority,
             targetId: report.controller.id,
             creepsNeeded: creepsNeeded, // Controller can handle many upgraders
-            assignedCreeps: []
+            assignedCreeps: [],
+            requiredParts: [WORK, CARRY], // Need WORK to upgrade, CARRY to transport energy
+            metadata: {
+                ticksToDowngrade: ticksToDowngrade,
+                downgradeRisk: ticksToDowngrade < downgradeThreshold ? 'WARNING' : 'SAFE'
+            }
         });
         return tasks;
     }
@@ -555,6 +602,10 @@ class LegatusOfficio {
         const room = Game.rooms[this.roomName];
         if (!room)
             return tasks;
+        // BOOTSTRAP MODE: No spawn withdrawal until economy is established
+        if (!this.isEconomyBootstrapped()) {
+            return tasks;
+        }
         // Check for dropped energy first - always prefer pickup over anything
         const droppedResources = room.find(FIND_DROPPED_RESOURCES, {
             filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
@@ -603,6 +654,7 @@ class LegatusOfficio {
                     targetId: spawn.id,
                     creepsNeeded: 2, // Limit to prevent spawn drainage
                     assignedCreeps: [],
+                    requiredParts: [CARRY], // Need CARRY to withdraw energy
                     metadata: {
                         resourceType: RESOURCE_ENERGY,
                         emergencyWithdrawal: true
@@ -2190,19 +2242,12 @@ class LegatusLegionum {
             // Check if already assigned to this task
             if (t.assignedCreeps.includes(creep.name))
                 return false;
-            // SPECIALIZED ROLE FILTERING:
-            // Harvesters ONLY harvest (never haul, build, upgrade, etc.)
-            if (role === 'harvester' && t.type !== 'HARVEST_ENERGY') {
-                return false;
-            }
-            // Haulers NEVER harvest (only pickup, haul, refill, withdraw)
-            if (role === 'hauler' && t.type === 'HARVEST_ENERGY') {
-                return false;
-            }
-            // Workers NEVER harvest (dedicated harvesters do that)
-            // Workers: pickup, build, upgrade, repair, refill only
-            if (role === 'worker' && t.type === 'HARVEST_ENERGY') {
-                return false;
+            // PART-BASED FILTERING: Check if creep has required body parts
+            if (t.requiredParts && t.requiredParts.length > 0) {
+                const hasAllParts = t.requiredParts.every(partType => creep.body.some(bodyPart => bodyPart.type === partType));
+                if (!hasAllParts) {
+                    return false; // Creep lacks required parts
+                }
             }
             // Check if task is full - if so, can we displace someone less suitable?
             if (t.assignedCreeps.length >= t.creepsNeeded) {
@@ -2516,6 +2561,7 @@ class Empire {
                     existing.id = newTask.id; // CRITICAL: Update to new stable ID format
                     existing.priority = newTask.priority;
                     existing.creepsNeeded = newTask.creepsNeeded;
+                    existing.requiredParts = newTask.requiredParts; // MIGRATION: Add requiredParts to existing tasks
                 }
                 else {
                     // Add new task

@@ -23,6 +23,8 @@ export interface Task {
     creepsNeeded: number;
     /** Currently assigned creep names */
     assignedCreeps: string[];
+    /** Required body parts to execute this task */
+    requiredParts?: BodyPartConstant[];
     /** Additional metadata for the task */
     metadata?: {
         energyRequired?: number;
