@@ -272,19 +272,28 @@ export class LegatusOfficio {
     const room = Game.rooms[this.roomName];
     if (!room) return tasks;
 
-    // Check if we have enough energy sources available (harvest/pickup tasks)
-    // If harvest sources are saturated and no pickup available, allow spawn withdrawal
-    const harvestTasksAvailable = report.sources.some(s => s.harvestersPresent < s.harvestersNeeded);
-    
-    // Check for dropped energy
+    // Check for dropped energy first - always prefer pickup over anything
     const droppedResources = room.find(FIND_DROPPED_RESOURCES, {
       filter: (r) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
     });
     const pickupAvailable = droppedResources.length > 0;
+    if (pickupAvailable) {
+      return tasks; // Pickup available, use that first
+    }
 
-    // Only create withdrawal tasks if normal energy sources are saturated
-    if (harvestTasksAvailable || pickupAvailable) {
-      return tasks; // Normal energy acquisition available, don't use spawn energy
+    // Check if spawn is full and not spawning - if so, prioritize withdrawal over harvest
+    const spawnFull = report.spawns.every(s => {
+      const spawn = Game.getObjectById(s.id as Id<StructureSpawn>);
+      return spawn && spawn.store.getFreeCapacity(RESOURCE_ENERGY) === 0;
+    });
+    const notSpawning = !report.spawns.some(s => s.spawning);
+    const spawnEnergyWasted = spawnFull && notSpawning && report.energyDeficit === 0;
+
+    // If spawn is full and not being used, allow withdrawal even if harvest available
+    // Otherwise, only withdraw if harvest is saturated
+    const harvestTasksAvailable = report.sources.some(s => s.harvestersPresent < s.harvestersNeeded);
+    if (harvestTasksAvailable && !spawnEnergyWasted) {
+      return tasks; // Harvest available and spawn needs energy, use harvest
     }
 
     // Find the shortest TTL among our creeps (for spawn-locking prevention)
@@ -306,12 +315,15 @@ export class LegatusOfficio {
     }
 
     // Safe to withdraw from spawn for emergency energy
+    // Priority depends on whether spawn energy is being wasted
+    const withdrawPriority = spawnEnergyWasted ? 87 : 15; // Higher than harvest if spawn full
+    
     report.spawns.forEach(spawn => {
       if (spawn.energy > 100) { // Only if spawn has energy to spare
         tasks.push({
           id: `withdraw_spawn_${spawn.id}`, // Stable ID based on spawn
           type: TaskType.WITHDRAW_ENERGY,
-          priority: 15, // Low priority - only when harvest/pickup unavailable
+          priority: withdrawPriority,
           targetId: spawn.id,
           creepsNeeded: 2, // Limit to prevent spawn drainage
           assignedCreeps: [],
