@@ -122,6 +122,12 @@ export class LegatusLegionum {
         return false;
       }
       
+      // Workers NEVER harvest (dedicated harvesters do that)
+      // Workers: pickup, build, upgrade, repair, refill only
+      if (role === 'worker' && t.type === 'HARVEST_ENERGY') {
+        return false;
+      }
+      
       // Check if task is full - if so, can we displace someone less suitable?
       if (t.assignedCreeps.length >= t.creepsNeeded) {
         const myScore = this.calculateTaskSuitability(creep, t, workParts, carryParts, attackParts);
