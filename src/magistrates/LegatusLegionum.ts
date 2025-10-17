@@ -103,6 +103,9 @@ export class LegatusLegionum {
     const hasEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0;
     const hasSpace = creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
     
+    // Special case: Harvesters with NO CARRY parts don't need space (energy drops immediately)
+    const isNoCarryHarvester = role === 'harvester' && carryParts === 0;
+    
     // Filter tasks based on creep capabilities and state
     const suitableTasks = tasks.filter(t => {
       // Check if already assigned to this task
@@ -134,8 +137,9 @@ export class LegatusLegionum {
       }
       
       // Harvest and pickup tasks require space
+      // EXCEPTION: Harvesters with no CARRY parts drop energy immediately, don't need space
       if (t.type === 'HARVEST_ENERGY' || t.type === 'PICKUP_ENERGY' || t.type === 'WITHDRAW_ENERGY') {
-        if (!hasSpace) return false;
+        if (!hasSpace && !isNoCarryHarvester) return false;
       }
       
       // Upgrade/build/repair - DON'T filter by energy, let executor handle getting energy
