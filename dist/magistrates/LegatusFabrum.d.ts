@@ -5,15 +5,35 @@
  * Philosophy: Every room should be a masterpiece of efficiency
  *
  * The Architect plans and places structures to optimize room layout.
- * This is complex logic that will be implemented in future phases.
+ * Currently implements RCL 1-3 infrastructure.
  */
 export declare class LegatusFabrum {
     private roomName;
     constructor(roomName: string);
     /**
-     * Analyze room and place construction sites
-     * TODO: Implement room planning logic
+     * Analyze room and place construction sites based on RCL
      */
     run(): void;
+    /**
+     * Place extensions near spawn
+     * RCL 2: 5 extensions, RCL 3: 10 extensions, etc.
+     */
+    private placeExtensions;
+    /**
+     * Place tower for defense (RCL 3+)
+     */
+    private placeTower;
+    /**
+     * Place containers near sources (RCL 3+)
+     */
+    private placeContainers;
+    /**
+     * Get all positions in a specific range (ring) around a position
+     */
+    private getPositionsInRange;
+    /**
+     * Check if a structure can be placed at this position
+     */
+    private canPlaceStructure;
 }
 //# sourceMappingURL=LegatusFabrum.d.ts.map
