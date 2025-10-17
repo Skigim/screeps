@@ -24,8 +24,8 @@ export declare class LegatusGenetor {
      */
     private designCreepBody;
     /**
-     * Design a dedicated harvester: Target 5 WORK parts, minimal CARRY, MOVE for speed
-     * These creeps ONLY harvest, haulers will pick up the energy
+     * Design a dedicated harvester: Target 5 WORK parts, 1 MOVE, NO CARRY
+     * These creeps ONLY harvest and drop energy, haulers pick it up
      */
     private designHarvester;
     /**

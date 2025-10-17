@@ -718,20 +718,20 @@ class LegatusGenetor {
         }
     }
     /**
-     * Design a dedicated harvester: Target 5 WORK parts, minimal CARRY, MOVE for speed
-     * These creeps ONLY harvest, haulers will pick up the energy
+     * Design a dedicated harvester: Target 5 WORK parts, 1 MOVE, NO CARRY
+     * These creeps ONLY harvest and drop energy, haulers pick it up
      */
     designHarvester(energy) {
         const parts = [];
         // Target: 5 WORK parts for maximum harvest efficiency (10 energy/tick)
-        // Formula: [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE]
+        // Formula: [WORK, WORK, WORK, WORK, WORK, MOVE]
         // Cost: 550 energy (ideal)
         // Scale down if low energy:
-        // 550+ = 5 WORK (ideal)
-        // 400-549 = 4 WORK
-        // 300-399 = 3 WORK  
-        // 200-299 = 2 WORK
-        // <200 = 1 WORK (emergency)
+        // 550+ = 5 WORK (ideal) - [W,W,W,W,W,M] = 550
+        // 450-549 = 4 WORK - [W,W,W,W,M] = 450
+        // 350-449 = 3 WORK - [W,W,W,M] = 350
+        // 250-349 = 2 WORK - [W,W,M] = 250
+        // 150-249 = 1 WORK - [W,M] = 150 (emergency)
         let workParts = 1;
         if (energy >= 550)
             workParts = 5;
@@ -745,13 +745,8 @@ class LegatusGenetor {
         for (let i = 0; i < workParts; i++) {
             parts.push(WORK);
         }
-        // Add 1 CARRY (to hold harvested energy temporarily)
-        parts.push(CARRY);
-        // Add MOVE parts (1 per 2 body parts for unburdened speed)
-        const moveParts = Math.ceil(parts.length / 2);
-        for (let i = 0; i < moveParts; i++) {
-            parts.push(MOVE);
-        }
+        // Add 1 MOVE part (just enough to reach the source)
+        parts.push(MOVE);
         return parts;
     }
     /**
