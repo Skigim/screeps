@@ -811,20 +811,20 @@ class HarvestExecutor extends TaskExecutor {
         if (!this.isAtTarget(creep, source)) {
             // Move towards source
             const moveResult = this.moveToTarget(creep, source);
-            if (moveResult === OK) {
-                return {
-                    status: TaskStatus.IN_PROGRESS,
-                    message: 'Moving to source',
-                    workDone: 0
-                };
-            }
-            else {
+            // Movement errors are usually not fatal - creep just needs to keep trying
+            // Only fail on critical errors like ERR_NO_BODYPART
+            if (moveResult !== OK && moveResult !== ERR_TIRED && moveResult !== ERR_BUSY) {
                 return {
                     status: TaskStatus.FAILED,
                     message: `Failed to move: ${moveResult}`,
                     workDone: 0
                 };
             }
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: 'Moving to source',
+                workDone: 0
+            };
         }
         // Adjacent to source - perform harvest
         const harvestResult = creep.harvest(source);
@@ -958,20 +958,19 @@ class UpgradeExecutor extends TaskExecutor {
             console.log(`🚶 ${creep.name}: Moving to controller at ${controller.pos}`);
             const moveResult = this.moveToTarget(creep, controller);
             console.log(`📍 ${creep.name}: moveTo result = ${moveResult}`);
-            if (moveResult === OK || moveResult === ERR_TIRED) {
-                return {
-                    status: TaskStatus.IN_PROGRESS,
-                    message: `Moving to controller (${moveResult})`,
-                    workDone: 0
-                };
-            }
-            else {
+            // Movement errors are usually not fatal - creep just needs to keep trying
+            if (moveResult !== OK && moveResult !== ERR_TIRED && moveResult !== ERR_BUSY) {
                 return {
                     status: TaskStatus.FAILED,
                     message: `Failed to move: ${moveResult}`,
                     workDone: 0
                 };
             }
+            return {
+                status: TaskStatus.IN_PROGRESS,
+                message: `Moving to controller`,
+                workDone: 0
+            };
         }
         // In range - perform upgrade
         const upgradeResult = creep.upgradeController(controller);

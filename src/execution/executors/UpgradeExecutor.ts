@@ -40,19 +40,20 @@ export class UpgradeExecutor extends TaskExecutor {
       const moveResult = this.moveToTarget(creep, controller);
       console.log(`📍 ${creep.name}: moveTo result = ${moveResult}`);
       
-      if (moveResult === OK || moveResult === ERR_TIRED) {
-        return { 
-          status: TaskStatus.IN_PROGRESS, 
-          message: `Moving to controller (${moveResult})`,
-          workDone: 0
-        };
-      } else {
+      // Movement errors are usually not fatal - creep just needs to keep trying
+      if (moveResult !== OK && moveResult !== ERR_TIRED && moveResult !== ERR_BUSY) {
         return { 
           status: TaskStatus.FAILED, 
           message: `Failed to move: ${moveResult}`,
           workDone: 0
         };
       }
+      
+      return { 
+        status: TaskStatus.IN_PROGRESS, 
+        message: `Moving to controller`,
+        workDone: 0
+      };
     }
 
     // In range - perform upgrade
