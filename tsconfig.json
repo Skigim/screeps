@@ -19,7 +19,10 @@
     "strictNullChecks": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noImplicitReturns": true
+    "noImplicitReturns": true,
+    "paths": {
+      "virtual-build-info": ["./src/types/virtual-build-info.d.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules"]

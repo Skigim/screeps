@@ -34,6 +34,8 @@ import { registerConsoleCommands } from './utils/console';
 import { displayModeInfo } from './world';
 // Import body config registration
 import { registerDefaultBodies } from './world/spawns/bodies';
+// Import build information (injected at build time with commit hash)
+import { INIT_VERSION, BUILD_INFO } from 'virtual-build-info';
 
 /**
  * Main game loop function.
@@ -48,14 +50,19 @@ import { registerDefaultBodies } from './world/spawns/bodies';
  * This makes testing easier and keeps the architecture clean.
  */
 export const loop = (): void => {
-  // Initialize once (using memory flag, not Game.time, since Game.time never resets)
-  // Also reinitialize if code version changes (use any constant that changes when you rebuild)
-  const INIT_VERSION = 3;
-  
-  if (!Memory.initialized || Memory.initVersion !== INIT_VERSION) {
+  // Initialize once using commit hash injected at build time
+  // INIT_VERSION is automatically updated on every rebuild (even if code doesn't change)
+  // because the commit hash changes when you push/commit
+  if (!Memory.initialized || (Memory.initVersion as string) !== INIT_VERSION) {
     // Set flags FIRST to prevent double-init if loop runs again
     Memory.initialized = true;
-    Memory.initVersion = INIT_VERSION;
+    (Memory.initVersion as any) = INIT_VERSION;
+    
+    // Log build information on initialization
+    console.log(`📦 Initializing with build: ${BUILD_INFO.commitHash}`);
+    if (BUILD_INFO.isDirty) {
+      console.warn(`⚠️  Built from uncommitted changes`);
+    }
     
     // Then run initialization functions
     registerConsoleCommands();
