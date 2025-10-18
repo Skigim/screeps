@@ -3170,7 +3170,7 @@ function registerConsoleCommands() {
 const loop = () => {
     // Initialize once (using memory flag, not Game.time, since Game.time never resets)
     // Also reinitialize if code version changes (use any constant that changes when you rebuild)
-    const INIT_VERSION = 2;
+    const INIT_VERSION = 3;
     if (!Memory.initialized || Memory.initVersion !== INIT_VERSION) {
         // Set flags FIRST to prevent double-init if loop runs again
         Memory.initialized = true;
