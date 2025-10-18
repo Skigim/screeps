@@ -7,13 +7,16 @@
  * "Festina lente" - Make haste slowly
  */
 /**
- * RCL1 ECONOMY - THE FOUNDATION
+ * Main game loop function.
+ * Executed automatically by the Screeps game engine every tick.
  *
- * Phase 1: 2 Harvesters (gather energy, fill spawn)
- * Phase 2: Upgraders (maintain controller, prevent downgrade)
- * Phase 3: Builders (only when construction sites exist)
+ * Responsibilities:
+ * 1. Clean up memory for dead creeps (prevent memory leak)
+ * 2. Process each owned room
  *
- * Energy Flow: Source → Harvester → Spawn → Upgrader → Controller
+ * @remarks
+ * Keep this function lightweight. Heavy logic should be in world module.
+ * This makes testing easier and keeps the architecture clean.
  */
 export declare const loop: () => void;
 //# sourceMappingURL=main.d.ts.map
