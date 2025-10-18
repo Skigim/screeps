@@ -40,20 +40,57 @@ rooms()
 room('W1N1')
 
 // ═══════════════════════════════════════════════════════════════
-// SPAWN & CONTROL
+// SPAWN & CREEP CONTROL
 // ═══════════════════════════════════════════════════════════════
 
-// Spawn a harvester in W1N1
+// Spawn a harvester (auto-generated name)
 spawn('harvester', 'W1N1')
 
-// Spawn an upgrader
-spawn('upgrader', 'W1N1')
+// Spawn with specific name and body config
+spawnCreep('Harvester1', 'harvester', 'harvester_basic', 'W1N1')
 
-// Spawn a builder
-spawn('builder', 'W1N1')
+// Spawn with custom body parts
+spawnCreep('Scout1', 'scout', [MOVE], 'W1N1')
 
 // Kill a creep
 despawn('harvester_12345')
+
+// List all creeps
+creeps()
+
+// List creeps in specific room
+creeps('W1N1')
+
+// ═══════════════════════════════════════════════════════════════
+// BODY CONFIGURATIONS
+// ═══════════════════════════════════════════════════════════════
+
+// List all registered body configs
+bodies()
+
+// List bodies for a specific role
+bodies('harvester')
+
+// Register a new body config
+regBody('harvester_v2', [WORK, WORK, CARRY, CARRY, MOVE], 'harvester')
+
+// Register a scout body
+regBody('scout', [MOVE], 'scout')
+
+// Register a hauler body (lots of carrying, no work)
+regBody('hauler', [CARRY, CARRY, CARRY, MOVE, MOVE], 'hauler')
+
+// Default bodies (auto-registered on startup):
+// - 'harvester_basic'  [WORK, CARRY, MOVE]
+// - 'upgrader_basic'   [WORK, CARRY, MOVE]
+// - 'builder_basic'    [WORK, CARRY, MOVE]
+// - 'scout'            [MOVE]
+// - 'hauler'           [CARRY, CARRY, CARRY, MOVE, MOVE]
+// - 'worker'           [WORK, WORK, CARRY, MOVE]
+
+// ═══════════════════════════════════════════════════════════════
+// MOVEMENT & TARGETING
+// ═══════════════════════════════════════════════════════════════
 
 // Move all creeps to position
 goto(25, 25, 'W1N1')

@@ -52,6 +52,8 @@ export const loop = (): void => {
   if (Game.time === 0) {
     registerConsoleCommands();
     displayModeInfo();
+    registerDefaultBodies();
+    console.log('📦 Default body configurations registered');
   }
 
   console.log(`⚔️ Tick ${Game.time} - PROJECT IMPERIUM - RCL1 FOUNDATION`);
