@@ -2516,8 +2516,9 @@ function registerConsoleCommands() {
  * This makes testing easier and keeps the architecture clean.
  */
 const loop = () => {
-    // Initialize on first tick
-    if (Game.time === 0) {
+    // Initialize once (using memory flag, not Game.time, since Game.time never resets)
+    if (!Memory.initialized) {
+        Memory.initialized = true;
         registerConsoleCommands();
         displayModeInfo();
         registerDefaultBodies();

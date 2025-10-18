@@ -25,6 +25,7 @@ declare global {
     structures?: {
       [id: string]: any;
     };
+    initialized?: boolean;  // Track if console commands have been registered
     // Traveler uses empire-level memory for route caching
     empire?: {
       mode?: string;

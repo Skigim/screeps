@@ -48,8 +48,9 @@ import { registerDefaultBodies } from './world/spawns/bodies';
  * This makes testing easier and keeps the architecture clean.
  */
 export const loop = (): void => {
-  // Initialize on first tick
-  if (Game.time === 0) {
+  // Initialize once (using memory flag, not Game.time, since Game.time never resets)
+  if (!Memory.initialized) {
+    Memory.initialized = true;
     registerConsoleCommands();
     displayModeInfo();
     registerDefaultBodies();
