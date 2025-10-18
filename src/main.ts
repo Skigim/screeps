@@ -27,7 +27,7 @@
 import { runRoom } from './world';
 // Import Traveler for its side effects: extends Creep.prototype with travelTo()
 // This enables all creeps to use: creep.travelTo(destination)
-import { Traveler as _Traveler } from './utils/traveler';
+import './utils/traveler';
 // Import console commands and register them globally
 import { registerConsoleCommands } from './utils/console';
 // Import empire mode system
