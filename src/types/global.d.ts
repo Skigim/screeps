@@ -26,6 +26,7 @@ declare global {
       [id: string]: any;
     };
     initialized?: boolean;  // Track if console commands have been registered
+    initVersion?: number;   // Version number to force reinit when code changes
     // Traveler uses empire-level memory for route caching
     empire?: {
       mode?: string;

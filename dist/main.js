@@ -3099,8 +3099,11 @@ function registerConsoleCommands() {
  */
 const loop = () => {
     // Initialize once (using memory flag, not Game.time, since Game.time never resets)
-    if (!Memory.initialized) {
+    // Also reinitialize if code version changes (use any constant that changes when you rebuild)
+    const INIT_VERSION = 2;
+    if (!Memory.initialized || Memory.initVersion !== INIT_VERSION) {
         Memory.initialized = true;
+        Memory.initVersion = INIT_VERSION;
         registerConsoleCommands();
         displayModeInfo();
         registerDefaultBodies();
