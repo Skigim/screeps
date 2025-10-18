@@ -186,9 +186,12 @@ function manageSpawn(spawn, room, minerCount, _upgraderCount, builderCount) {
         }
         return;
     }
+    // Count current haulers
+    const haulerCreeps = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'hauler');
+    const haulerCount = haulerCreeps.length;
     // PRIORITY 2: Maintain haulers (3 total: 2 per source + 1 roaming)
     // Haulers move energy to spawn/storage
-    if (minerCount >= 2 && builderCount < 3) {
+    if (minerCount >= 2 && haulerCount < 3) {
         const haulerBody = getOptimalHaulerBody(energyCapacity);
         if (energy >= calculateBodyCost(haulerBody)) {
             spawnHauler(spawn, room, haulerBody);
@@ -197,6 +200,7 @@ function manageSpawn(spawn, room, minerCount, _upgraderCount, builderCount) {
     }
     // PRIORITY 3: Spawn builder if construction sites exist
     // Extensions → Roads → Controller (if TTL < 5000)
+    // Builder respects spawn lock - will idle when critical team is aging
     if (constructionSites.length > 0 && builderCount < 1) {
         const builderBody = getOptimalBuilderBody(energyCapacity);
         if (energy >= calculateBodyCost(builderBody)) {
@@ -3812,9 +3816,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: 'd40d199'};
+  commitHash: '1f93469'};
 
-const INIT_VERSION = 'd40d199';
+const INIT_VERSION = '1f93469';
 
 /**
  * SILENT STATISTICS TRACKING
