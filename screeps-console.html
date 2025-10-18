@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screeps Console Helper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            height: 100vh;
+        }
+
+        .panel {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: #2d2d30;
+            border-bottom: 1px solid #3e3e42;
+            padding: 12px;
+            font-weight: bold;
+            color: #4ec9b0;
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        input[type="text"], input[type="password"] {
+            flex: 1;
+            padding: 8px;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus, input[type="password"]:focus {
+            outline: none;
+            border-color: #007acc;
+            box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.3);
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #0e639c;
+            color: #d4d4d4;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        button:active {
+            background: #0d5a9e;
+        }
+
+        .status {
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #1e1e1e;
+            border-left: 3px solid #555;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .status.success {
+            border-left-color: #4ec9b0;
+            color: #4ec9b0;
+        }
+
+        .status.error {
+            border-left-color: #f48771;
+            color: #f48771;
+        }
+
+        .status.info {
+            border-left-color: #4ec9b0;
+            color: #9cdcfe;
+        }
+
+        .autocomplete-container {
+            position: relative;
+            margin-bottom: 12px;
+        }
+
+        .autocomplete-input {
+            width: 100%;
+            padding: 8px;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+
+        .autocomplete-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            border-top: none;
+            border-radius: 0 0 3px 3px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            z-index: 100;
+        }
+
+        .autocomplete-list.active {
+            display: block;
+        }
+
+        .autocomplete-item {
+            padding: 6px 8px;
+            cursor: pointer;
+            border-bottom: 1px solid #2d2d30;
+        }
+
+        .autocomplete-item:hover, .autocomplete-item.selected {
+            background: #1e1e1e;
+        }
+
+        .autocomplete-item-name {
+            color: #9cdcfe;
+            font-weight: bold;
+        }
+
+        .autocomplete-item-args {
+            color: #888;
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .room-stats {
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .room-stats-title {
+            color: #4ec9b0;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        .room-stats-item {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 8px;
+            margin: 4px 0;
+        }
+
+        .room-stats-label {
+            color: #858585;
+        }
+
+        .room-stats-value {
+            color: #ce9178;
+        }
+
+        .command-list {
+            margin-top: 12px;
+        }
+
+        .command-group {
+            margin-bottom: 16px;
+        }
+
+        .command-group-title {
+            color: #4ec9b0;
+            font-weight: bold;
+            margin: 12px 0 6px 0;
+            font-size: 13px;
+        }
+
+        .command-item {
+            background: #1e1e1e;
+            border-left: 2px solid #3e3e42;
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 2px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .command-item:hover {
+            border-left-color: #007acc;
+            background: #2d2d30;
+        }
+
+        .command-name {
+            color: #9cdcfe;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .command-args {
+            color: #888;
+            font-size: 11px;
+            margin-top: 2px;
+        }
+
+        .command-desc {
+            color: #858585;
+            font-size: 11px;
+            margin-top: 2px;
+        }
+
+        .scroll-area {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 8px;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+            min-height: 80px;
+            margin-top: 8px;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .button-group button {
+            flex: 1;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel: API Connection & Commands -->
+        <div class="panel">
+            <div class="panel-header">🔌 Connection & Commands</div>
+            <div class="panel-content">
+                <div>
+                    <div class="input-group">
+                        <input type="text" id="serverUrl" placeholder="Server: https://screeps.com" value="https://screeps.com">
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="username" placeholder="Username">
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="password" placeholder="Password">
+                    </div>
+                    <button onclick="connectAPI()" style="width: 100%;">Connect</button>
+                    <div id="connectionStatus" class="status" style="margin-top: 8px;"></div>
+                </div>
+
+                <div style="margin-top: 16px;">
+                    <div style="color: #4ec9b0; font-weight: bold; margin-bottom: 8px;">🎯 Quick Command Builder</div>
+                    <div class="autocomplete-container">
+                        <input type="text" class="autocomplete-input" id="commandInput" placeholder="Type command name...">
+                        <div class="autocomplete-list" id="autocompleteList"></div>
+                    </div>
+
+                    <div id="currentRoomSelect" style="margin-top: 12px; display: none;">
+                        <label style="color: #858585; font-size: 12px;">Room:</label>
+                        <select id="roomSelect" style="width: 100%; padding: 6px; margin-top: 4px; background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; border-radius: 3px;">
+                        </select>
+                    </div>
+
+                    <div id="commandParameters" style="margin-top: 12px;"></div>
+
+                    <textarea id="commandOutput" readonly placeholder="Command preview..."></textarea>
+
+                    <div class="button-group">
+                        <button onclick="copyCommand()">📋 Copy</button>
+                        <button onclick="clearCommand()">🗑️ Clear</button>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <div class="command-list" id="commandList"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Room Stats & Info -->
+        <div class="panel">
+            <div class="panel-header">📊 Room Statistics & Help</div>
+            <div class="panel-content scroll-area">
+                <div id="roomStatsContainer"></div>
+                <div id="commandHelp"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const COMMANDS = {
+            'SPAWNING & CREEPS': [
+                { name: 'spawn', args: '(role, room?)', desc: 'Spawn creep with auto-name' },
+                { name: 'spawnCreep', args: '(name, role, body, room?)', desc: 'Spawn with custom name' },
+                { name: 'spawnWith', args: '(role, body, task, target, room?)', desc: 'Spawn and assign task' },
+                { name: 'despawn', args: '(creepName)', desc: 'Delete a creep' },
+                { name: 'creeps', args: '(room?)', desc: 'List all creeps' }
+            ],
+            'TASK ASSIGNMENT': [
+                { name: 'task', args: '(name, type, targetId?)', desc: 'Assign task to creep' },
+                { name: 'spawnWith', args: '(role, body, type, target, room?)', desc: 'Spawn + task combined' },
+                { name: 'tasks', args: '(room?)', desc: 'View all tasks' },
+                { name: 'untask', args: '(name)', desc: 'Clear creep task' }
+            ],
+            'STATUS & INFO': [
+                { name: 'status', args: '(room?)', desc: 'Colony status' },
+                { name: 'memory', args: '(creepName?)', desc: 'View memory' },
+                { name: 'config', args: '()', desc: 'View behavior config' },
+                { name: 'getstats', args: '()', desc: 'Get empirical data' }
+            ],
+            'BODIES': [
+                { name: 'bodies', args: '(role?)', desc: 'List body configs' },
+                { name: 'regBody', args: '(name, arr, role?)', desc: 'Register body type' }
+            ],
+            'STRUCTURES': [
+                { name: 'scan', args: '(room?)', desc: 'Register structures' },
+                { name: 'structures', args: '(room?)', desc: 'List structures' },
+                { name: 'rename', args: '(old, new)', desc: 'Rename structure' }
+            ],
+            'MODE': [
+                { name: 'mode', args: '()', desc: 'Show current mode' },
+                { name: 'mode', args: '("command")', desc: 'Switch to COMMAND' },
+                { name: 'mode', args: '("delegate")', desc: 'Switch to DELEGATE' }
+            ]
+        };
+
+        let roomStats = {};
+        let authToken = null;
+        let userId = null;
+        let selectedCommand = null;
+
+        async function connectAPI() {
+            const status = document.getElementById('connectionStatus');
+            const server = document.getElementById('serverUrl').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                status.className = 'status error';
+                status.textContent = '❌ Enter username and password';
+                return;
+            }
+
+            try {
+                status.className = 'status info';
+                status.textContent = '🔄 Connecting...';
+
+                // Authenticate
+                const authResponse = await fetch(`${server}/api/auth/signin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: username, password })
+                });
+
+                if (!authResponse.ok) {
+                    throw new Error(`Auth failed: ${authResponse.status}`);
+                }
+
+                const authData = await authResponse.json();
+                authToken = authData.token;
+                userId = authData.user._id;
+
+                // Fetch room stats
+                const statsResponse = await fetch(`${server}/api/user/stats`, {
+                    headers: { 'X-Token': authToken }
+                });
+
+                const stats = await statsResponse.json();
+                roomStats = stats.stats || {};
+
+                status.className = 'status success';
+                status.textContent = `✅ Connected as ${username}`;
+
+                // Update rooms
+                updateRoomSelect();
+                updateRoomStats();
+
+                document.getElementById('currentRoomSelect').style.display = 'block';
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = `❌ Error: ${error.message}`;
+            }
+        }
+
+        function updateRoomSelect() {
+            const select = document.getElementById('roomSelect');
+            select.innerHTML = '';
+
+            Object.keys(roomStats).forEach(roomName => {
+                const option = document.createElement('option');
+                option.value = roomName;
+                option.textContent = roomName;
+                select.appendChild(option);
+            });
+
+            select.addEventListener('change', updateRoomStats);
+            if (select.options.length > 0) {
+                updateRoomStats();
+            }
+        }
+
+        function updateRoomStats() {
+            const roomName = document.getElementById('roomSelect').value;
+            const stats = roomStats[roomName];
+            const container = document.getElementById('roomStatsContainer');
+
+            if (!stats) {
+                container.innerHTML = '<div class="status info">Connect to view room stats</div>';
+                return;
+            }
+
+            const rcl = stats.controllerLevel || 0;
+            const energy = stats.energyAvailable || 0;
+            const energyCap = stats.energyCapacityAvailable || 0;
+
+            container.innerHTML = `
+                <div class="room-stats">
+                    <div class="room-stats-title">📍 ${roomName}</div>
+                    <div class="room-stats-item">
+                        <div class="room-stats-label">RCL:</div>
+                        <div class="room-stats-value">${rcl}</div>
+                    </div>
+                    <div class="room-stats-item">
+                        <div class="room-stats-label">Energy:</div>
+                        <div class="room-stats-value">${energy}/${energyCap}</div>
+                    </div>
+                    <div class="room-stats-item">
+                        <div class="room-stats-label">Creeps:</div>
+                        <div class="room-stats-value">${stats.creepsCount || 0}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function initCommandInput() {
+            const input = document.getElementById('commandInput');
+            const list = document.getElementById('autocompleteList');
+
+            input.addEventListener('input', (e) => {
+                const value = e.target.value.toLowerCase();
+
+                if (!value) {
+                    list.classList.remove('active');
+                    document.getElementById('commandParameters').innerHTML = '';
+                    return;
+                }
+
+                const matches = [];
+                Object.values(COMMANDS).forEach(group => {
+                    group.forEach(cmd => {
+                        if (cmd.name.toLowerCase().startsWith(value)) {
+                            matches.push(cmd);
+                        }
+                    });
+                });
+
+                if (matches.length === 0) {
+                    list.classList.remove('active');
+                    return;
+                }
+
+                list.innerHTML = matches.map((cmd, idx) => `
+                    <div class="autocomplete-item" onclick="selectCommand('${cmd.name}', '${cmd.args}')">
+                        <div class="autocomplete-item-name">${cmd.name}</div>
+                        <div class="autocomplete-item-args">${cmd.args}</div>
+                    </div>
+                `).join('');
+
+                list.classList.add('active');
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    list.classList.remove('active');
+                }
+            });
+
+            renderCommandList();
+        }
+
+        function selectCommand(name, args) {
+            document.getElementById('commandInput').value = name;
+            document.getElementById('autocompleteList').classList.remove('active');
+            selectedCommand = { name, args };
+            updateCommandParameters(name, args);
+        }
+
+        function updateCommandParameters(name, args) {
+            const container = document.getElementById('commandParameters');
+            const room = document.getElementById('roomSelect').value;
+
+            let params = [];
+
+            switch (name) {
+                case 'spawn':
+                    params = [
+                        { name: 'role', type: 'select', options: ['miner', 'hauler', 'builder', 'upgrader'] },
+                        { name: 'room', type: 'text', value: room, placeholder: 'optional' }
+                    ];
+                    break;
+                case 'spawnWith':
+                    params = [
+                        { name: 'role', type: 'select', options: ['miner', 'hauler', 'builder', 'upgrader'] },
+                        { name: 'body', type: 'text', placeholder: '[WORK, WORK, CARRY, MOVE]' },
+                        { name: 'task', type: 'select', options: ['harvest', 'deliver', 'build', 'upgrade', 'repair', 'idle'] },
+                        { name: 'target', type: 'text', placeholder: 'SourceA or structure ID' },
+                        { name: 'room', type: 'text', value: room, placeholder: 'optional' }
+                    ];
+                    break;
+                case 'spawnCreep':
+                    params = [
+                        { name: 'name', type: 'text', placeholder: 'creep name' },
+                        { name: 'role', type: 'select', options: ['miner', 'hauler', 'builder', 'upgrader'] },
+                        { name: 'body', type: 'text', placeholder: '[WORK, CARRY, MOVE]' },
+                        { name: 'room', type: 'text', value: room, placeholder: 'optional' }
+                    ];
+                    break;
+                case 'task':
+                    params = [
+                        { name: 'creepName', type: 'text', placeholder: 'M1' },
+                        { name: 'taskType', type: 'select', options: ['harvest', 'deliver', 'build', 'upgrade', 'repair', 'idle'] },
+                        { name: 'targetId', type: 'text', placeholder: 'SourceA or ID', required: false }
+                    ];
+                    break;
+                case 'status':
+                case 'creeps':
+                case 'structures':
+                case 'tasks':
+                    params = [
+                        { name: 'room', type: 'text', value: room, placeholder: 'optional' }
+                    ];
+                    break;
+                case 'mode':
+                    params = [
+                        { name: 'mode', type: 'select', options: ['command', 'delegate'], required: false }
+                    ];
+                    break;
+            }
+
+            if (params.length === 0) {
+                container.innerHTML = '';
+                updateCommandOutput(name);
+                return;
+            }
+
+            container.innerHTML = params.map(p => {
+                if (p.type === 'select') {
+                    return `
+                        <div style="margin-bottom: 8px;">
+                            <label style="color: #858585; font-size: 12px;">${p.name}:</label>
+                            <select id="param_${p.name}" style="width: 100%; padding: 6px; margin-top: 4px; background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; border-radius: 3px;" onchange="updateCommandOutput('${name}')">
+                                <option value="">${p.placeholder || p.name}</option>
+                                ${p.options.map(o => `<option value="${o}">${o}</option>`).join('')}
+                            </select>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div style="margin-bottom: 8px;">
+                            <label style="color: #858585; font-size: 12px;">${p.name}:</label>
+                            <input type="text" id="param_${p.name}" placeholder="${p.placeholder || p.name}" value="${p.value || ''}" style="width: 100%; padding: 6px; margin-top: 4px; background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; border-radius: 3px;" onchange="updateCommandOutput('${name}')" />
+                        </div>
+                    `;
+                }
+            }).join('');
+
+            updateCommandOutput(name);
+        }
+
+        function updateCommandOutput(name) {
+            const output = document.getElementById('commandOutput');
+            const params = {};
+
+            // Collect all parameters
+            document.querySelectorAll('[id^="param_"]').forEach(elem => {
+                const key = elem.id.replace('param_', '');
+                params[key] = elem.value;
+            });
+
+            let command = `${name}(`;
+            const values = Object.values(params).filter(v => v);
+
+            if (values.length > 0) {
+                command += values.map(v => {
+                    // Try to parse as array or number
+                    if (v.startsWith('[')) {
+                        return v;
+                    }
+                    if (!isNaN(v) && v !== '') {
+                        return v;
+                    }
+                    // Quote strings
+                    return `'${v}'`;
+                }).join(', ');
+            }
+
+            command += ')';
+            output.value = command;
+        }
+
+        function copyCommand() {
+            const output = document.getElementById('commandOutput');
+            output.select();
+            document.execCommand('copy');
+            alert('Copied to clipboard!');
+        }
+
+        function clearCommand() {
+            document.getElementById('commandInput').value = '';
+            document.getElementById('commandParameters').innerHTML = '';
+            document.getElementById('commandOutput').value = '';
+            document.getElementById('autocompleteList').classList.remove('active');
+        }
+
+        function renderCommandList() {
+            const container = document.getElementById('commandList');
+
+            container.innerHTML = Object.entries(COMMANDS).map(([group, commands]) => `
+                <div class="command-group">
+                    <div class="command-group-title">${group}</div>
+                    ${commands.map(cmd => `
+                        <div class="command-item" onclick="selectCommand('${cmd.name}', '${cmd.args}')">
+                            <div class="command-name">${cmd.name}</div>
+                            <div class="command-args">Args: ${cmd.args}</div>
+                            <div class="command-desc">${cmd.desc}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `).join('');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', initCommandInput);
+    </script>
+</body>
+</html>
