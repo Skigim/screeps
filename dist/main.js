@@ -3477,9 +3477,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: 'd35e13a'};
+  commitHash: '914de69'};
 
-const INIT_VERSION = 'd35e13a';
+const INIT_VERSION = '914de69';
 
 /**
  * SILENT STATISTICS TRACKING
@@ -3527,9 +3527,33 @@ function updateStats(room) {
     if (!Memory.stats)
         initializeStats();
     const stats = Memory.stats;
-    // Ensure rcl_history exists (safety check for existing memory)
+    // Ensure all nested objects exist (safety check for existing memory)
     if (!stats.rcl_history) {
         stats.rcl_history = [];
+    }
+    if (!stats.energy) {
+        stats.energy = {
+            available: 0,
+            capacity: 0,
+            harvestedThisTick: 0,
+            average5Tick: 0
+        };
+    }
+    if (!stats.creepCounts) {
+        stats.creepCounts = {
+            miner: 0,
+            hauler: 0,
+            builder: 0,
+            upgrader: 0,
+            total: 0
+        };
+    }
+    if (!stats.spawn) {
+        stats.spawn = {
+            totalSpawned: 0,
+            lastSpawnTime: 0,
+            avgSpawnTime: 0
+        };
     }
     const controller = room.controller;
     // Update RCL and tick counter
@@ -3538,15 +3562,15 @@ function updateStats(room) {
         if (currentRcl !== stats.rcl) {
             // RCL changed - log to history and reset counter
             stats.rcl_history.push({
-                rcl: stats.rcl,
-                ticksToComplete: stats.ticksAtCurrentRcl,
+                rcl: stats.rcl || 0,
+                ticksToComplete: stats.ticksAtCurrentRcl || 0,
                 finalCreeps: { ...stats.creepCounts }
             });
             stats.rcl = currentRcl;
             stats.ticksAtCurrentRcl = 0;
         }
         else {
-            stats.ticksAtCurrentRcl++;
+            stats.ticksAtCurrentRcl = (stats.ticksAtCurrentRcl || 0) + 1;
         }
         // Update energy
         stats.energy.available = room.energyAvailable;

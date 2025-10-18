@@ -47,9 +47,33 @@ export function updateStats(room: Room): void {
 
   const stats = Memory.stats!;
   
-  // Ensure rcl_history exists (safety check for existing memory)
+  // Ensure all nested objects exist (safety check for existing memory)
   if (!stats.rcl_history) {
     stats.rcl_history = [];
+  }
+  if (!stats.energy) {
+    stats.energy = {
+      available: 0,
+      capacity: 0,
+      harvestedThisTick: 0,
+      average5Tick: 0
+    };
+  }
+  if (!stats.creepCounts) {
+    stats.creepCounts = {
+      miner: 0,
+      hauler: 0,
+      builder: 0,
+      upgrader: 0,
+      total: 0
+    };
+  }
+  if (!stats.spawn) {
+    stats.spawn = {
+      totalSpawned: 0,
+      lastSpawnTime: 0,
+      avgSpawnTime: 0
+    };
   }
   
   const controller = room.controller;
@@ -60,14 +84,14 @@ export function updateStats(room: Room): void {
     if (currentRcl !== stats.rcl) {
       // RCL changed - log to history and reset counter
       stats.rcl_history.push({
-        rcl: stats.rcl,
-        ticksToComplete: stats.ticksAtCurrentRcl,
+        rcl: stats.rcl || 0,
+        ticksToComplete: stats.ticksAtCurrentRcl || 0,
         finalCreeps: { ...stats.creepCounts }
       });
       stats.rcl = currentRcl;
       stats.ticksAtCurrentRcl = 0;
     } else {
-      stats.ticksAtCurrentRcl++;
+      stats.ticksAtCurrentRcl = (stats.ticksAtCurrentRcl || 0) + 1;
     }
 
     // Update energy
