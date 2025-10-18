@@ -1299,6 +1299,83 @@ function updateConstructionSites(room) {
 }
 
 /**
+ * EMPIRE MANAGEMENT MODULE
+ *
+ * Manages empire-wide settings and policies that affect behavior across all rooms.
+ * Two operational modes:
+ * - COMMAND: Direct manual control - you make all decisions
+ * - DELEGATE: Automatic AI control - empire handles spawning, construction, etc.
+ */
+/**
+ * Initialize empire memory if not present
+ */
+function initializeEmpireMemory() {
+    if (!Memory.empire) {
+        Memory.empire = {};
+    }
+    if (!Memory.empire.mode) {
+        Memory.empire.mode = 'delegate';
+        Memory.empire.modeChangedAt = Game.time;
+    }
+}
+/**
+ * Get current empire mode
+ *
+ * @returns Current mode: 'command' or 'delegate'
+ */
+function getMode() {
+    initializeEmpireMemory();
+    return Memory.empire.mode || 'delegate';
+}
+/**
+ * Set empire mode
+ *
+ * @param mode - 'command' or 'delegate'
+ * @returns true if mode changed, false if already in that mode
+ */
+function setMode(mode) {
+    initializeEmpireMemory();
+    const currentMode = Memory.empire.mode;
+    if (currentMode === mode) {
+        return false;
+    }
+    Memory.empire.mode = mode;
+    Memory.empire.modeChangedAt = Game.time;
+    return true;
+}
+/**
+ * Get ticks since last mode change
+ */
+function getTicksSinceModeChange() {
+    initializeEmpireMemory();
+    const changedAt = Memory.empire.modeChangedAt || 0;
+    return Game.time - changedAt;
+}
+/**
+ * Check if in command mode
+ */
+function isCommandMode() {
+    return getMode() === 'command';
+}
+/**
+ * Display mode information
+ */
+function displayModeInfo() {
+    const mode = getMode();
+    const ticksSince = getTicksSinceModeChange();
+    const modeEmoji = mode === 'command' ? '⚔️' : '📋';
+    const modeDescription = mode === 'command'
+        ? 'Direct Control - You are in command of all operations'
+        : 'Delegation Mode - AI handles spawn priorities and construction';
+    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`${modeEmoji} EMPIRE MODE: ${mode.toUpperCase()}`);
+    console.log(`${'═'.repeat(60)}`);
+    console.log(`${modeDescription}`);
+    console.log(`Mode active for: ${ticksSince} ticks`);
+    console.log(`${'═'.repeat(60)}\n`);
+}
+
+/**
  * ROOM ORCHESTRATOR MODULE
  *
  * Coordinates all activities within a single room.
@@ -1361,7 +1438,11 @@ function runRoom(room) {
         logRoomStats(room, roleCounts);
     }
     // Manage spawning based on current population
-    manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+    // SKIP automatic spawning in COMMAND mode - user has full manual control
+    // In DELEGATE mode, AI automatically spawns creeps based on priorities
+    if (!isCommandMode()) {
+        manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+    }
     // Run behavior for each creep in the room
     runCreeps(creeps);
     // Render structure name visuals if enabled
@@ -1424,77 +1505,6 @@ function runCreeps(creeps) {
     creeps.forEach(creep => {
         runCreep(creep);
     });
-}
-
-/**
- * EMPIRE MANAGEMENT MODULE
- *
- * Manages empire-wide settings and policies that affect behavior across all rooms.
- * Two operational modes:
- * - COMMAND: Direct manual control - you make all decisions
- * - DELEGATE: Automatic AI control - empire handles spawning, construction, etc.
- */
-/**
- * Initialize empire memory if not present
- */
-function initializeEmpireMemory() {
-    if (!Memory.empire) {
-        Memory.empire = {};
-    }
-    if (!Memory.empire.mode) {
-        Memory.empire.mode = 'delegate';
-        Memory.empire.modeChangedAt = Game.time;
-    }
-}
-/**
- * Get current empire mode
- *
- * @returns Current mode: 'command' or 'delegate'
- */
-function getMode() {
-    initializeEmpireMemory();
-    return Memory.empire.mode || 'delegate';
-}
-/**
- * Set empire mode
- *
- * @param mode - 'command' or 'delegate'
- * @returns true if mode changed, false if already in that mode
- */
-function setMode(mode) {
-    initializeEmpireMemory();
-    const currentMode = Memory.empire.mode;
-    if (currentMode === mode) {
-        return false;
-    }
-    Memory.empire.mode = mode;
-    Memory.empire.modeChangedAt = Game.time;
-    return true;
-}
-/**
- * Get ticks since last mode change
- */
-function getTicksSinceModeChange() {
-    initializeEmpireMemory();
-    const changedAt = Memory.empire.modeChangedAt || 0;
-    return Game.time - changedAt;
-}
-/**
- * Display mode information
- */
-function displayModeInfo() {
-    const mode = getMode();
-    const ticksSince = getTicksSinceModeChange();
-    const modeEmoji = mode === 'command' ? '⚔️' : '📋';
-    const modeDescription = mode === 'command'
-        ? 'Direct Control - You are in command of all operations'
-        : 'Delegation Mode - AI handles spawn priorities and construction';
-    console.log(`\n${'═'.repeat(60)}`);
-    console.log(`${modeEmoji} EMPIRE MODE: ${mode.toUpperCase()}`);
-    console.log(`${'═'.repeat(60)}`);
-    console.log(`${modeDescription}`);
-    console.log(`Mode active for: ${ticksSince} ticks`);
-    console.log(`${'═'.repeat(60)}\n`);
 }
 
 /**
@@ -3132,9 +3142,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: '7379833'};
+  commitHash: 'c73c835'};
 
-const INIT_VERSION = '7379833';
+const INIT_VERSION = 'c73c835';
 
 /**
  * PROJECT IMPERIUM - RCL1 FOUNDATION

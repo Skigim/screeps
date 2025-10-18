@@ -21,6 +21,7 @@ import { manageSpawn } from '../spawns/manager';
 import { runCreep } from '../creeps';
 import { renderStructureNames } from '../visuals';
 import { updateConstructionSites } from '../structures';
+import { isCommandMode } from '../empire';
 
 /**
  * Runs all logic for a single owned room.
@@ -72,7 +73,11 @@ export function runRoom(room: Room): void {
   }
 
   // Manage spawning based on current population
-  manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+  // SKIP automatic spawning in COMMAND mode - user has full manual control
+  // In DELEGATE mode, AI automatically spawns creeps based on priorities
+  if (!isCommandMode()) {
+    manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+  }
 
   // Run behavior for each creep in the room
   runCreeps(creeps);
