@@ -1649,6 +1649,123 @@ function displayModeInfo() {
 }
 
 /**
+ * SPAWN QUEUE SYSTEM
+ *
+ * Allows queuing spawn commands that execute when energy becomes available.
+ * Useful for planning ahead without manual energy monitoring.
+ */
+/**
+ * Initialize spawn queue if not present
+ */
+function initializeQueue() {
+    if (!Memory.empire) {
+        Memory.empire = {};
+    }
+    if (!Memory.empire.spawnQueue) {
+        Memory.empire.spawnQueue = [];
+    }
+}
+/**
+ * Add a spawn to the queue
+ * @param role - Creep role (miner, hauler, builder, upgrader)
+ * @param body - Array of body parts
+ * @param room - Room to spawn in
+ * @param task - Optional: task to assign after spawning
+ * @returns Queue item ID
+ */
+function queueSpawn(role, body, room, task) {
+    initializeQueue();
+    const id = `queue_${Game.time}_${Math.random().toString(36).substr(2, 9)}`;
+    const item = {
+        id,
+        role,
+        body,
+        task,
+        room,
+        createdAt: Game.time
+    };
+    Memory.empire.spawnQueue.push(item);
+    return id;
+}
+/**
+ * Remove a spawn from the queue by ID
+ */
+function dequeueSpawn(id) {
+    initializeQueue();
+    const queue = Memory.empire.spawnQueue;
+    const index = queue.findIndex(item => item.id === id);
+    if (index === -1) {
+        return false;
+    }
+    queue.splice(index, 1);
+    return true;
+}
+/**
+ * Get all queued spawns
+ */
+function getQueue() {
+    initializeQueue();
+    return Memory.empire.spawnQueue || [];
+}
+/**
+ * Get queue items for a specific room
+ */
+function getQueueForRoom(roomName) {
+    return getQueue().filter(item => item.room === roomName);
+}
+/**
+ * Process spawn queue for a room
+ * Called once per tick from room orchestrator
+ * Spawns queued creeps when energy is available
+ */
+function processSpawnQueue(room) {
+    const queue = getQueueForRoom(room.name);
+    if (queue.length === 0) {
+        return;
+    }
+    const spawn = room.find(FIND_MY_SPAWNS)[0];
+    if (!spawn || spawn.spawning) {
+        return;
+    }
+    // Try to spawn the first item in queue
+    const item = queue[0];
+    const cost = item.body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+    if (room.energyAvailable >= cost) {
+        // Generate creep name
+        const abbr = item.role.charAt(0).toUpperCase();
+        let maxNum = 0;
+        const pattern = new RegExp(`^${abbr}(\\d+)$`);
+        for (const creepName in Game.creeps) {
+            const match = creepName.match(pattern);
+            if (match) {
+                const num = parseInt(match[1], 10);
+                maxNum = Math.max(maxNum, num);
+            }
+        }
+        const creepName = `${abbr}${maxNum + 1}`;
+        // Spawn the creep
+        const result = spawn.spawnCreep(item.body, creepName, {
+            memory: {
+                role: item.role,
+                room: room.name,
+                working: false,
+                task: item.task
+            }
+        });
+        if (result === OK) {
+            // Remove from queue and assign task if specified
+            dequeueSpawn(item.id);
+            if (item.task) {
+                const creep = Game.creeps[creepName];
+                if (creep && creep.memory) {
+                    creep.memory.task = item.task;
+                }
+            }
+        }
+    }
+}
+
+/**
  * ROOM ORCHESTRATOR MODULE
  *
  * Coordinates all activities within a single room.
@@ -1710,6 +1827,8 @@ function runRoom(room) {
     if (Game.time % 100 === 0) {
         logRoomStats(room, roleCounts);
     }
+    // Process spawn queue first (spawns queued creeps when energy available)
+    processSpawnQueue(room);
     // Manage spawning based on current population
     // SKIP automatic spawning in COMMAND mode - user has full manual control
     // In DELEGATE mode, AI automatically spawns creeps based on priorities
@@ -2887,12 +3006,18 @@ function spawnCreep(creepNameOrRole, roleOrBody, bodyOrRoom, roomName) {
         console.log(`✅ Spawned ${creepName} (${bodyParts.length} parts, ${cost}E)`);
         return Game.creeps[creepName];
     }
+    else if (result === ERR_NOT_ENOUGH_ENERGY) {
+        // Auto-queue the spawn if insufficient energy
+        const cost = getBodyCost(bodyParts);
+        const queueId = queueSpawn(role, bodyParts, targetRoom);
+        console.log(`⏳ Queued ${creepName} (need ${cost}E, have ${room.energyAvailable}E) - Queue ID: ${queueId}`);
+        return false;
+    }
     else {
         const errorMsg = {
             [ERR_NOT_OWNER]: 'Not your spawn',
             [ERR_NAME_EXISTS]: 'Name already exists',
-            [ERR_INVALID_ARGS]: 'Invalid body parts',
-            [ERR_NOT_ENOUGH_ENERGY]: `Not enough energy (need ${getBodyCost(bodyParts)}E)`
+            [ERR_INVALID_ARGS]: 'Invalid body parts'
         }[result] || `Error code ${result}`;
         console.log(`❌ Spawn failed: ${errorMsg}`);
         return false;
@@ -3442,16 +3567,63 @@ function regBody(name, partsArray, role = 'generic') {
  * @example spawnWith('builder', 'builder_basic', 'build', 'SiteX')
  */
 function spawnWith(role, body, taskType, targetId, roomName) {
-    // First, spawn the creep
-    const creep = spawnCreep(role, body, roomName);
-    if (!creep) {
-        console.log(`❌ Failed to spawn creep, skipping task assignment`);
+    const targetRoom = roomName || getCurrentRoom();
+    if (!targetRoom) {
+        console.log(`❌ No room specified and no current room found`);
         return false;
     }
-    // Then assign the task
-    task(creep.name, taskType, targetId);
-    console.log(`✅ Spawned ${creep.name} with task: ${taskType} → ${targetId}`);
-    return creep;
+    const room = Game.rooms[targetRoom];
+    if (!room) {
+        console.log(`❌ Room not found: ${targetRoom}`);
+        return false;
+    }
+    // Get body parts
+    const bodyParts = getBodyConfig(body);
+    if (!bodyParts || bodyParts.length === 0) {
+        console.log(`❌ Invalid body config`);
+        return false;
+    }
+    // Generate creep name
+    const creepName = generateCreepName(role);
+    // Find spawn
+    const spawns = room.find(FIND_MY_SPAWNS);
+    if (spawns.length === 0) {
+        console.log(`❌ No spawns in room`);
+        return false;
+    }
+    const spawnObj = spawns[0];
+    const cost = getBodyCost(bodyParts);
+    // Attempt spawn
+    const result = spawnObj.spawnCreep(bodyParts, creepName, {
+        memory: {
+            role,
+            room: targetRoom,
+            working: false,
+            task: { type: taskType, targetId }
+        }
+    });
+    if (result === OK) {
+        console.log(`✅ Spawned ${creepName} with task: ${taskType} → ${targetId} (${cost}E)`);
+        return Game.creeps[creepName];
+    }
+    else if (result === ERR_NOT_ENOUGH_ENERGY) {
+        // Auto-queue the spawn with task
+        queueSpawn(role, bodyParts, targetRoom, {
+            type: taskType,
+            targetId
+        });
+        console.log(`⏳ Queued ${creepName} with task: ${taskType} → ${targetId} (need ${cost}E, have ${room.energyAvailable}E)`);
+        return false;
+    }
+    else {
+        const errorMsg = {
+            [ERR_NOT_OWNER]: 'Not your spawn',
+            [ERR_NAME_EXISTS]: 'Name already exists',
+            [ERR_INVALID_ARGS]: 'Invalid body parts'
+        }[result] || `Error code ${result}`;
+        console.log(`❌ Spawn failed: ${errorMsg}`);
+        return false;
+    }
 }
 /**
  * GETSTATS - Retrieve current statistics data from memory
@@ -3509,9 +3681,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: '553df14'};
+  commitHash: '88402b1'};
 
-const INIT_VERSION = '553df14';
+const INIT_VERSION = '88402b1';
 
 /**
  * SILENT STATISTICS TRACKING

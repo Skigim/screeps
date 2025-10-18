@@ -44,6 +44,10 @@ import {
 } from '../world/creeps/tasks';
 
 import {
+  queueSpawn
+} from '../world/spawns/queue';
+
+import {
   scanRoom,
   lockStructure,
   unlockStructure,
@@ -439,12 +443,17 @@ export function spawnCreep(
     const cost = getBodyCost(bodyParts);
     console.log(`✅ Spawned ${creepName} (${bodyParts.length} parts, ${cost}E)`);
     return Game.creeps[creepName];
+  } else if (result === ERR_NOT_ENOUGH_ENERGY) {
+    // Auto-queue the spawn if insufficient energy
+    const cost = getBodyCost(bodyParts);
+    const queueId = queueSpawn(role, bodyParts, targetRoom);
+    console.log(`⏳ Queued ${creepName} (need ${cost}E, have ${room.energyAvailable}E) - Queue ID: ${queueId}`);
+    return false;
   } else {
     const errorMsg = {
       [ERR_NOT_OWNER]: 'Not your spawn',
       [ERR_NAME_EXISTS]: 'Name already exists',
-      [ERR_INVALID_ARGS]: 'Invalid body parts',
-      [ERR_NOT_ENOUGH_ENERGY]: `Not enough energy (need ${getBodyCost(bodyParts)}E)`
+      [ERR_INVALID_ARGS]: 'Invalid body parts'
     }[result as number] || `Error code ${result}`;
     
     console.log(`❌ Spawn failed: ${errorMsg}`);
@@ -1058,19 +1067,69 @@ export function spawnWith(
   targetId: string,
   roomName?: string
 ): Creep | false {
-  // First, spawn the creep
-  const creep = spawnCreep(role, body, roomName);
-  
-  if (!creep) {
-    console.log(`❌ Failed to spawn creep, skipping task assignment`);
+  const targetRoom = roomName || getCurrentRoom();
+  if (!targetRoom) {
+    console.log(`❌ No room specified and no current room found`);
     return false;
   }
 
-  // Then assign the task
-  task(creep.name, taskType, targetId);
-  
-  console.log(`✅ Spawned ${creep.name} with task: ${taskType} → ${targetId}`);
-  return creep;
+  const room = Game.rooms[targetRoom];
+  if (!room) {
+    console.log(`❌ Room not found: ${targetRoom}`);
+    return false;
+  }
+
+  // Get body parts
+  const bodyParts = getBodyConfig(body);
+  if (!bodyParts || bodyParts.length === 0) {
+    console.log(`❌ Invalid body config`);
+    return false;
+  }
+
+  // Generate creep name
+  const creepName = generateCreepName(role);
+
+  // Find spawn
+  const spawns = room.find(FIND_MY_SPAWNS);
+  if (spawns.length === 0) {
+    console.log(`❌ No spawns in room`);
+    return false;
+  }
+
+  const spawnObj = spawns[0];
+  const cost = getBodyCost(bodyParts);
+
+  // Attempt spawn
+  const result = spawnObj.spawnCreep(bodyParts, creepName, {
+    memory: {
+      role,
+      room: targetRoom,
+      working: false,
+      task: { type: taskType, targetId }
+    }
+  });
+
+  if (result === OK) {
+    console.log(`✅ Spawned ${creepName} with task: ${taskType} → ${targetId} (${cost}E)`);
+    return Game.creeps[creepName];
+  } else if (result === ERR_NOT_ENOUGH_ENERGY) {
+    // Auto-queue the spawn with task
+    queueSpawn(role, bodyParts, targetRoom, {
+      type: taskType,
+      targetId
+    });
+    console.log(`⏳ Queued ${creepName} with task: ${taskType} → ${targetId} (need ${cost}E, have ${room.energyAvailable}E)`);
+    return false;
+  } else {
+    const errorMsg = {
+      [ERR_NOT_OWNER]: 'Not your spawn',
+      [ERR_NAME_EXISTS]: 'Name already exists',
+      [ERR_INVALID_ARGS]: 'Invalid body parts'
+    }[result as number] || `Error code ${result}`;
+    
+    console.log(`❌ Spawn failed: ${errorMsg}`);
+    return false;
+  }
 }
 
 /**

@@ -22,6 +22,7 @@ import { runCreep } from '../creeps';
 import { renderStructureNames } from '../visuals';
 import { updateConstructionSites } from '../structures';
 import { isCommandMode } from '../empire';
+import { processSpawnQueue } from '../spawns/queue';
 
 /**
  * Runs all logic for a single owned room.
@@ -71,6 +72,9 @@ export function runRoom(room: Room): void {
   if (Game.time % 100 === 0) {
     logRoomStats(room, roleCounts);
   }
+
+  // Process spawn queue first (spawns queued creeps when energy available)
+  processSpawnQueue(room);
 
   // Manage spawning based on current population
   // SKIP automatic spawning in COMMAND mode - user has full manual control

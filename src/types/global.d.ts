@@ -64,6 +64,17 @@ declare global {
       legatus?: any;  // LegatusOficio command registry
       visuals?: {[roomName: string]: {expiresAt: number}};  // RoomVisual persistence
       bodyConfigs?: any;  // Named body configurations
+      spawnQueue?: Array<{  // Queued spawn commands
+        id: string;
+        role: string;
+        body: BodyPartConstant[];
+        task?: {
+          type: string;
+          targetId?: string;
+        };
+        room: string;
+        createdAt: number;
+      }>;
     };
   }
 }
