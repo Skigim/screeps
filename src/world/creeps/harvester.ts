@@ -48,23 +48,49 @@ export function runHarvester(creep: Creep): void {
 }
 
 /**
- * Harvests energy from the nearest active source.
+ * Harvests energy from a source.
+ * 
+ * Supports both task-assigned and mobile harvesting:
+ * - If creep has no CARRY parts (stationary miner): 
+ *   Will automatically stay at assigned/nearest source
+ * - If creep has CARRY parts (mobile harvester):
+ *   Can be assigned to specific source or roams freely
  * 
  * Flow:
- * 1. Find the closest active source (has energy remaining)
- * 2. If in range, harvest from it
- * 3. If not in range, move towards it
+ * 1. Check if creep has a task assignment (e.g., 'harvest' from 'SourceB')
+ * 2. If assigned, travel to and harvest from that specific source
+ * 3. If not assigned, find nearest active source (mobile behavior)
+ * 4. Harvest when in range, travel when not
  * 
  * @param creep - The creep that should harvest
  * 
  * @remarks
- * Uses pathfinding with yellow visualization for easy debugging.
- * Active sources are those with energy > 0.
+ * Creeps without CARRY parts naturally stay put since they can't
+ * move energy anyway. Creeps with CARRY parts can be assigned to
+ * specific sources or left to roam.
  */
 function harvestEnergy(creep: Creep): void {
-  // Find the nearest source that still has energy
-  const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
-  
+  let source: Source | null = null;
+
+  // Check if creep has a harvest task with a target source
+  if (creep.memory.task && creep.memory.task.type === 'harvest') {
+    const targetName = creep.memory.task.targetId;
+    if (targetName) {
+      // Convert target name (e.g., 'SourceB') to source object
+      // SourceA = index 0, SourceB = index 1, etc.
+      const sourceIndex = targetName.charCodeAt(targetName.length - 1) - 'A'.charCodeAt(0);
+      const sources = creep.room.find(FIND_SOURCES);
+      if (sources[sourceIndex]) {
+        source = sources[sourceIndex];
+      }
+    }
+  }
+
+  // If no assigned source, find nearest active source (mobile behavior)
+  if (!source) {
+    source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+  }
+
   if (source) {
     // Try to harvest. Returns OK if successful, or an error code
     const result = creep.harvest(source);

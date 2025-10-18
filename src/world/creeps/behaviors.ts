@@ -83,33 +83,34 @@ export const rcl1Behavior: BehaviorConfig = {
  * RCL2 Behavior Configuration
  * 
  * At RCL2, we unlock extensions and expand capacity.
- * Uses specialized harvester types, dedicated haulers, and more builders.
+ * Uses flexible harvester bodies and dedicated haulers.
+ * 
+ * Harvester body strategy:
+ * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
+ *   Can be assigned to a specific source via task system
+ *   Harvests continuously without moving energy
+ * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile harvester
+ *   Can roam between sources or be task-assigned
+ *   Delivers energy to spawn/extensions
  */
 export const rcl2Behavior: BehaviorConfig = {
   rcl: 2,
   name: 'RCL2 Expansion',
-  description: 'With extensions: scale economy with specialized roles',
+  description: 'With extensions: flexible harvesters and specialized support roles',
   roles: [
     {
-      name: 'harvester_stationary',
+      name: 'harvester',
       priority: 100,
-      targetCount: 1,
-      body: [WORK, WORK, WORK, CARRY, MOVE],
-      options: { comment: 'Stationary harvester at primary source' }
-    },
-    {
-      name: 'harvester_mobile',
-      priority: 95,
-      targetCount: 1,
+      targetCount: 2,
       body: [WORK, WORK, WORK, CARRY, MOVE, MOVE],
-      options: { comment: 'Mobile harvester between sources' }
+      options: { comment: 'Flexible harvester - roams or tasks to specific source' }
     },
     {
       name: 'hauler',
       priority: 90,
       targetCount: 2,
       body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE],
-      options: { comment: 'Dedicated energy transport' }
+      options: { comment: 'Dedicated energy transport specialist' }
     },
     {
       name: 'builder',

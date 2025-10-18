@@ -48,7 +48,15 @@ export declare const rcl1Behavior: BehaviorConfig;
  * RCL2 Behavior Configuration
  *
  * At RCL2, we unlock extensions and expand capacity.
- * Uses specialized harvester types, dedicated haulers, and more builders.
+ * Uses flexible harvester bodies and dedicated haulers.
+ *
+ * Harvester body strategy:
+ * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
+ *   Can be assigned to a specific source via task system
+ *   Harvests continuously without moving energy
+ * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile harvester
+ *   Can roam between sources or be task-assigned
+ *   Delivers energy to spawn/extensions
  */
 export declare const rcl2Behavior: BehaviorConfig;
 /**

@@ -19,8 +19,6 @@
  */
 
 import { runHarvester } from './harvester';
-import { runStationaryHarvester } from './harvester-stationary';
-import { runMobileHarvester } from './harvester-mobile';
 import { runHauler } from './hauler';
 import { runUpgrader } from './upgrader';
 import { runBuilder } from './builder';
@@ -48,14 +46,6 @@ export function runCreep(creep: Creep): void {
   switch (creep.memory.role) {
     case 'harvester':
       runHarvester(creep);
-      break;
-    
-    case 'harvester_stationary':
-      runStationaryHarvester(creep);
-      break;
-    
-    case 'harvester_mobile':
-      runMobileHarvester(creep);
       break;
     
     case 'hauler':
