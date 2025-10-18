@@ -177,6 +177,9 @@ function manageSpawn(spawn, room, minerCount, _upgraderCount, builderCount) {
     const energy = room.energyAvailable;
     const energyCapacity = room.energyCapacityAvailable;
     const constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
+    // Count current haulers
+    const haulerCreeps = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'hauler');
+    const haulerCount = haulerCreeps.length;
     // PRIORITY 1: Emergency - Always maintain minimum miners (2)
     // Without miners, no energy flows and the economy collapses
     if (minerCount < 2) {
@@ -186,25 +189,22 @@ function manageSpawn(spawn, room, minerCount, _upgraderCount, builderCount) {
         }
         return;
     }
-    // Count current haulers
-    const haulerCreeps = room.find(FIND_MY_CREEPS).filter(c => c.memory.role === 'hauler');
-    const haulerCount = haulerCreeps.length;
-    // PRIORITY 2: Maintain haulers (3 total: 2 per source + 1 roaming)
-    // Haulers move energy to spawn/storage
-    if (minerCount >= 2 && haulerCount < 3) {
-        const haulerBody = getOptimalHaulerBody(energyCapacity);
-        if (energy >= calculateBodyCost(haulerBody)) {
-            spawnHauler(spawn, room, haulerBody);
-        }
-        return;
-    }
-    // PRIORITY 3: Spawn builder if construction sites exist
+    // PRIORITY 2: Spawn builder if construction sites exist (once we have miners)
     // Extensions → Roads → Controller (if TTL < 5000)
     // Builder respects spawn lock - will idle when critical team is aging
     if (constructionSites.length > 0 && builderCount < 1) {
         const builderBody = getOptimalBuilderBody(energyCapacity);
         if (energy >= calculateBodyCost(builderBody)) {
             spawnBuilder(spawn, room, builderBody);
+        }
+        return;
+    }
+    // PRIORITY 3: Maintain haulers (3 total: 2 per source + 1 roaming)
+    // Haulers move energy to spawn/storage
+    if (haulerCount < 3) {
+        const haulerBody = getOptimalHaulerBody(energyCapacity);
+        if (energy >= calculateBodyCost(haulerBody)) {
+            spawnHauler(spawn, room, haulerBody);
         }
         return;
     }
@@ -3816,9 +3816,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: '1f93469'};
+  commitHash: '95129f7'};
 
-const INIT_VERSION = '1f93469';
+const INIT_VERSION = '95129f7';
 
 /**
  * SILENT STATISTICS TRACKING
