@@ -3504,15 +3504,14 @@ function registerConsoleCommands() {
     global.legaList = legaList;
     global.bodies = bodies;
     global.regBody = regBody;
-    global.spawnWith = spawnWith;
     global.getstats = getstats;
-    console.log('✅ Console commands registered. Type help() for usage.');
+    console.log('✅ Console commands registered. Type help() for usage');
 }
 
 const BUILD_INFO = {
-  commitHash: 'f21b878'};
+  commitHash: '553df14'};
 
-const INIT_VERSION = 'f21b878';
+const INIT_VERSION = '553df14';
 
 /**
  * SILENT STATISTICS TRACKING

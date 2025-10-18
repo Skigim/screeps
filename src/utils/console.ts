@@ -1125,8 +1125,7 @@ export function registerConsoleCommands(): void {
   (global as any).legaList = legaList;
   (global as any).bodies = bodies;
   (global as any).regBody = regBody;
-  (global as any).spawnWith = spawnWith;
   (global as any).getstats = getstats;
 
-  console.log('✅ Console commands registered. Type help() for usage.');
+  console.log('✅ Console commands registered. Type help() for usage');
 }
