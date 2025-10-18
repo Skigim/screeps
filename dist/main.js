@@ -3102,8 +3102,10 @@ const loop = () => {
     // Also reinitialize if code version changes (use any constant that changes when you rebuild)
     const INIT_VERSION = 2;
     if (!Memory.initialized || Memory.initVersion !== INIT_VERSION) {
+        // Set flags FIRST to prevent double-init if loop runs again
         Memory.initialized = true;
         Memory.initVersion = INIT_VERSION;
+        // Then run initialization functions
         registerConsoleCommands();
         displayModeInfo();
         registerDefaultBodies();
