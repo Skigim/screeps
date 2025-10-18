@@ -25,7 +25,7 @@ creeps('W1N1')
 memory()
 
 // View creep memory
-memory('harvester_12345')
+memory('miner_12345')
 
 // View behavior config
 config()
@@ -43,17 +43,17 @@ room('W1N1')
 // SPAWN & CREEP CONTROL
 // ═══════════════════════════════════════════════════════════════
 
-// Spawn a harvester (auto-generated name)
-spawn('harvester', 'W1N1')
+// Spawn a miner (auto-generated name)
+spawn('miner', 'W1N1')
 
 // Spawn with specific name and body config
-spawnCreep('Harvester1', 'harvester', 'harvester_basic', 'W1N1')
+spawnCreep('M1', 'miner', 'miner_basic', 'W1N1')
 
 // Spawn with custom body parts
 spawnCreep('Scout1', 'scout', [MOVE], 'W1N1')
 
 // Kill a creep
-despawn('harvester_12345')
+despawn('miner_12345')
 
 // List all creeps
 creeps()
@@ -69,10 +69,10 @@ creeps('W1N1')
 bodies()
 
 // List bodies for a specific role
-bodies('harvester')
+bodies('miner')
 
 // Register a new body config
-regBody('harvester_v2', [WORK, WORK, CARRY, CARRY, MOVE], 'harvester')
+regBody('miner_v2', [WORK, WORK, CARRY, CARRY, MOVE], 'miner')
 
 // Register a scout body
 regBody('scout', [MOVE], 'scout')
@@ -81,12 +81,12 @@ regBody('scout', [MOVE], 'scout')
 regBody('hauler', [CARRY, CARRY, CARRY, MOVE, MOVE], 'hauler')
 
 // Default bodies (auto-registered on startup):
-// - 'harvester_basic'  [WORK, CARRY, MOVE]
-// - 'upgrader_basic'   [WORK, CARRY, MOVE]
-// - 'builder_basic'    [WORK, CARRY, MOVE]
-// - 'scout'            [MOVE]
-// - 'hauler'           [CARRY, CARRY, CARRY, MOVE, MOVE]
-// - 'worker'           [WORK, WORK, CARRY, MOVE]
+// - 'miner_basic'       [WORK, CARRY, MOVE]
+// - 'upgrader_basic'    [WORK, CARRY, MOVE]
+// - 'builder_basic'     [WORK, CARRY, MOVE]
+// - 'scout'             [MOVE]
+// - 'hauler'            [CARRY, CARRY, CARRY, MOVE, MOVE]
+// - 'worker'            [WORK, WORK, CARRY, MOVE]
 
 // ═══════════════════════════════════════════════════════════════
 // MOVEMENT & TARGETING
@@ -96,17 +96,17 @@ regBody('hauler', [CARRY, CARRY, CARRY, MOVE, MOVE], 'hauler')
 goto(25, 25, 'W1N1')
 
 // Move all creeps to another creep
-goto('harvester_12345')
+goto('miner_12345')
 
 // ═══════════════════════════════════════════════════════════════
 // TASK ASSIGNMENT
 // ═══════════════════════════════════════════════════════════════
 
 // Assign harvest task to a creep
-task('harvester_12345', 'harvest', '5e123abc')
+task('miner_12345', 'harvest', '5e123abc')
 
 // Assign delivery task
-task('harvester_12345', 'deliver', '5e456def')
+task('miner_12345', 'deliver', '5e456def')
 
 // Assign build task
 task('builder_12345', 'build', '5e789ghi')
@@ -115,13 +115,13 @@ task('builder_12345', 'build', '5e789ghi')
 task('upgrader_12345', 'upgrade')
 
 // Assign move task (position format: x:y:roomName)
-task('harvester_12345', 'move', '25:20:W1N1')
+task('miner_12345', 'move', '25:20:W1N1')
 
 // Assign repair task
-task('harvester_12345', 'repair', '5e000jkl')
+task('miner_12345', 'repair', '5e000jkl')
 
 // Make creep do nothing
-task('harvester_12345', 'idle')
+task('miner_12345', 'idle')
 
 // View all assigned tasks
 tasks()
@@ -130,7 +130,7 @@ tasks()
 tasks('W1N1')
 
 // Clear task from creep
-untask('harvester_12345')
+untask('miner_12345')
 
 // ═══════════════════════════════════════════════════════════════
 // STRUCTURE REGISTRY & NAMING
@@ -195,7 +195,7 @@ hideNames('W1N1')
 // Show Legatus command status
 legaStatus('W1N1')
 // 🎯 Legatus W1N1: 3 active assignments
-// harvester_1234567890 → harvest (5 ticks)
+// miner_1234567890 → harvest (5 ticks)
 // builder_9876543210 → build (8 ticks)
 // upgrader_1111111111 → upgrade (2 ticks)
 
@@ -239,20 +239,20 @@ flag(25, 25, 'W1N1')
 // Check colony status
 status()
 
-// Spawn more harvesters if needed
-for(let i = 0; i < 3; i++) spawn('harvester', 'W1N1')
+// Spawn more miners if needed
+for(let i = 0; i < 3; i++) spawn('miner', 'W1N1')
 
 // Move creeps to source
 goto(15, 20, 'W1N1')
 
 // Monitor a specific creep
 setInterval(() => {
-  const creep = Game.creeps['harvester_12345']
+  const creep = Game.creeps['miner_12345']
   if(creep) console.log(`HP: ${creep.hits}/${creep.hitsMax}, Energy: ${creep.store.getUsedCapacity()}`)
 }, 5)
 
 // Kill all builders
 Object.keys(Memory.creeps).filter(n => Memory.creeps[n].role === 'builder').forEach(despawn)
 
-// Get all harvesters in a room
-Game.rooms['W1N1'].find(FIND_MY_CREEPS).filter(c => c.memory.role === 'harvester')
+// Get all miners in a room
+Game.rooms['W1N1'].find(FIND_MY_CREEPS).filter(c => c.memory.role === 'miner')

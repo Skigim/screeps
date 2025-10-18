@@ -4,7 +4,7 @@
  * Manages creep spawning strategy and body design for RCL1 foundation.
  *
  * Spawning Priority (RCL1):
- * 1. Minimum 2 harvesters (critical - economy collapses without them)
+ * 1. Minimum 2 miners (critical - economy collapses without them)
  * 2. Minimum 2 upgraders (prevent controller downgrade)
  * 3. Builders only if construction sites exist (max 2)
  * 4. Scale up upgraders if excess energy (max 4)
@@ -21,7 +21,7 @@
  *
  * @param spawn - The spawn structure to manage
  * @param room - The room the spawn is in
- * @param harvesterCount - Current number of harvester creeps
+ * @param minerCount - Current number of miner creeps
  * @param upgraderCount - Current number of upgrader creeps
  * @param builderCount - Current number of builder creeps
  *
@@ -34,14 +34,14 @@
  * const spawn = Game.spawns['Spawn1'];
  * const room = spawn.room;
  * const creeps = room.find(FIND_MY_CREEPS);
- * const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+ * const minerCount = creeps.filter(c => c.memory.role === 'miner').length;
  * const upgraderCount = creeps.filter(c => c.memory.role === 'upgrader').length;
  * const builderCount = creeps.filter(c => c.memory.role === 'builder').length;
  *
- * manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+ * manageSpawn(spawn, room, minerCount, upgraderCount, builderCount);
  * ```
  */
-export declare function manageSpawn(spawn: StructureSpawn, room: Room, harvesterCount: number, upgraderCount: number, builderCount: number): void;
+export declare function manageSpawn(spawn: StructureSpawn, room: Room, minerCount: number, upgraderCount: number, builderCount: number): void;
 /**
  * Designs an optimal creep body based on available energy.
  *

@@ -6,7 +6,7 @@
  * to the correct handler based on its role.
  * 
  * Architecture:
- * - Each role has its own file (harvester.ts, upgrader.ts, builder.ts)
+ * - Each role has its own file (miner.ts, upgrader.ts, builder.ts)
  * - behaviors.ts defines RCL-specific configurations
  * - This index exports a unified `runCreep` function
  * - Main loop calls `runCreep` for each creep
@@ -18,7 +18,7 @@
  * 4. Add role to appropriate RCL config in behaviors.ts
  */
 
-import { runHarvester } from './harvester';
+import { runMiner } from './miner';
 import { runHauler } from './hauler';
 import { runUpgrader } from './upgrader';
 import { runBuilder } from './builder';
@@ -44,8 +44,8 @@ import { runBuilder } from './builder';
 export function runCreep(creep: Creep): void {
   // Dispatch based on role stored in creep memory
   switch (creep.memory.role) {
-    case 'harvester':
-      runHarvester(creep);
+    case 'miner':
+      runMiner(creep);
       break;
     
     case 'hauler':
@@ -71,7 +71,7 @@ export function runCreep(creep: Creep): void {
  * Re-export individual role functions for advanced use cases.
  * Most code should use `runCreep`, but these are available if needed.
  */
-export { runHarvester } from './harvester';
+export { runMiner } from './miner';
 export { runUpgrader } from './upgrader';
 export { runBuilder } from './builder';
 

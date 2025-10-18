@@ -44,7 +44,7 @@ export interface BehaviorConfig {
  * RCL1 Behavior Configuration
  * 
  * At RCL1, we focus on the core economy:
- * - Harvesters: Gather energy from sources
+ * - Miners: Gather energy from sources
  * - Upgraders: Keep controller from downgrading
  * - Builders: Build towards extensions for RCL2
  * 
@@ -53,14 +53,14 @@ export interface BehaviorConfig {
 export const rcl1Behavior: BehaviorConfig = {
   rcl: 1,
   name: 'RCL1 Foundation',
-  description: 'Core economy: harvest, upgrade, build',
+  description: 'Core economy: mine, upgrade, build',
   roles: [
     {
-      name: 'harvester',
+      name: 'miner',
       priority: 100,
       targetCount: 2,
       body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-      options: { comment: 'Dual work parts for faster harvesting' }
+      options: { comment: 'Dual work parts for faster mining' }
     },
     {
       name: 'upgrader',
@@ -83,27 +83,27 @@ export const rcl1Behavior: BehaviorConfig = {
  * RCL2 Behavior Configuration
  * 
  * At RCL2, we unlock extensions and expand capacity.
- * Uses flexible harvester bodies and dedicated haulers.
+ * Uses flexible miner bodies and dedicated haulers.
  * 
- * Harvester body strategy:
+ * Miner body strategy:
  * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
  *   Can be assigned to a specific source via task system
- *   Harvests continuously without moving energy
- * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile harvester
+ *   Mines continuously without moving energy
+ * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile miner
  *   Can roam between sources or be task-assigned
  *   Delivers energy to spawn/extensions
  */
 export const rcl2Behavior: BehaviorConfig = {
   rcl: 2,
   name: 'RCL2 Expansion',
-  description: 'With extensions: flexible harvesters and specialized support roles',
+  description: 'With extensions: flexible miners and specialized support roles',
   roles: [
     {
-      name: 'harvester',
+      name: 'miner',
       priority: 100,
       targetCount: 2,
       body: [WORK, WORK, WORK, CARRY, MOVE, MOVE],
-      options: { comment: 'Flexible harvester - roams or tasks to specific source' }
+      options: { comment: 'Flexible miner - roams or tasks to specific source' }
     },
     {
       name: 'hauler',

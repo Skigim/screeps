@@ -4,7 +4,7 @@
  * Manages creep spawning strategy and body design for RCL1 foundation.
  * 
  * Spawning Priority (RCL1):
- * 1. Minimum 2 harvesters (critical - economy collapses without them)
+ * 1. Minimum 2 miners (critical - economy collapses without them)
  * 2. Minimum 2 upgraders (prevent controller downgrade)
  * 3. Builders only if construction sites exist (max 2)
  * 4. Scale up upgraders if excess energy (max 4)
@@ -22,7 +22,7 @@
  * 
  * @param spawn - The spawn structure to manage
  * @param room - The room the spawn is in
- * @param harvesterCount - Current number of harvester creeps
+ * @param minerCount - Current number of miner creeps
  * @param upgraderCount - Current number of upgrader creeps
  * @param builderCount - Current number of builder creeps
  * 
@@ -35,17 +35,17 @@
  * const spawn = Game.spawns['Spawn1'];
  * const room = spawn.room;
  * const creeps = room.find(FIND_MY_CREEPS);
- * const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+ * const minerCount = creeps.filter(c => c.memory.role === 'miner').length;
  * const upgraderCount = creeps.filter(c => c.memory.role === 'upgrader').length;
  * const builderCount = creeps.filter(c => c.memory.role === 'builder').length;
  * 
- * manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+ * manageSpawn(spawn, room, minerCount, upgraderCount, builderCount);
  * ```
  */
 export function manageSpawn(
   spawn: StructureSpawn,
   room: Room,
-  harvesterCount: number,
+  minerCount: number,
   upgraderCount: number,
   builderCount: number
 ): void {
@@ -55,10 +55,10 @@ export function manageSpawn(
   const energy = room.energyAvailable;
   const constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
 
-  // PRIORITY 1: Emergency - Always maintain minimum harvesters
-  // Without harvesters, no energy flows and the economy collapses
-  if (harvesterCount < 2) {
-    spawnHarvester(spawn, room, energy);
+  // PRIORITY 1: Emergency - Always maintain minimum miners
+  // Without miners, no energy flows and the economy collapses
+  if (minerCount < 2) {
+    spawnMiner(spawn, room, energy);
     return;
   }
 
@@ -88,20 +88,20 @@ export function manageSpawn(
 }
 
 /**
- * Spawns a harvester creep with optimal body for available energy.
+ * Spawns a miner creep with optimal body for available energy.
  * 
  * @param spawn - The spawn structure to use
  * @param room - The room to spawn in
  * @param energy - Available energy for spawning
  */
-function spawnHarvester(spawn: StructureSpawn, room: Room, energy: number): void {
+function spawnMiner(spawn: StructureSpawn, room: Room, energy: number): void {
   const body = getBody(energy);
-  const result = spawn.spawnCreep(body, `harvester_${Game.time}`, {
-    memory: { role: 'harvester', room: room.name, working: false }
+  const result = spawn.spawnCreep(body, `miner_${Game.time}`, {
+    memory: { role: 'miner', room: room.name, working: false }
   });
   
   if (result === OK) {
-    console.log(`🌾 Spawning harvester with ${energy} energy (${body.length} parts)`);
+    console.log(`🌾 Spawning miner with ${energy} energy (${body.length} parts)`);
   }
   // Possible errors: ERR_NOT_ENOUGH_ENERGY, ERR_NAME_EXISTS, ERR_BUSY
 }

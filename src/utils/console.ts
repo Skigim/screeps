@@ -9,7 +9,7 @@
  * > help()                          // Show all commands
  * > status()                        // Full colony status
  * > status('W1N1')                  // Room-specific status
- * > spawn('harvester', 'W1N1')      // Spawn a role in a room
+ * > spawn('miner', 'W1N1')          // Spawn a role in a room
  * > despawn('creep_name')           // Delete a creep
  * > pos(10, 20, 'W1N1')             // Go to position
  * > memory()                        // View full memory
@@ -86,6 +86,34 @@ function getCurrentRoom(): string | null {
 }
 
 /**
+ * Generate an auto-incremented name for a creep based on role
+ * 
+ * @param role - The role name (e.g., 'harvester', 'hauler')
+ * @returns Auto-generated name (e.g., 'H1', 'H2', 'U1', 'B1')
+ */
+function generateCreepName(role: string): string {
+  // Get role abbreviation (first letter, uppercase)
+  const abbr = role.charAt(0).toUpperCase();
+  
+  // Find highest existing number for this role
+  let maxNum = 0;
+  const pattern = new RegExp(`^${abbr}(\\d+)$`);
+  
+  for (const creep of Object.values(Game.creeps)) {
+    const match = creep.name.match(pattern);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) {
+        maxNum = num;
+      }
+    }
+  }
+  
+  // Return next number
+  return `${abbr}${maxNum + 1}`;
+}
+
+/**
  * Print a formatted header
  */
 function header(text: string): void {
@@ -142,7 +170,7 @@ export function help(): void {
   console.log('  untask(name)         - Clear task from creep');
   console.log('');
   console.log('  Task types: harvest, deliver, build, upgrade, repair, move, idle');
-  console.log('  Example: task("harvester_1", "harvest", "SourceA")');
+  console.log('  Example: task("miner_1", "harvest", "SourceA")');
 
   section('STRUCTURE REGISTRY');
   console.log('  scan()               - Scan current room structures (or all if none)');
@@ -246,12 +274,12 @@ export function status(roomName?: string): void {
 /**
  * SPAWN - Spawn a creep of a given role
  * 
- * @param role - Role name (harvester, upgrader, builder)
+ * @param role - Role name (miner, upgrader, builder)
  * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  * 
- * @example spawn('harvester', 'W1N1')
- * @example spawn('harvester')
+ * @example spawn('miner', 'W1N1')
+ * @example spawn('miner')
  */
 export function spawn(role: string, roomName?: string): Creep | false {
   const targetRoom = roomName || getCurrentRoom();
@@ -305,7 +333,7 @@ export function spawn(role: string, roomName?: string): Creep | false {
  * DESPAWN - Delete a creep
  * 
  * @param creepName - Name of creep to delete
- * @example despawn('harvester_12345')
+ * @example despawn('miner_12345')
  */
 export function despawn(creepName: string): void {
   const creep = Game.creeps[creepName];
@@ -321,23 +349,45 @@ export function despawn(creepName: string): void {
 /**
  * SPAWNCREEP - Spawn a creep with specific name and body configuration
  * 
- * @param creepName - Custom name for the creep (e.g., 'Harvester1')
+ * @param creepName - Custom name for the creep (e.g., 'Harvester1'), or omit to auto-generate
  * @param role - Role name (harvester, upgrader, builder)
  * @param bodyTypeOrArray - Body config name (e.g., 'harvester_basic') or array of parts
  * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  * 
- * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic', 'W1N1')
- * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic')
- * @example spawnCreep('Scout1', 'scout', [MOVE], 'W1N1')
+ * @example spawnCreep('M1', 'miner', [WORK, WORK, MOVE]) - Named
+ * @example spawnCreep('miner', [WORK, WORK, MOVE]) - Auto-named (generates M1, M2, etc)
+ * @example spawnCreep('upgrader', [WORK, CARRY, MOVE], 'W1N1') - Auto-named in specific room
  */
 export function spawnCreep(
-  creepName: string,
-  role: string,
-  bodyTypeOrArray: string | BodyPartConstant[],
+  creepNameOrRole: string,
+  roleOrBody?: string | BodyPartConstant[],
+  bodyOrRoom?: string | BodyPartConstant[],
   roomName?: string
 ): Creep | false {
-  const targetRoom = roomName || getCurrentRoom();
+  // Handle overloaded parameters
+  // Case 1: spawnCreep(name, role, body, room?) - explicit name
+  // Case 2: spawnCreep(role, body, room?) - auto-generate name
+  let creepName: string;
+  let role: string;
+  let bodyTypeOrArray: string | BodyPartConstant[];
+  let targetRoomName: string | undefined;
+
+  if (roleOrBody === undefined || Array.isArray(roleOrBody)) {
+    // Case 2: Auto-generate name
+    role = creepNameOrRole;
+    bodyTypeOrArray = roleOrBody || [];
+    targetRoomName = bodyOrRoom as string | undefined;
+    creepName = generateCreepName(role);
+  } else {
+    // Case 1: Explicit name
+    creepName = creepNameOrRole;
+    role = roleOrBody;
+    bodyTypeOrArray = bodyOrRoom || [];
+    targetRoomName = roomName;
+  }
+
+  const targetRoom = targetRoomName || getCurrentRoom();
   if (!targetRoom) {
     console.log(`❌ No room specified and no current room found`);
     return false;
@@ -433,7 +483,7 @@ export function creeps(roomName?: string): void {
  * 
  * @param key - Optional: view specific key (creep name or memory path)
  * @example memory()
- * @example memory('harvester_12345')
+ * @example memory('miner_12345')
  */
 export function memory(key?: string): void {
   if (!key) {
@@ -618,9 +668,9 @@ export function mode(newMode?: 'command' | 'delegate'): void {
  * @param creepName - Name of creep to assign task to
  * @param taskType - Type of task: harvest, deliver, build, upgrade, move, repair, idle
  * @param targetId - Target ID (for harvest, deliver, build, repair)
- * @example task('harvester_123', 'harvest', 'abc123def')
- * @example task('harvester_123', 'upgrade')
- * @example task('harvester_123', 'move', '25:20:W1N1')
+ * @example task('miner_123', 'harvest', 'abc123def')
+ * @example task('miner_123', 'upgrade')
+ * @example task('miner_123', 'move', '25:20:W1N1')
  */
 export function task(creepName: string, taskType: string, targetId?: string): void {
   const creep = Game.creeps[creepName];
@@ -733,7 +783,7 @@ export function tasks(roomName?: string): void {
  * UNTASK - Clear task from a creep
  * 
  * @param creepName - Name of creep to clear task from
- * @example untask('harvester_123')
+ * @example untask('miner_123')
  */
 export function untask(creepName: string): void {
   const creep = Game.creeps[creepName];
@@ -961,7 +1011,7 @@ export function legaList(roomName?: string): void {
  * 
  * @param role - Optional: filter by role
  * @example bodies()
- * @example bodies('harvester')
+ * @example bodies('miner')
  */
 export function bodies(role?: string): void {
   listBodyConfigs(role);
@@ -973,7 +1023,7 @@ export function bodies(role?: string): void {
  * @param name - Name of the body type
  * @param partsArray - Array of body parts
  * @param role - Optional: role this body is for
- * @example regBody('harvester_v2', [WORK, WORK, CARRY, MOVE], 'harvester')
+ * @example regBody('miner_v2', [WORK, WORK, CARRY, MOVE], 'miner')
  * @example regBody('scout', [MOVE])
  */
 export function regBody(name: string, partsArray: BodyPartConstant[], role: string = 'generic'): void {

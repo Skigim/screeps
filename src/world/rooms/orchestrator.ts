@@ -65,7 +65,7 @@ export function runRoom(room: Room): void {
   
   // Count creeps by role for spawn manager
   const roleCounts = countCreepsByRole(creeps);
-  const { harvesterCount, upgraderCount, builderCount } = roleCounts;
+  const { minerCount, upgraderCount, builderCount } = roleCounts;
 
   // Log room statistics for debugging (every 100 ticks to reduce console spam)
   if (Game.time % 100 === 0) {
@@ -76,7 +76,7 @@ export function runRoom(room: Room): void {
   // SKIP automatic spawning in COMMAND mode - user has full manual control
   // In DELEGATE mode, AI automatically spawns creeps based on priorities
   if (!isCommandMode()) {
-    manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+    manageSpawn(spawn, room, minerCount, upgraderCount, builderCount);
   }
 
   // Run behavior for each creep in the room
@@ -97,16 +97,16 @@ export function runRoom(room: Room): void {
  * and makes it easy to add new roles in the future.
  */
 function countCreepsByRole(creeps: Creep[]): {
-  harvesterCount: number;
+  minerCount: number;
   upgraderCount: number;
   builderCount: number;
 } {
-  const harvesters = creeps.filter(c => c.memory.role === 'harvester');
+  const miners = creeps.filter(c => c.memory.role === 'miner');
   const upgraders = creeps.filter(c => c.memory.role === 'upgrader');
   const builders = creeps.filter(c => c.memory.role === 'builder');
 
   return {
-    harvesterCount: harvesters.length,
+    minerCount: miners.length,
     upgraderCount: upgraders.length,
     builderCount: builders.length
   };
@@ -130,13 +130,13 @@ function countCreepsByRole(creeps: Creep[]): {
  */
 function logRoomStats(
   room: Room,
-  roleCounts: { harvesterCount: number; upgraderCount: number; builderCount: number }
+  roleCounts: { minerCount: number; upgraderCount: number; builderCount: number }
 ): void {
-  const { harvesterCount, upgraderCount, builderCount } = roleCounts;
+  const { minerCount, upgraderCount, builderCount } = roleCounts;
   const rcl = room.controller ? room.controller.level : 0;
   
   console.log(
-    `📊 ${room.name}: H=${harvesterCount}, U=${upgraderCount}, B=${builderCount}, RCL=${rcl}`
+    `📊 ${room.name}: M=${minerCount}, U=${upgraderCount}, B=${builderCount}, RCL=${rcl}`
   );
 }
 

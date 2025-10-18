@@ -37,7 +37,7 @@ export interface BehaviorConfig {
  * RCL1 Behavior Configuration
  *
  * At RCL1, we focus on the core economy:
- * - Harvesters: Gather energy from sources
+ * - Miners: Gather energy from sources
  * - Upgraders: Keep controller from downgrading
  * - Builders: Build towards extensions for RCL2
  *
@@ -48,13 +48,13 @@ export declare const rcl1Behavior: BehaviorConfig;
  * RCL2 Behavior Configuration
  *
  * At RCL2, we unlock extensions and expand capacity.
- * Uses flexible harvester bodies and dedicated haulers.
+ * Uses flexible miner bodies and dedicated haulers.
  *
- * Harvester body strategy:
+ * Miner body strategy:
  * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
  *   Can be assigned to a specific source via task system
- *   Harvests continuously without moving energy
- * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile harvester
+ *   Mines continuously without moving energy
+ * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile miner
  *   Can roam between sources or be task-assigned
  *   Delivers energy to spawn/extensions
  */

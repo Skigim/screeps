@@ -83,7 +83,7 @@ export {
 } from './creeps/legatus';
 
 // Export creep dispatcher and individual role behaviors
-export { runCreep, runHarvester, runUpgrader, runBuilder } from './creeps';
+export { runCreep, runMiner, runUpgrader, runBuilder } from './creeps';
 
 // Export behavior configuration system
 export {

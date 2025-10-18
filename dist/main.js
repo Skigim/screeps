@@ -6,7 +6,7 @@
  * Manages creep spawning strategy and body design for RCL1 foundation.
  *
  * Spawning Priority (RCL1):
- * 1. Minimum 2 harvesters (critical - economy collapses without them)
+ * 1. Minimum 2 miners (critical - economy collapses without them)
  * 2. Minimum 2 upgraders (prevent controller downgrade)
  * 3. Builders only if construction sites exist (max 2)
  * 4. Scale up upgraders if excess energy (max 4)
@@ -23,7 +23,7 @@
  *
  * @param spawn - The spawn structure to manage
  * @param room - The room the spawn is in
- * @param harvesterCount - Current number of harvester creeps
+ * @param minerCount - Current number of miner creeps
  * @param upgraderCount - Current number of upgrader creeps
  * @param builderCount - Current number of builder creeps
  *
@@ -36,23 +36,23 @@
  * const spawn = Game.spawns['Spawn1'];
  * const room = spawn.room;
  * const creeps = room.find(FIND_MY_CREEPS);
- * const harvesterCount = creeps.filter(c => c.memory.role === 'harvester').length;
+ * const minerCount = creeps.filter(c => c.memory.role === 'miner').length;
  * const upgraderCount = creeps.filter(c => c.memory.role === 'upgrader').length;
  * const builderCount = creeps.filter(c => c.memory.role === 'builder').length;
  *
- * manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+ * manageSpawn(spawn, room, minerCount, upgraderCount, builderCount);
  * ```
  */
-function manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount) {
+function manageSpawn(spawn, room, minerCount, upgraderCount, builderCount) {
     // Don't try to spawn if already spawning
     if (spawn.spawning)
         return;
     const energy = room.energyAvailable;
     const constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
-    // PRIORITY 1: Emergency - Always maintain minimum harvesters
-    // Without harvesters, no energy flows and the economy collapses
-    if (harvesterCount < 2) {
-        spawnHarvester(spawn, room, energy);
+    // PRIORITY 1: Emergency - Always maintain minimum miners
+    // Without miners, no energy flows and the economy collapses
+    if (minerCount < 2) {
+        spawnMiner(spawn, room, energy);
         return;
     }
     // PRIORITY 2: Maintain upgraders to prevent controller downgrade
@@ -77,19 +77,19 @@ function manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount) {
     // No spawning needed at this time
 }
 /**
- * Spawns a harvester creep with optimal body for available energy.
+ * Spawns a miner creep with optimal body for available energy.
  *
  * @param spawn - The spawn structure to use
  * @param room - The room to spawn in
  * @param energy - Available energy for spawning
  */
-function spawnHarvester(spawn, room, energy) {
+function spawnMiner(spawn, room, energy) {
     const body = getBody(energy);
-    const result = spawn.spawnCreep(body, `harvester_${Game.time}`, {
-        memory: { role: 'harvester', room: room.name, working: false }
+    const result = spawn.spawnCreep(body, `miner_${Game.time}`, {
+        memory: { role: 'miner', room: room.name, working: false }
     });
     if (result === OK) {
-        console.log(`🌾 Spawning harvester with ${energy} energy (${body.length} parts)`);
+        console.log(`🌾 Spawning miner with ${energy} energy (${body.length} parts)`);
     }
     // Possible errors: ERR_NOT_ENOUGH_ENERGY, ERR_NAME_EXISTS, ERR_BUSY
 }
@@ -172,46 +172,46 @@ function getBody(energy) {
 }
 
 /**
- * HARVESTER BEHAVIOR MODULE
+ * MINER BEHAVIOR MODULE
  *
- * The harvester is the backbone of your economy in Screeps.
+ * The miner is the backbone of your economy in Screeps.
  * It gathers energy from sources and delivers it to spawn/extensions.
  *
  * RCL1 Strategy:
- * - Harvest from the nearest active source
+ * - Mine from the nearest active source
  * - Deliver energy to spawn first (ensures spawning never stops)
  * - If spawn is full, deliver to extensions (RCL2+)
  * - If all structures are full, help upgrade the controller
  *
  * State Machine:
- * - working: false → Creep is empty, needs to harvest
+ * - working: false → Creep is empty, needs to mine
  * - working: true → Creep is full, needs to deliver energy
  */
 /**
- * Main behavior function for harvester role.
- * Called once per game tick for each harvester creep.
+ * Main behavior function for miner role.
+ * Called once per game tick for each miner creep.
  *
- * @param creep - The creep to run harvester behavior on
+ * @param creep - The creep to run miner behavior on
  *
  * @example
  * ```typescript
- * const harvester = Game.creeps['harvester_12345'];
- * runHarvester(harvester);
+ * const miner = Game.creeps['miner_12345'];
+ * runMiner(miner);
  * ```
  */
-function runHarvester(creep) {
-    // State machine: Switch between harvesting and delivering
+function runMiner(creep) {
+    // State machine: Switch between mining and delivering
     // When completely full, switch to "working" (delivering) mode
     if (creep.store.getFreeCapacity() === 0) {
         creep.memory.working = true;
     }
-    // When completely empty, switch to harvesting mode
+    // When completely empty, switch to mining mode
     if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
         creep.memory.working = false;
     }
     if (!creep.memory.working) {
-        // HARVESTING MODE: Get energy from source
-        harvestEnergy(creep);
+        // MINING MODE: Get energy from source
+        mineEnergy(creep);
     }
     else {
         // DELIVERING MODE: Deliver energy to structures
@@ -219,28 +219,28 @@ function runHarvester(creep) {
     }
 }
 /**
- * Harvests energy from a source.
+ * Mines energy from a source.
  *
- * Supports both task-assigned and mobile harvesting:
+ * Supports both task-assigned and mobile mining:
  * - If creep has no CARRY parts (stationary miner):
  *   Will automatically stay at assigned/nearest source
- * - If creep has CARRY parts (mobile harvester):
+ * - If creep has CARRY parts (mobile miner):
  *   Can be assigned to specific source or roams freely
  *
  * Flow:
  * 1. Check if creep has a task assignment (e.g., 'harvest' from 'SourceB')
- * 2. If assigned, travel to and harvest from that specific source
+ * 2. If assigned, travel to and mine from that specific source
  * 3. If not assigned, find nearest active source (mobile behavior)
- * 4. Harvest when in range, travel when not
+ * 4. Mine when in range, travel when not
  *
- * @param creep - The creep that should harvest
+ * @param creep - The creep that should mine
  *
  * @remarks
  * Creeps without CARRY parts naturally stay put since they can't
  * move energy anyway. Creeps with CARRY parts can be assigned to
  * specific sources or left to roam.
  */
-function harvestEnergy(creep) {
+function mineEnergy(creep) {
     let source = null;
     // Check if creep has a harvest task with a target source
     if (creep.memory.task && creep.memory.task.type === 'harvest') {
@@ -260,7 +260,7 @@ function harvestEnergy(creep) {
         source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
     }
     if (source) {
-        // Try to harvest. Returns OK if successful, or an error code
+        // Try to mine. Returns OK if successful, or an error code
         const result = creep.harvest(source);
         if (result === ERR_NOT_IN_RANGE) {
             // Too far away, move closer
@@ -304,14 +304,14 @@ function deliverEnergy$1(creep) {
     }
     else {
         // All spawn/extensions full, help with upgrading
-        // This prevents wasting harvester time when storage is full
+        // This prevents wasting miner time when storage is full
         upgradeControllerFallback$1(creep);
     }
 }
 /**
  * Fallback behavior: Upgrade controller when no delivery targets.
  *
- * This prevents harvesters from idling when spawn and extensions
+ * This prevents miners from idling when spawn and extensions
  * are full. Instead, they contribute to controller progress.
  *
  * @param creep - The creep that should upgrade
@@ -815,7 +815,7 @@ function upgradeControllerFallback(creep) {
  * RCL1 Behavior Configuration
  *
  * At RCL1, we focus on the core economy:
- * - Harvesters: Gather energy from sources
+ * - Miners: Gather energy from sources
  * - Upgraders: Keep controller from downgrading
  * - Builders: Build towards extensions for RCL2
  *
@@ -824,14 +824,14 @@ function upgradeControllerFallback(creep) {
 const rcl1Behavior = {
     rcl: 1,
     name: 'RCL1 Foundation',
-    description: 'Core economy: harvest, upgrade, build',
+    description: 'Core economy: mine, upgrade, build',
     roles: [
         {
-            name: 'harvester',
+            name: 'miner',
             priority: 100,
             targetCount: 2,
             body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-            options: { comment: 'Dual work parts for faster harvesting' }
+            options: { comment: 'Dual work parts for faster mining' }
         },
         {
             name: 'upgrader',
@@ -853,27 +853,27 @@ const rcl1Behavior = {
  * RCL2 Behavior Configuration
  *
  * At RCL2, we unlock extensions and expand capacity.
- * Uses flexible harvester bodies and dedicated haulers.
+ * Uses flexible miner bodies and dedicated haulers.
  *
- * Harvester body strategy:
+ * Miner body strategy:
  * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
  *   Can be assigned to a specific source via task system
- *   Harvests continuously without moving energy
- * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile harvester
+ *   Mines continuously without moving energy
+ * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile miner
  *   Can roam between sources or be task-assigned
  *   Delivers energy to spawn/extensions
  */
 const rcl2Behavior = {
     rcl: 2,
     name: 'RCL2 Expansion',
-    description: 'With extensions: flexible harvesters and specialized support roles',
+    description: 'With extensions: flexible miners and specialized support roles',
     roles: [
         {
-            name: 'harvester',
+            name: 'miner',
             priority: 100,
             targetCount: 2,
             body: [WORK, WORK, WORK, CARRY, MOVE, MOVE],
-            options: { comment: 'Flexible harvester - roams or tasks to specific source' }
+            options: { comment: 'Flexible miner - roams or tasks to specific source' }
         },
         {
             name: 'hauler',
@@ -1190,7 +1190,7 @@ function getTaskDescription(task) {
  * to the correct handler based on its role.
  *
  * Architecture:
- * - Each role has its own file (harvester.ts, upgrader.ts, builder.ts)
+ * - Each role has its own file (miner.ts, upgrader.ts, builder.ts)
  * - behaviors.ts defines RCL-specific configurations
  * - This index exports a unified `runCreep` function
  * - Main loop calls `runCreep` for each creep
@@ -1222,8 +1222,8 @@ function getTaskDescription(task) {
 function runCreep(creep) {
     // Dispatch based on role stored in creep memory
     switch (creep.memory.role) {
-        case 'harvester':
-            runHarvester(creep);
+        case 'miner':
+            runMiner(creep);
             break;
         case 'hauler':
             runHauler(creep);
@@ -1705,7 +1705,7 @@ function runRoom(room) {
     const creeps = room.find(FIND_MY_CREEPS);
     // Count creeps by role for spawn manager
     const roleCounts = countCreepsByRole(creeps);
-    const { harvesterCount, upgraderCount, builderCount } = roleCounts;
+    const { minerCount, upgraderCount, builderCount } = roleCounts;
     // Log room statistics for debugging (every 100 ticks to reduce console spam)
     if (Game.time % 100 === 0) {
         logRoomStats(room, roleCounts);
@@ -1714,7 +1714,7 @@ function runRoom(room) {
     // SKIP automatic spawning in COMMAND mode - user has full manual control
     // In DELEGATE mode, AI automatically spawns creeps based on priorities
     if (!isCommandMode()) {
-        manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
+        manageSpawn(spawn, room, minerCount, upgraderCount, builderCount);
     }
     // Run behavior for each creep in the room
     runCreeps(creeps);
@@ -1732,11 +1732,11 @@ function runRoom(room) {
  * and makes it easy to add new roles in the future.
  */
 function countCreepsByRole(creeps) {
-    const harvesters = creeps.filter(c => c.memory.role === 'harvester');
+    const miners = creeps.filter(c => c.memory.role === 'miner');
     const upgraders = creeps.filter(c => c.memory.role === 'upgrader');
     const builders = creeps.filter(c => c.memory.role === 'builder');
     return {
-        harvesterCount: harvesters.length,
+        minerCount: miners.length,
         upgraderCount: upgraders.length,
         builderCount: builders.length
     };
@@ -1758,9 +1758,9 @@ function countCreepsByRole(creeps) {
  * only every N ticks or when values change.
  */
 function logRoomStats(room, roleCounts) {
-    const { harvesterCount, upgraderCount, builderCount } = roleCounts;
+    const { minerCount, upgraderCount, builderCount } = roleCounts;
     const rcl = room.controller ? room.controller.level : 0;
-    console.log(`📊 ${room.name}: H=${harvesterCount}, U=${upgraderCount}, B=${builderCount}, RCL=${rcl}`);
+    console.log(`📊 ${room.name}: M=${minerCount}, U=${upgraderCount}, B=${builderCount}, RCL=${rcl}`);
 }
 /**
  * Runs behavior for all creeps in the room.
@@ -1951,8 +1951,8 @@ function getBodyCost(nameOrArray) {
  * Called once on startup
  */
 function registerDefaultBodies() {
-    // RCL1 Harvester - balanced for early game
-    registerBody('harvester_basic', [WORK, CARRY, MOVE], 'harvester');
+    // RCL1 Miner - balanced for early game
+    registerBody('miner_basic', [WORK, CARRY, MOVE], 'miner');
     // RCL1 Upgrader
     registerBody('upgrader_basic', [WORK, CARRY, MOVE], 'upgrader');
     // RCL1 Builder
@@ -2556,7 +2556,7 @@ Creep.prototype.travelTo = function (destination, options) {
  * > help()                          // Show all commands
  * > status()                        // Full colony status
  * > status('W1N1')                  // Room-specific status
- * > spawn('harvester', 'W1N1')      // Spawn a role in a room
+ * > spawn('miner', 'W1N1')          // Spawn a role in a room
  * > despawn('creep_name')           // Delete a creep
  * > pos(10, 20, 'W1N1')             // Go to position
  * > memory()                        // View full memory
@@ -2582,6 +2582,30 @@ function getCurrentRoom() {
         }
     }
     return null;
+}
+/**
+ * Generate an auto-incremented name for a creep based on role
+ *
+ * @param role - The role name (e.g., 'harvester', 'hauler')
+ * @returns Auto-generated name (e.g., 'H1', 'H2', 'U1', 'B1')
+ */
+function generateCreepName(role) {
+    // Get role abbreviation (first letter, uppercase)
+    const abbr = role.charAt(0).toUpperCase();
+    // Find highest existing number for this role
+    let maxNum = 0;
+    const pattern = new RegExp(`^${abbr}(\\d+)$`);
+    for (const creep of Object.values(Game.creeps)) {
+        const match = creep.name.match(pattern);
+        if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) {
+                maxNum = num;
+            }
+        }
+    }
+    // Return next number
+    return `${abbr}${maxNum + 1}`;
 }
 /**
  * Print a formatted header
@@ -2633,7 +2657,7 @@ function help() {
     console.log('  untask(name)         - Clear task from creep');
     console.log('');
     console.log('  Task types: harvest, deliver, build, upgrade, repair, move, idle');
-    console.log('  Example: task("harvester_1", "harvest", "SourceA")');
+    console.log('  Example: task("miner_1", "harvest", "SourceA")');
     section('STRUCTURE REGISTRY');
     console.log('  scan()               - Scan current room structures (or all if none)');
     console.log('  scan(room)           - Register structures in a room');
@@ -2718,12 +2742,12 @@ function status(roomName) {
 /**
  * SPAWN - Spawn a creep of a given role
  *
- * @param role - Role name (harvester, upgrader, builder)
+ * @param role - Role name (miner, upgrader, builder)
  * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  *
- * @example spawn('harvester', 'W1N1')
- * @example spawn('harvester')
+ * @example spawn('miner', 'W1N1')
+ * @example spawn('miner')
  */
 function spawn(role, roomName) {
     var _a;
@@ -2771,7 +2795,7 @@ function spawn(role, roomName) {
  * DESPAWN - Delete a creep
  *
  * @param creepName - Name of creep to delete
- * @example despawn('harvester_12345')
+ * @example despawn('miner_12345')
  */
 function despawn(creepName) {
     const creep = Game.creeps[creepName];
@@ -2785,18 +2809,39 @@ function despawn(creepName) {
 /**
  * SPAWNCREEP - Spawn a creep with specific name and body configuration
  *
- * @param creepName - Custom name for the creep (e.g., 'Harvester1')
+ * @param creepName - Custom name for the creep (e.g., 'Harvester1'), or omit to auto-generate
  * @param role - Role name (harvester, upgrader, builder)
  * @param bodyTypeOrArray - Body config name (e.g., 'harvester_basic') or array of parts
  * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  *
- * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic', 'W1N1')
- * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic')
- * @example spawnCreep('Scout1', 'scout', [MOVE], 'W1N1')
+ * @example spawnCreep('M1', 'miner', [WORK, WORK, MOVE]) - Named
+ * @example spawnCreep('miner', [WORK, WORK, MOVE]) - Auto-named (generates M1, M2, etc)
+ * @example spawnCreep('upgrader', [WORK, CARRY, MOVE], 'W1N1') - Auto-named in specific room
  */
-function spawnCreep(creepName, role, bodyTypeOrArray, roomName) {
-    const targetRoom = roomName || getCurrentRoom();
+function spawnCreep(creepNameOrRole, roleOrBody, bodyOrRoom, roomName) {
+    // Handle overloaded parameters
+    // Case 1: spawnCreep(name, role, body, room?) - explicit name
+    // Case 2: spawnCreep(role, body, room?) - auto-generate name
+    let creepName;
+    let role;
+    let bodyTypeOrArray;
+    let targetRoomName;
+    if (roleOrBody === undefined || Array.isArray(roleOrBody)) {
+        // Case 2: Auto-generate name
+        role = creepNameOrRole;
+        bodyTypeOrArray = roleOrBody || [];
+        targetRoomName = bodyOrRoom;
+        creepName = generateCreepName(role);
+    }
+    else {
+        // Case 1: Explicit name
+        creepName = creepNameOrRole;
+        role = roleOrBody;
+        bodyTypeOrArray = bodyOrRoom || [];
+        targetRoomName = roomName;
+    }
+    const targetRoom = targetRoomName || getCurrentRoom();
     if (!targetRoom) {
         console.log(`❌ No room specified and no current room found`);
         return false;
@@ -2880,7 +2925,7 @@ function creeps(roomName) {
  *
  * @param key - Optional: view specific key (creep name or memory path)
  * @example memory()
- * @example memory('harvester_12345')
+ * @example memory('miner_12345')
  */
 function memory(key) {
     if (!key) {
@@ -3052,9 +3097,9 @@ function mode(newMode) {
  * @param creepName - Name of creep to assign task to
  * @param taskType - Type of task: harvest, deliver, build, upgrade, move, repair, idle
  * @param targetId - Target ID (for harvest, deliver, build, repair)
- * @example task('harvester_123', 'harvest', 'abc123def')
- * @example task('harvester_123', 'upgrade')
- * @example task('harvester_123', 'move', '25:20:W1N1')
+ * @example task('miner_123', 'harvest', 'abc123def')
+ * @example task('miner_123', 'upgrade')
+ * @example task('miner_123', 'move', '25:20:W1N1')
  */
 function task(creepName, taskType, targetId) {
     const creep = Game.creeps[creepName];
@@ -3150,7 +3195,7 @@ function tasks(roomName) {
  * UNTASK - Clear task from a creep
  *
  * @param creepName - Name of creep to clear task from
- * @example untask('harvester_123')
+ * @example untask('miner_123')
  */
 function untask(creepName) {
     const creep = Game.creeps[creepName];
@@ -3358,7 +3403,7 @@ function legaList(roomName) {
  *
  * @param role - Optional: filter by role
  * @example bodies()
- * @example bodies('harvester')
+ * @example bodies('miner')
  */
 function bodies(role) {
     listBodyConfigs(role);
@@ -3369,7 +3414,7 @@ function bodies(role) {
  * @param name - Name of the body type
  * @param partsArray - Array of body parts
  * @param role - Optional: role this body is for
- * @example regBody('harvester_v2', [WORK, WORK, CARRY, MOVE], 'harvester')
+ * @example regBody('miner_v2', [WORK, WORK, CARRY, MOVE], 'miner')
  * @example regBody('scout', [MOVE])
  */
 function regBody(name, partsArray, role = 'generic') {
@@ -3415,9 +3460,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: '4d10fe2'};
+  commitHash: 'b9a83f5'};
 
-const INIT_VERSION = '4d10fe2';
+const INIT_VERSION = 'b9a83f5';
 
 /**
  * PROJECT IMPERIUM - RCL1 FOUNDATION

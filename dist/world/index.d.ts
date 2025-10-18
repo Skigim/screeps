@@ -30,7 +30,7 @@ export { getMode, setMode, displayModeInfo, isCommandMode, isDelegateMode, getTi
 export { getStructureName, getStructureId, scanRoom, lockStructure, unlockStructure, isLocked, getStructuresInRoom, getStructuresByType, renameStructure, getStructureInfo, getLockedStructures, listStructures, updateConstructionSites, type StructureInfo } from './structures';
 export { showNames, hideNames, shouldShowNames, renderStructureNames, getVisualStatus, getActiveVisualRooms } from './visuals';
 export { issueCommandToRole, issueCommandToCreep, getCreepCommand, clearCreepCommand, getRoomAssignments, getCreepAssignment, clearRoomAssignments, getLegaStatus, listLegaAssignments, type LegaCommand } from './creeps/legatus';
-export { runCreep, runHarvester, runUpgrader, runBuilder } from './creeps';
+export { runCreep, runMiner, runUpgrader, runBuilder } from './creeps';
 export { getBehaviorConfig, getRoleConfig, getRolesByPriority, rcl1Behavior, rcl2Behavior, type BehaviorConfig, type RoleConfig } from './creeps';
 export { getSpawnRequests, getNextSpawnRequest, getSpawnStatus, type SpawnRequest } from './creeps/spawning';
 export { manageSpawn, getBody, getSpawnStatus as getSpawnLegacyStatus } from './spawns';

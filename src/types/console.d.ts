@@ -13,8 +13,8 @@
  * @example
  * // In VS Code, you'll get autocomplete for:
  * status()
- * spawn('harvester', 'E3S42')
- * spawnCreep('H1', 'harvester', 'harvester_basic')
+ * spawn('miner', 'E3S42')
+ * spawnCreep('M1', 'miner', 'miner_basic')
  */
 
 // ==================== STATUS & INFO ====================
@@ -37,7 +37,7 @@ declare function help(): void;
  * View Memory structure and creep-specific data.
  * @param key - Optional: specific creep name or memory key
  * @example memory()
- * @example memory('harvester_12345')
+ * @example memory('miner_12345')
  * @example memory('empire')
  */
 declare function memory(key?: string): void;
@@ -68,23 +68,23 @@ declare function room(name: string): Room | null;
 
 /**
  * Spawn a creep with auto-generated name.
- * @param role - Role type: 'harvester' | 'upgrader' | 'builder' | 'scout' | 'hauler'
+ * @param role - Role type: 'miner' | 'upgrader' | 'builder' | 'scout' | 'hauler'
  * @param roomName - Optional: room name (defaults to current room)
  * @returns The new creep or false if spawn failed
- * @example spawn('harvester')
- * @example spawn('harvester', 'E3S42')
+ * @example spawn('miner')
+ * @example spawn('miner', 'E3S42')
  */
 declare function spawn(role: string, roomName?: string): Creep | false;
 
 /**
  * Spawn a creep with custom name and body configuration.
- * @param creepName - Custom creep name (e.g., 'H1', 'Scout_Alpha')
- * @param role - Role type (e.g., 'harvester', 'upgrader', 'builder')
+ * @param creepName - Custom creep name (e.g., 'M1', 'Scout_Alpha')
+ * @param role - Role type (e.g., 'miner', 'upgrader', 'builder')
  * @param bodyTypeOrArray - Either a registered body config name or array of body parts
  * @param roomName - Optional: room name (defaults to current room)
  * @returns The new creep or false if spawn failed
- * @example spawnCreep('H1', 'harvester', 'harvester_basic')
- * @example spawnCreep('H2', 'harvester', [WORK, WORK, CARRY, MOVE], 'E3S42')
+ * @example spawnCreep('M1', 'miner', 'miner_basic')
+ * @example spawnCreep('M2', 'miner', [WORK, WORK, CARRY, MOVE], 'E3S42')
  */
 declare function spawnCreep(
   creepName: string,
@@ -112,18 +112,18 @@ declare function creeps(roomName?: string): void;
 
 /**
  * List all registered body configurations, optionally filtered by role.
- * @param role - Optional: filter by role (e.g., 'harvester', 'upgrader')
+ * @param role - Optional: filter by role (e.g., 'miner', 'upgrader')
  * @example bodies()
- * @example bodies('harvester')
+ * @example bodies('miner')
  */
 declare function bodies(role?: string): void;
 
 /**
  * Register a new body configuration.
- * @param name - Unique config name (e.g., 'harvester_v2', 'scout')
+ * @param name - Unique config name (e.g., 'miner_v2', 'scout')
  * @param partsArray - Array of body parts (e.g., [WORK, CARRY, MOVE])
  * @param role - Optional: role label (defaults to 'generic')
- * @example regBody('harvester_v2', [WORK, WORK, CARRY, MOVE], 'harvester')
+ * @example regBody('miner_v2', [WORK, WORK, CARRY, MOVE], 'miner')
  * @example regBody('fast_scout', [MOVE, MOVE])
  */
 declare function regBody(

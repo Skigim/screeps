@@ -135,8 +135,8 @@ export function getBodyCost(nameOrArray: string | BodyPartConstant[]): number {
  * Called once on startup
  */
 export function registerDefaultBodies(): void {
-  // RCL1 Harvester - balanced for early game
-  registerBody('harvester_basic', [WORK, CARRY, MOVE], 'harvester');
+  // RCL1 Miner - balanced for early game
+  registerBody('miner_basic', [WORK, CARRY, MOVE], 'miner');
 
   // RCL1 Upgrader
   registerBody('upgrader_basic', [WORK, CARRY, MOVE], 'upgrader');
