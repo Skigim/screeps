@@ -46,6 +46,12 @@ export function updateStats(room: Room): void {
   if (!Memory.stats) initializeStats();
 
   const stats = Memory.stats!;
+  
+  // Ensure rcl_history exists (safety check for existing memory)
+  if (!stats.rcl_history) {
+    stats.rcl_history = [];
+  }
+  
   const controller = room.controller;
 
   // Update RCL and tick counter

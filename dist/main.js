@@ -3477,9 +3477,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: 'daeb049'};
+  commitHash: 'd35e13a'};
 
-const INIT_VERSION = 'daeb049';
+const INIT_VERSION = 'd35e13a';
 
 /**
  * SILENT STATISTICS TRACKING
@@ -3527,6 +3527,10 @@ function updateStats(room) {
     if (!Memory.stats)
         initializeStats();
     const stats = Memory.stats;
+    // Ensure rcl_history exists (safety check for existing memory)
+    if (!stats.rcl_history) {
+        stats.rcl_history = [];
+    }
     const controller = room.controller;
     // Update RCL and tick counter
     if (controller) {
