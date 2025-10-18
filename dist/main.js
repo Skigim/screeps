@@ -323,11 +323,27 @@ function upgradeControllerFallback$2(creep) {
  * @param creep - The creep to run stationary harvester behavior on
  */
 function runStationaryHarvester(creep) {
-    // Assign to a source on first run
+    var _a;
     const memory = creep.memory;
-    if (!memory.assignedSource) {
+    // If a task is assigned, use the task target as the source name
+    // Otherwise, auto-assign to first source
+    if (((_a = memory.task) === null || _a === void 0 ? void 0 : _a.targetId) && !memory.assignedSource) {
+        // Task has a target (like 'SourceB'), find the actual source object
+        const targetName = memory.task.targetId;
         const sources = creep.room.find(FIND_SOURCES);
-        // Pick the first source (or could be smarter about distribution)
+        // Try to find source by checking if its auto-assigned name matches
+        // (SourceA = 0, SourceB = 1, etc.)
+        const sourceIndex = targetName.charCodeAt(targetName.length - 1) - 65; // A=0, B=1, etc.
+        if (sources[sourceIndex]) {
+            memory.assignedSource = sources[sourceIndex].id;
+        }
+        else if (sources.length > 0) {
+            memory.assignedSource = sources[0].id;
+        }
+    }
+    else if (!memory.assignedSource) {
+        // No task, auto-assign to first source
+        const sources = creep.room.find(FIND_SOURCES);
         if (sources.length > 0) {
             memory.assignedSource = sources[0].id;
         }
@@ -3499,9 +3515,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: '8354d19'};
+  commitHash: '892f8c8'};
 
-const INIT_VERSION = '8354d19';
+const INIT_VERSION = '892f8c8';
 
 /**
  * PROJECT IMPERIUM - RCL1 FOUNDATION
