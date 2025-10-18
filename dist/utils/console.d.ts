@@ -35,12 +35,13 @@ export declare function status(roomName?: string): void;
  * SPAWN - Spawn a creep of a given role
  *
  * @param role - Role name (harvester, upgrader, builder)
- * @param roomName - Room to spawn in
+ * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  *
  * @example spawn('harvester', 'W1N1')
+ * @example spawn('harvester')
  */
-export declare function spawn(role: string, roomName: string): Creep | false;
+export declare function spawn(role: string, roomName?: string): Creep | false;
 /**
  * DESPAWN - Delete a creep
  *
@@ -54,13 +55,14 @@ export declare function despawn(creepName: string): void;
  * @param creepName - Custom name for the creep (e.g., 'Harvester1')
  * @param role - Role name (harvester, upgrader, builder)
  * @param bodyTypeOrArray - Body config name (e.g., 'harvester_basic') or array of parts
- * @param roomName - Room to spawn in
+ * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  *
  * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic', 'W1N1')
+ * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic')
  * @example spawnCreep('Scout1', 'scout', [MOVE], 'W1N1')
  */
-export declare function spawnCreep(creepName: string, role: string, bodyTypeOrArray: string | BodyPartConstant[], roomName: string): Creep | false;
+export declare function spawnCreep(creepName: string, role: string, bodyTypeOrArray: string | BodyPartConstant[], roomName?: string): Creep | false;
 /**
  * CREEPS - List all creeps (optionally filtered by room)
  *
@@ -158,7 +160,7 @@ export declare function untask(creepName: string): void;
 /**
  * SCAN - Scan a room and register its structures
  *
- * @param roomName - Room to scan (defaults to first owned room)
+ * @param roomName - Optional: Room to scan (defaults to current room, or all owned rooms if none)
  * @example scan()
  * @example scan('W1N1')
  */
@@ -207,33 +209,37 @@ export declare function rename(oldName: string, newName: string): void;
 /**
  * SHOWNALES - Display structure names as visual labels on the map
  *
- * @param roomName - Room to display labels in
+ * @param roomName - Optional: Room to display labels in (defaults to current room)
  * @param duration - How many ticks to persist (default 3)
  * @example showNames('W1N1')
+ * @example showNames()
  * @example showNames('W1N1', 10)
  */
-export declare function showNames(roomName: string, duration?: number): void;
+export declare function showNames(roomName?: string, duration?: number): void;
 /**
  * HIDENAMES - Hide structure name displays
  *
- * @param roomName - Room to hide labels in
+ * @param roomName - Optional: Room to hide labels in (defaults to current room)
  * @example hideNames('W1N1')
+ * @example hideNames()
  */
-export declare function hideNames(roomName: string): void;
+export declare function hideNames(roomName?: string): void;
 /**
  * LEGASTATUS - Show LegatusOficio status for a room
  *
- * @param roomName - Room to query
+ * @param roomName - Optional: Room to query (defaults to current room)
  * @example legaStatus('W1N1')
+ * @example legaStatus()
  */
-export declare function legaStatus(roomName: string): void;
+export declare function legaStatus(roomName?: string): void;
 /**
  * LEGALIRT - List all Legatus assignments in a room
  *
- * @param roomName - Room to list
+ * @param roomName - Optional: Room to list (defaults to current room)
  * @example legaList('W1N1')
+ * @example legaList()
  */
-export declare function legaList(roomName: string): void;
+export declare function legaList(roomName?: string): void;
 /**
  * BODIES - List all registered body configurations
  *

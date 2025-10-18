@@ -65,6 +65,27 @@ import {
 } from '../world/spawns/bodies';
 
 /**
+ * Get the current room (first owned room, or first room with a creep)
+ */
+function getCurrentRoom(): string | null {
+  // Try to find a room with a creep first (most likely user context)
+  for (const creep of Object.values(Game.creeps)) {
+    if (creep.room?.controller?.my) {
+      return creep.room.name;
+    }
+  }
+
+  // Fall back to first owned room
+  for (const room of Object.values(Game.rooms)) {
+    if (room.controller?.my) {
+      return room.name;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Print a formatted header
  */
 function header(text: string): void {
@@ -98,7 +119,9 @@ export function help(): void {
   console.log('  config()             - View behavior configuration');
 
   section('SPAWNING & CREEPS');
+  console.log('  spawn(role)                      - Spawn a creep (auto-name, current room)');
   console.log('  spawn(role, room)                - Spawn a creep (auto-name)');
+  console.log('  spawnCreep(name, role, body)     - Spawn with name & body (current room)');
   console.log('  spawnCreep(name, role, body, room) - Spawn with name & body');
   console.log('  despawn(creepName)               - Delete a creep');
   console.log('  creeps(room?)                    - List all creeps (or by room)');
@@ -122,7 +145,7 @@ export function help(): void {
   console.log('  Example: task("harvester_1", "harvest", "SourceA")');
 
   section('STRUCTURE REGISTRY');
-  console.log('  scan()               - Register structures in all rooms');
+  console.log('  scan()               - Scan current room structures (or all if none)');
   console.log('  scan(room)           - Register structures in a room');
   console.log('  structures()         - List all registered structures');
   console.log('  structures(room)     - List structures in a room');
@@ -135,11 +158,16 @@ export function help(): void {
   console.log('  locked(room)         - View locked structures in room');
 
   section('VISUAL LABELS');
+  console.log('  showNames()          - Display labels on current room (3 ticks)');
   console.log('  showNames(room)      - Display structure names on map (3 ticks)');
+  console.log('  showNames(room, dur) - Display labels for duration ticks');
+  console.log('  hideNames()          - Hide labels on current room');
   console.log('  hideNames(room)      - Hide structure name displays');
 
   section('LEGATUS COMMANDS');
+  console.log('  legaStatus()         - Show Legatus assignments (current room)');
   console.log('  legaStatus(room)     - Show Legatus assignments in room');
+  console.log('  legaList()           - List all assignments (current room)');
   console.log('  legaList(room)       - List all assignments in room');
 
   section('ROOM MANAGEMENT');
@@ -160,7 +188,7 @@ export function help(): void {
   console.log('  mode("command")      - Switch to COMMAND mode (direct control)');
   console.log('  mode("delegate")     - Switch to DELEGATE mode (automatic AI)');
 
-  console.log('\n💡 Use any command without () to see its code\n');
+  console.log('\n💡 Most room-based commands default to current room if not specified\n');
 }
 
 /**
@@ -219,15 +247,22 @@ export function status(roomName?: string): void {
  * SPAWN - Spawn a creep of a given role
  * 
  * @param role - Role name (harvester, upgrader, builder)
- * @param roomName - Room to spawn in
+ * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  * 
  * @example spawn('harvester', 'W1N1')
+ * @example spawn('harvester')
  */
-export function spawn(role: string, roomName: string): Creep | false {
-  const room = Game.rooms[roomName];
+export function spawn(role: string, roomName?: string): Creep | false {
+  const targetRoom = roomName || getCurrentRoom();
+  if (!targetRoom) {
+    console.log(`❌ No room specified and no current room found`);
+    return false;
+  }
+
+  const room = Game.rooms[targetRoom];
   if (!room) {
-    console.log(`❌ Room not found: ${roomName}`);
+    console.log(`❌ Room not found: ${targetRoom}`);
     return false;
   }
 
@@ -252,7 +287,7 @@ export function spawn(role: string, roomName: string): Creep | false {
   const result = spawn.spawnCreep(roleConfig.body, creepName, {
     memory: {
       role,
-      room: roomName,
+      room: targetRoom,
       working: false
     }
   });
@@ -289,21 +324,28 @@ export function despawn(creepName: string): void {
  * @param creepName - Custom name for the creep (e.g., 'Harvester1')
  * @param role - Role name (harvester, upgrader, builder)
  * @param bodyTypeOrArray - Body config name (e.g., 'harvester_basic') or array of parts
- * @param roomName - Room to spawn in
+ * @param roomName - Optional: Room to spawn in (defaults to current room)
  * @returns The new creep, or false if failed
  * 
  * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic', 'W1N1')
+ * @example spawnCreep('Harvester1', 'harvester', 'harvester_basic')
  * @example spawnCreep('Scout1', 'scout', [MOVE], 'W1N1')
  */
 export function spawnCreep(
   creepName: string,
   role: string,
   bodyTypeOrArray: string | BodyPartConstant[],
-  roomName: string
+  roomName?: string
 ): Creep | false {
-  const room = Game.rooms[roomName];
+  const targetRoom = roomName || getCurrentRoom();
+  if (!targetRoom) {
+    console.log(`❌ No room specified and no current room found`);
+    return false;
+  }
+
+  const room = Game.rooms[targetRoom];
   if (!room) {
-    console.log(`❌ Room not found: ${roomName}`);
+    console.log(`❌ Room not found: ${targetRoom}`);
     return false;
   }
 
@@ -335,7 +377,7 @@ export function spawnCreep(
   const result = spawnObj.spawnCreep(bodyParts, creepName, {
     memory: {
       role,
-      room: roomName,
+      room: targetRoom,
       working: false
     }
   });
@@ -707,7 +749,7 @@ export function untask(creepName: string): void {
 /**
  * SCAN - Scan a room and register its structures
  * 
- * @param roomName - Room to scan (defaults to first owned room)
+ * @param roomName - Optional: Room to scan (defaults to current room, or all owned rooms if none)
  * @example scan()
  * @example scan('W1N1')
  */
@@ -721,6 +763,17 @@ export function scan(roomName?: string): void {
       return;
     }
   } else {
+    // Try to get current room, fall back to all owned rooms
+    const currentRoomName = getCurrentRoom();
+    if (currentRoomName) {
+      targetRoom = Game.rooms[currentRoomName];
+    }
+  }
+
+  if (targetRoom) {
+    scanRoom(targetRoom);
+    console.log(`✅ Scanned room ${targetRoom.name}`);
+  } else {
     // Scan all owned rooms
     for (const room of Object.values(Game.rooms)) {
       if (room.controller?.my) {
@@ -728,11 +781,7 @@ export function scan(roomName?: string): void {
       }
     }
     console.log('✅ Scanned all owned rooms');
-    return;
   }
-
-  scanRoom(targetRoom);
-  console.log(`✅ Scanned room ${roomName}`);
 }
 
 /**
@@ -822,41 +871,62 @@ export function rename(oldName: string, newName: string): void {
 /**
  * SHOWNALES - Display structure names as visual labels on the map
  * 
- * @param roomName - Room to display labels in
+ * @param roomName - Optional: Room to display labels in (defaults to current room)
  * @param duration - How many ticks to persist (default 3)
  * @example showNames('W1N1')
+ * @example showNames()
  * @example showNames('W1N1', 10)
  */
-export function showNames(roomName: string, duration: number = 3): void {
-  const room = Game.rooms[roomName];
-  if (!room) {
-    console.log(`❌ Room not found: ${roomName}`);
+export function showNames(roomName?: string, duration: number = 3): void {
+  const targetRoom = roomName || getCurrentRoom();
+  if (!targetRoom) {
+    console.log(`❌ No room specified and no current room found`);
     return;
   }
 
-  visualShowNames(roomName, duration);
+  const room = Game.rooms[targetRoom];
+  if (!room) {
+    console.log(`❌ Room not found: ${targetRoom}`);
+    return;
+  }
+
+  visualShowNames(targetRoom, duration);
   console.log(`👁️  Structure labels will display for ${duration} ticks`);
 }
 
 /**
  * HIDENAMES - Hide structure name displays
  * 
- * @param roomName - Room to hide labels in
+ * @param roomName - Optional: Room to hide labels in (defaults to current room)
  * @example hideNames('W1N1')
+ * @example hideNames()
  */
-export function hideNames(roomName: string): void {
-  visualHideNames(roomName);
+export function hideNames(roomName?: string): void {
+  const targetRoom = roomName || getCurrentRoom();
+  if (!targetRoom) {
+    console.log(`❌ No room specified and no current room found`);
+    return;
+  }
+
+  visualHideNames(targetRoom);
 }
 
 /**
  * LEGASTATUS - Show LegatusOficio status for a room
  * 
- * @param roomName - Room to query
+ * @param roomName - Optional: Room to query (defaults to current room)
  * @example legaStatus('W1N1')
+ * @example legaStatus()
  */
-export function legaStatus(roomName: string): void {
-  const assignments = getRoomAssignments(roomName);
-  console.log(getLegaStatus(roomName));
+export function legaStatus(roomName?: string): void {
+  const targetRoom = roomName || getCurrentRoom();
+  if (!targetRoom) {
+    console.log(`❌ No room specified and no current room found`);
+    return;
+  }
+
+  const assignments = getRoomAssignments(targetRoom);
+  console.log(getLegaStatus(targetRoom));
   
   if (assignments.length > 0) {
     console.log(`\nActive Assignments:`);
@@ -872,11 +942,18 @@ export function legaStatus(roomName: string): void {
 /**
  * LEGALIRT - List all Legatus assignments in a room
  * 
- * @param roomName - Room to list
+ * @param roomName - Optional: Room to list (defaults to current room)
  * @example legaList('W1N1')
+ * @example legaList()
  */
-export function legaList(roomName: string): void {
-  listLegaAssignments(roomName);
+export function legaList(roomName?: string): void {
+  const targetRoom = roomName || getCurrentRoom();
+  if (!targetRoom) {
+    console.log(`❌ No room specified and no current room found`);
+    return;
+  }
+
+  listLegaAssignments(targetRoom);
 }
 
 /**
