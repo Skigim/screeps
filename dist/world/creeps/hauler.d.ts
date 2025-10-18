@@ -2,18 +2,18 @@
  * HAULER BEHAVIOR
  *
  * Dedicated transport creep focused on energy movement.
- * Haulers pick up energy from one location and move it to another.
+ * Haulers can be task-assigned to specific structures or sources.
  *
  * Strategy:
- * - Pick up energy from containers, ruins, or dropped resources
- * - Transport it to spawn, extensions, or storage
- * - Minimize wasted movement
+ * - If assigned to a source: Pick up from nearby dropped energy/containers, haul to spawn/extensions, idle at source
+ * - If assigned to a structure: Pick up from that structure and haul to spawn/extensions
+ * - If not assigned: Generic hauler that picks up from anywhere and delivers
  *
  * Best for: Rooms with complex energy flows (multiple sources, distant structures)
  */
 /**
  * Main behavior for hauler role.
- * Moves energy from sources to structures.
+ * Respects task assignments to specific structures or sources.
  *
  * @param creep - The creep to run hauler behavior on
  */
