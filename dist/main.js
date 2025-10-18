@@ -149,8 +149,11 @@ function getBody(energy) {
  *
  * Behavior:
  * 1. Harvest energy from source
- * 2. Bring energy to spawn
+ * 2. Fill spawn and extensions (RCL2+)
  * 3. Repeat
+ *
+ * RCL1: Fill spawn only
+ * RCL2+: Fill spawn + extensions, then help upgrade if all full
  */
 function runHarvester(creep) {
     // State machine: Switch between harvesting and delivering
@@ -170,15 +173,25 @@ function runHarvester(creep) {
         }
     }
     else {
-        // Deliver energy to spawn
-        const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
-        if (spawn && spawn.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
-            if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffffff' } });
+        // Deliver energy to spawn and extensions
+        // Priority: Spawn first, then extensions (ensures spawning never stops)
+        const targets = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: (structure) => {
+                return ((structure.structureType === STRUCTURE_SPAWN ||
+                    structure.structureType === STRUCTURE_EXTENSION) &&
+                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            }
+        });
+        if (targets.length > 0) {
+            // Sort: Spawn first, then closest extension
+            const spawn = targets.find(t => t.structureType === STRUCTURE_SPAWN);
+            const target = spawn || targets[0];
+            if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
             }
         }
         else {
-            // Spawn full, help with upgrading instead
+            // All spawn/extensions full, help with upgrading
             const controller = creep.room.controller;
             if (controller) {
                 if (creep.upgradeController(controller) === ERR_NOT_IN_RANGE) {
@@ -192,9 +205,12 @@ function runHarvester(creep) {
  * UPGRADER - Maintains controller progress
  *
  * Behavior:
- * 1. Withdraw energy from spawn
+ * 1. Withdraw energy from spawn/extensions
  * 2. Upgrade controller
  * 3. Repeat
+ *
+ * RCL1: Withdraw from spawn only
+ * RCL2+: Withdraw from spawn or extensions
  */
 function runUpgrader(creep) {
     // State machine
@@ -205,11 +221,20 @@ function runUpgrader(creep) {
         creep.memory.working = true;
     }
     if (!creep.memory.working) {
-        // Get energy from spawn
-        const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
-        if (spawn && spawn.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-            if (creep.withdraw(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+        // Get energy from spawn or extensions
+        const sources = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: (structure) => {
+                return ((structure.structureType === STRUCTURE_SPAWN ||
+                    structure.structureType === STRUCTURE_EXTENSION) &&
+                    structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+            }
+        });
+        if (sources.length > 0) {
+            // Prefer spawn first (reserve extensions for spawning), then closest
+            const spawn = sources.find(s => s.structureType === STRUCTURE_SPAWN);
+            const target = spawn || sources[0];
+            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
             }
         }
     }
@@ -227,9 +252,12 @@ function runUpgrader(creep) {
  * BUILDER - Constructs structures
  *
  * Behavior:
- * 1. Withdraw energy from spawn
+ * 1. Withdraw energy from spawn/extensions
  * 2. Build construction sites
- * 3. Repeat
+ * 3. Repeat (or upgrade if no sites)
+ *
+ * RCL1: Withdraw from spawn only
+ * RCL2+: Withdraw from spawn or extensions
  */
 function runBuilder(creep) {
     // State machine
@@ -240,11 +268,20 @@ function runBuilder(creep) {
         creep.memory.working = true;
     }
     if (!creep.memory.working) {
-        // Get energy from spawn
-        const spawn = creep.room.find(FIND_MY_SPAWNS)[0];
-        if (spawn && spawn.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-            if (creep.withdraw(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+        // Get energy from spawn or extensions
+        const sources = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: (structure) => {
+                return ((structure.structureType === STRUCTURE_SPAWN ||
+                    structure.structureType === STRUCTURE_EXTENSION) &&
+                    structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+            }
+        });
+        if (sources.length > 0) {
+            // Prefer spawn first, then closest
+            const spawn = sources.find(s => s.structureType === STRUCTURE_SPAWN);
+            const target = spawn || sources[0];
+            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
             }
         }
     }
