@@ -215,7 +215,7 @@ function runHarvester(creep) {
     }
     else {
         // DELIVERING MODE: Deliver energy to structures
-        deliverEnergy(creep);
+        deliverEnergy$2(creep);
     }
 }
 /**
@@ -260,7 +260,7 @@ function harvestEnergy(creep) {
  * This ensures your spawn never runs out of energy, which would
  * halt creep production and potentially collapse your economy.
  */
-function deliverEnergy(creep) {
+function deliverEnergy$2(creep) {
     // Find all spawn and extension structures that need energy
     const targets = creep.room.find(FIND_MY_STRUCTURES, {
         filter: (structure) => {
@@ -281,7 +281,7 @@ function deliverEnergy(creep) {
     else {
         // All spawn/extensions full, help with upgrading
         // This prevents wasting harvester time when storage is full
-        upgradeControllerFallback$1(creep);
+        upgradeControllerFallback$2(creep);
     }
 }
 /**
@@ -292,12 +292,346 @@ function deliverEnergy(creep) {
  *
  * @param creep - The creep that should upgrade
  */
+function upgradeControllerFallback$2(creep) {
+    const controller = creep.room.controller;
+    if (controller) {
+        const result = creep.upgradeController(controller);
+        if (result === ERR_NOT_IN_RANGE) {
+            creep.travelTo(controller);
+        }
+    }
+}
+
+/**
+ * STATIONARY HARVESTER BEHAVIOR
+ *
+ * Stationary harvesters stay in one place and harvest from a single source.
+ * They're optimized for maximum work output, not mobility.
+ *
+ * Strategy:
+ * - Pick one energy source and stay there
+ * - Harvest continuously from that source
+ * - Deliver energy to containers/storage nearby
+ * - Minimize movement to maximize harvest rate
+ *
+ * Best for: Small rooms with sources close to spawn
+ */
+/**
+ * Main behavior for stationary harvester role.
+ * Stays at assigned source and harvests continuously.
+ *
+ * @param creep - The creep to run stationary harvester behavior on
+ */
+function runStationaryHarvester(creep) {
+    // Assign to a source on first run
+    const memory = creep.memory;
+    if (!memory.assignedSource) {
+        const sources = creep.room.find(FIND_SOURCES);
+        // Pick the first source (or could be smarter about distribution)
+        if (sources.length > 0) {
+            memory.assignedSource = sources[0].id;
+        }
+    }
+    // State machine: Switch between harvesting and delivering
+    if (creep.store.getFreeCapacity() === 0) {
+        creep.memory.working = true;
+    }
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        creep.memory.working = false;
+    }
+    if (!creep.memory.working) {
+        // HARVESTING MODE: Stay at source and harvest
+        harvestAtSource(creep);
+    }
+    else {
+        // DELIVERING MODE: Move nearby and drop energy into container
+        deliverFromSource(creep);
+    }
+}
+/**
+ * Harvest from the assigned source.
+ * Stays in place, doesn't roam.
+ *
+ * @param creep - The harvester creep
+ */
+function harvestAtSource(creep) {
+    const memory = creep.memory;
+    const sourceId = memory.assignedSource;
+    const source = Game.getObjectById(sourceId);
+    if (!source) {
+        // Source disappeared, find a new one
+        const sources = creep.room.find(FIND_SOURCES_ACTIVE);
+        if (sources.length > 0) {
+            memory.assignedSource = sources[0].id;
+        }
+        return;
+    }
+    // Try to harvest
+    const result = creep.harvest(source);
+    if (result === ERR_NOT_IN_RANGE) {
+        // Move to the source (only once)
+        creep.travelTo(source);
+    }
+    // If harvesting succeeds, just keep harvesting
+}
+/**
+ * Deliver energy from harvest location.
+ * Looks for containers/storage near the source.
+ *
+ * @param creep - The harvester creep
+ */
+function deliverFromSource(creep) {
+    // Find nearby containers or structures to dump energy into
+    const targets = creep.room.find(FIND_MY_STRUCTURES, {
+        filter: (structure) => {
+            return ((structure.structureType === STRUCTURE_SPAWN ||
+                structure.structureType === STRUCTURE_EXTENSION) &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+        }
+    });
+    if (targets.length > 0) {
+        // Find closest target
+        const target = creep.pos.findClosestByRange(targets);
+        if (target) {
+            const result = creep.transfer(target, RESOURCE_ENERGY);
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.travelTo(target);
+            }
+        }
+    }
+}
+
+/**
+ * MOBILE HARVESTER BEHAVIOR
+ *
+ * Mobile harvesters roam between multiple sources and harvest from them.
+ * They're optimized for flexibility, working multiple sources efficiently.
+ *
+ * Strategy:
+ * - Find the nearest active source
+ * - Harvest from it while it has energy
+ * - When source runs out, move to next nearest source
+ * - Deliver energy to any nearby spawn/extension/container
+ * - Continuously rotate through available sources
+ *
+ * Best for: Larger rooms with distant sources or variable source availability
+ */
+/**
+ * Main behavior for mobile harvester role.
+ * Roams between sources and harvests from multiple locations.
+ *
+ * @param creep - The creep to run mobile harvester behavior on
+ */
+function runMobileHarvester(creep) {
+    // State machine: Switch between harvesting and delivering
+    if (creep.store.getFreeCapacity() === 0) {
+        creep.memory.working = true;
+    }
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        creep.memory.working = false;
+    }
+    if (!creep.memory.working) {
+        // HARVESTING MODE: Find nearest active source
+        harvestNearestSource(creep);
+    }
+    else {
+        // DELIVERING MODE: Deliver to nearby structures
+        deliverEnergy$1(creep);
+    }
+}
+/**
+ * Harvest from the nearest active source.
+ * Automatically switches sources when current one runs out.
+ *
+ * @param creep - The harvester creep
+ */
+function harvestNearestSource(creep) {
+    // Find the nearest active source
+    const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+    if (source) {
+        const result = creep.harvest(source);
+        if (result === ERR_NOT_IN_RANGE) {
+            // Move towards the source
+            creep.travelTo(source);
+        }
+        // If harvesting succeeds or source is being harvested, continue
+    }
+}
+/**
+ * Deliver energy to spawn, extensions, or containers.
+ *
+ * Priority:
+ * 1. Spawn (critical for spawning new creeps)
+ * 2. Extensions (increase spawn capacity)
+ * 3. Containers (temporary storage)
+ * 4. Storage (long-term storage)
+ *
+ * @param creep - The harvester creep
+ */
+function deliverEnergy$1(creep) {
+    // Find all spawn and extension structures that need energy
+    const targets = creep.room.find(FIND_MY_STRUCTURES, {
+        filter: (structure) => {
+            return ((structure.structureType === STRUCTURE_SPAWN ||
+                structure.structureType === STRUCTURE_EXTENSION) &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+        }
+    });
+    if (targets.length > 0) {
+        // Priority: Spawn first, then extensions
+        let target = targets.find(t => t.structureType === STRUCTURE_SPAWN);
+        if (!target) {
+            target = targets[0];
+        }
+        if (target) {
+            const result = creep.transfer(target, RESOURCE_ENERGY);
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.travelTo(target);
+            }
+        }
+    }
+    else {
+        // All structures full, help with upgrading
+        upgradeControllerFallback$1(creep);
+    }
+}
+/**
+ * Fallback behavior: Upgrade controller when no delivery targets.
+ *
+ * @param creep - The harvester creep
+ */
 function upgradeControllerFallback$1(creep) {
     const controller = creep.room.controller;
     if (controller) {
         const result = creep.upgradeController(controller);
         if (result === ERR_NOT_IN_RANGE) {
             creep.travelTo(controller);
+        }
+    }
+}
+
+/**
+ * HAULER BEHAVIOR
+ *
+ * Dedicated transport creep focused on energy movement.
+ * Haulers pick up energy from one location and move it to another.
+ *
+ * Strategy:
+ * - Pick up energy from containers, ruins, or dropped resources
+ * - Transport it to spawn, extensions, or storage
+ * - Minimize wasted movement
+ *
+ * Best for: Rooms with complex energy flows (multiple sources, distant structures)
+ */
+/**
+ * Main behavior for hauler role.
+ * Moves energy from sources to structures.
+ *
+ * @param creep - The creep to run hauler behavior on
+ */
+function runHauler(creep) {
+    // State machine: Switch between picking up and delivering
+    if (creep.store.getFreeCapacity() === 0) {
+        creep.memory.working = true;
+    }
+    if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        creep.memory.working = false;
+    }
+    if (!creep.memory.working) {
+        // PICKUP MODE: Find energy to transport
+        pickupEnergy(creep);
+    }
+    else {
+        // DELIVERY MODE: Move energy to structures
+        deliverEnergy(creep);
+    }
+}
+/**
+ * Pick up energy from available sources.
+ *
+ * Priority:
+ * 1. Dropped energy on ground (fastest to pick up)
+ * 2. Tombstones (from dead creeps)
+ * 3. Containers (stored energy)
+ * 4. Ruins (from destroyed structures)
+ *
+ * @param creep - The hauler creep
+ */
+function pickupEnergy(creep) {
+    // First, look for dropped energy on the ground
+    const droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+        filter: (resource) => resource.resourceType === RESOURCE_ENERGY
+    });
+    if (droppedEnergy) {
+        const result = creep.pickup(droppedEnergy);
+        if (result === ERR_NOT_IN_RANGE) {
+            creep.travelTo(droppedEnergy);
+        }
+        return;
+    }
+    // Look for containers with energy
+    const containers = creep.room.find(FIND_STRUCTURES, {
+        filter: (structure) => {
+            return (structure.structureType === STRUCTURE_CONTAINER &&
+                structure.store.getUsedCapacity(RESOURCE_ENERGY) > 0);
+        }
+    });
+    if (containers.length > 0) {
+        const container = creep.pos.findClosestByPath(containers);
+        if (container) {
+            const result = creep.withdraw(container, RESOURCE_ENERGY);
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.travelTo(container);
+            }
+        }
+    }
+}
+/**
+ * Deliver energy to priority structures.
+ *
+ * Priority:
+ * 1. Spawn (critical for spawning)
+ * 2. Extensions (capacity for spawning)
+ * 3. Storage/Containers (long-term storage)
+ *
+ * @param creep - The hauler creep
+ */
+function deliverEnergy(creep) {
+    // Find structures that need energy
+    const targets = creep.room.find(FIND_MY_STRUCTURES, {
+        filter: (structure) => {
+            return ((structure.structureType === STRUCTURE_SPAWN ||
+                structure.structureType === STRUCTURE_EXTENSION) &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+        }
+    });
+    if (targets.length > 0) {
+        // Priority: Spawn first
+        let target = targets.find(t => t.structureType === STRUCTURE_SPAWN);
+        if (!target) {
+            target = targets[0];
+        }
+        if (target) {
+            const result = creep.transfer(target, RESOURCE_ENERGY);
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.travelTo(target);
+            }
+        }
+    }
+    else {
+        // Spawn/extensions full, try storage
+        const storage = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: (s) => {
+                return (s.structureType === STRUCTURE_STORAGE &&
+                    s.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+            }
+        });
+        if (storage.length > 0) {
+            const target = storage[0];
+            const result = creep.transfer(target, RESOURCE_ENERGY);
+            if (result === ERR_NOT_IN_RANGE) {
+                creep.travelTo(target);
+            }
         }
     }
 }
@@ -595,36 +929,50 @@ const rcl1Behavior = {
     ]
 };
 /**
- * RCL2 Behavior Configuration (placeholder)
+ * RCL2 Behavior Configuration
  *
  * At RCL2, we unlock extensions and expand capacity.
- * This is a placeholder for future implementation.
+ * Uses specialized harvester types, dedicated haulers, and more builders.
  */
 const rcl2Behavior = {
     rcl: 2,
     name: 'RCL2 Expansion',
-    description: 'With extensions: scale economy and build infrastructure',
+    description: 'With extensions: scale economy with specialized roles',
     roles: [
         {
-            name: 'harvester',
+            name: 'harvester_stationary',
             priority: 100,
-            targetCount: 3,
-            body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-            options: { comment: 'More harvesters with extensions' }
+            targetCount: 1,
+            body: [WORK, WORK, WORK, CARRY, MOVE],
+            options: { comment: 'Stationary harvester at primary source' }
         },
         {
-            name: 'upgrader',
+            name: 'harvester_mobile',
+            priority: 95,
+            targetCount: 1,
+            body: [WORK, WORK, WORK, CARRY, MOVE, MOVE],
+            options: { comment: 'Mobile harvester between sources' }
+        },
+        {
+            name: 'hauler',
             priority: 90,
             targetCount: 2,
-            body: [WORK, CARRY, MOVE],
-            options: { comment: 'Increase upgrade speed' }
+            body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE],
+            options: { comment: 'Dedicated energy transport' }
         },
         {
             name: 'builder',
+            priority: 85,
+            targetCount: 2,
+            body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
+            options: { comment: 'Construction specialist' }
+        },
+        {
+            name: 'upgrader',
             priority: 80,
             targetCount: 2,
-            body: [WORK, CARRY, MOVE],
-            options: { comment: 'Build more infrastructure' }
+            body: [WORK, WORK, WORK, CARRY, MOVE],
+            options: { comment: 'Fast controller upgrade' }
         }
     ]
 };
@@ -954,6 +1302,15 @@ function runCreep(creep) {
     switch (creep.memory.role) {
         case 'harvester':
             runHarvester(creep);
+            break;
+        case 'harvester_stationary':
+            runStationaryHarvester(creep);
+            break;
+        case 'harvester_mobile':
+            runMobileHarvester(creep);
+            break;
+        case 'hauler':
+            runHauler(creep);
             break;
         case 'upgrader':
             runUpgrader(creep);
@@ -3142,9 +3499,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: 'c73c835'};
+  commitHash: '8354d19'};
 
-const INIT_VERSION = 'c73c835';
+const INIT_VERSION = '8354d19';
 
 /**
  * PROJECT IMPERIUM - RCL1 FOUNDATION

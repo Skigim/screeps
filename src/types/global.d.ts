@@ -9,6 +9,7 @@ declare global {
     room: string;
     working: boolean;
     task?: any;  // Task assigned to creep
+    assignedSource?: string;  // Source ID for stationary harvesters
     // Traveler adds these directly to memory
     _trav?: any;  // Traveler's internal state
     _travel?: any;  // Alternative traveler state

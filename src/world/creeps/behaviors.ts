@@ -80,36 +80,50 @@ export const rcl1Behavior: BehaviorConfig = {
 };
 
 /**
- * RCL2 Behavior Configuration (placeholder)
+ * RCL2 Behavior Configuration
  * 
  * At RCL2, we unlock extensions and expand capacity.
- * This is a placeholder for future implementation.
+ * Uses specialized harvester types, dedicated haulers, and more builders.
  */
 export const rcl2Behavior: BehaviorConfig = {
   rcl: 2,
   name: 'RCL2 Expansion',
-  description: 'With extensions: scale economy and build infrastructure',
+  description: 'With extensions: scale economy with specialized roles',
   roles: [
     {
-      name: 'harvester',
+      name: 'harvester_stationary',
       priority: 100,
-      targetCount: 3,
-      body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-      options: { comment: 'More harvesters with extensions' }
+      targetCount: 1,
+      body: [WORK, WORK, WORK, CARRY, MOVE],
+      options: { comment: 'Stationary harvester at primary source' }
     },
     {
-      name: 'upgrader',
+      name: 'harvester_mobile',
+      priority: 95,
+      targetCount: 1,
+      body: [WORK, WORK, WORK, CARRY, MOVE, MOVE],
+      options: { comment: 'Mobile harvester between sources' }
+    },
+    {
+      name: 'hauler',
       priority: 90,
       targetCount: 2,
-      body: [WORK, CARRY, MOVE],
-      options: { comment: 'Increase upgrade speed' }
+      body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE],
+      options: { comment: 'Dedicated energy transport' }
     },
     {
       name: 'builder',
+      priority: 85,
+      targetCount: 2,
+      body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
+      options: { comment: 'Construction specialist' }
+    },
+    {
+      name: 'upgrader',
       priority: 80,
       targetCount: 2,
-      body: [WORK, CARRY, MOVE],
-      options: { comment: 'Build more infrastructure' }
+      body: [WORK, WORK, WORK, CARRY, MOVE],
+      options: { comment: 'Fast controller upgrade' }
     }
   ]
 };

@@ -45,10 +45,10 @@ export interface BehaviorConfig {
  */
 export declare const rcl1Behavior: BehaviorConfig;
 /**
- * RCL2 Behavior Configuration (placeholder)
+ * RCL2 Behavior Configuration
  *
  * At RCL2, we unlock extensions and expand capacity.
- * This is a placeholder for future implementation.
+ * Uses specialized harvester types, dedicated haulers, and more builders.
  */
 export declare const rcl2Behavior: BehaviorConfig;
 /**
