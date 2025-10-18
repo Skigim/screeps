@@ -57,7 +57,10 @@ export const loop = (): void => {
     console.log('📦 Default body configurations registered');
   }
 
-  console.log(`⚔️ Tick ${Game.time} - PROJECT IMPERIUM - RCL1 FOUNDATION`);
+  // Log main tick info (every 100 ticks to reduce console spam)
+  if (Game.time % 100 === 0) {
+    console.log(`⚔️ Tick ${Game.time} - PROJECT IMPERIUM - RCL1 FOUNDATION`);
+  }
 
   // Clean up dead creep memory
   // Without this, Memory.creeps grows forever and causes performance issues

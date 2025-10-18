@@ -66,8 +66,10 @@ export function runRoom(room: Room): void {
   const roleCounts = countCreepsByRole(creeps);
   const { harvesterCount, upgraderCount, builderCount } = roleCounts;
 
-  // Log room statistics for debugging
-  logRoomStats(room, roleCounts);
+  // Log room statistics for debugging (every 100 ticks to reduce console spam)
+  if (Game.time % 100 === 0) {
+    logRoomStats(room, roleCounts);
+  }
 
   // Manage spawning based on current population
   manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);

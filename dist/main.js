@@ -1356,8 +1356,10 @@ function runRoom(room) {
     // Count creeps by role for spawn manager
     const roleCounts = countCreepsByRole(creeps);
     const { harvesterCount, upgraderCount, builderCount } = roleCounts;
-    // Log room statistics for debugging
-    logRoomStats(room, roleCounts);
+    // Log room statistics for debugging (every 100 ticks to reduce console spam)
+    if (Game.time % 100 === 0) {
+        logRoomStats(room, roleCounts);
+    }
     // Manage spawning based on current population
     manageSpawn(spawn, room, harvesterCount, upgraderCount, builderCount);
     // Run behavior for each creep in the room
@@ -3104,7 +3106,10 @@ const loop = () => {
         registerDefaultBodies();
         console.log('📦 Default body configurations registered');
     }
-    console.log(`⚔️ Tick ${Game.time} - PROJECT IMPERIUM - RCL1 FOUNDATION`);
+    // Log main tick info (every 100 ticks to reduce console spam)
+    if (Game.time % 100 === 0) {
+        console.log(`⚔️ Tick ${Game.time} - PROJECT IMPERIUM - RCL1 FOUNDATION`);
+    }
     // Clean up dead creep memory
     // Without this, Memory.creeps grows forever and causes performance issues
     cleanupDeadCreeps();
