@@ -1,21 +1,144 @@
 'use strict';
 
 /**
+ * SPAWN LOCK SYSTEM
+ *
+ * Locks spawning when critical creeps (core production team) drop below safe TTL.
+ * Prevents spawn exhaustion and ensures critical roles are replaced naturally.
+ */
+/**
+ * Check if spawn should be locked based on critical creep TTL
+ * Critical creeps: 2 miners + 3 haulers (core production team)
+ */
+function isSpawnLocked(room) {
+    if (!Memory.empire) {
+        Memory.empire = {};
+    }
+    if (!Memory.empire.spawnLocks) {
+        Memory.empire.spawnLocks = {};
+    }
+    const locks = Memory.empire.spawnLocks;
+    // Get all critical role creeps (miners and haulers)
+    const creeps = room.find(FIND_MY_CREEPS);
+    const miners = creeps.filter(c => c.memory.role === 'miner');
+    const haulers = creeps.filter(c => c.memory.role === 'hauler');
+    const criticalCreeps = [...miners, ...haulers];
+    // If we have the full team (2 miners + 3 haulers), check TTL
+    if (miners.length >= 2 && haulers.length >= 3) {
+        // Find the creep with lowest TTL
+        const minTTL = Math.min(...criticalCreeps.map(c => c.ticksToLive || 0));
+        // Lock spawn if any critical creep below 250 TTL
+        if (minTTL < 250 && minTTL > 0) {
+            locks[room.name] = Game.time;
+            return true;
+        }
+    }
+    // Unlock if threshold passed
+    if (locks[room.name]) {
+        delete locks[room.name];
+    }
+    return false;
+}
+
+/**
+ * DYNAMIC BODY SCALING
+ *
+ * Scales creep bodies based on room energy capacity to maximize efficiency.
+ * Larger bodies = better resource efficiency, but requires more upfront energy.
+ */
+/**
+ * Get optimal miner body for current energy capacity
+ * Miners need: WORK (mining), CARRY (buffering), MOVE (efficiency)
+ *
+ * Strategy: Maximize WORK to mine faster, then add CARRY/MOVE as needed
+ */
+function getOptimalMinerBody(energyCapacity) {
+    // Minimum viable miner
+    if (energyCapacity < 250) {
+        return [WORK, WORK, MOVE];
+    }
+    // Small miner
+    if (energyCapacity < 500) {
+        return [WORK, WORK, WORK, MOVE];
+    }
+    // Medium miner - good energy capacity sweet spot
+    if (energyCapacity < 800) {
+        return [WORK, WORK, WORK, WORK, CARRY, MOVE];
+    }
+    // Large miner
+    if (energyCapacity < 1200) {
+        return [WORK, WORK, WORK, WORK, WORK, CARRY, CARRY, MOVE];
+    }
+    // Max miner
+    return [WORK, WORK, WORK, WORK, WORK, WORK, CARRY, CARRY, MOVE];
+}
+/**
+ * Get optimal hauler body for current energy capacity
+ * Haulers need: CARRY (capacity), MOVE (speed to move full load)
+ *
+ * Strategy: 1 MOVE per 2 CARRY to handle full loads without fatigue
+ */
+function getOptimalHaulerBody(energyCapacity) {
+    // Minimum hauler
+    if (energyCapacity < 200) {
+        return [CARRY, CARRY, MOVE];
+    }
+    // Small hauler
+    if (energyCapacity < 400) {
+        return [CARRY, CARRY, CARRY, MOVE, MOVE];
+    }
+    // Medium hauler - sweet spot
+    if (energyCapacity < 600) {
+        return [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE];
+    }
+    // Large hauler
+    if (energyCapacity < 900) {
+        return [CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE];
+    }
+    // Max hauler
+    return [CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE];
+}
+/**
+ * Get optimal builder body for current energy capacity
+ * Builders need: WORK (building), CARRY (energy for builds), MOVE (getting to sites)
+ */
+function getOptimalBuilderBody(energyCapacity) {
+    // Minimum builder
+    if (energyCapacity < 250) {
+        return [WORK, CARRY, MOVE];
+    }
+    // Small builder
+    if (energyCapacity < 400) {
+        return [WORK, WORK, CARRY, MOVE];
+    }
+    // Medium builder
+    if (energyCapacity < 600) {
+        return [WORK, WORK, CARRY, CARRY, MOVE, MOVE];
+    }
+    // Large builder
+    if (energyCapacity < 900) {
+        return [WORK, WORK, WORK, CARRY, CARRY, MOVE, MOVE];
+    }
+    // Max builder
+    return [WORK, WORK, WORK, WORK, CARRY, CARRY, MOVE, MOVE];
+}
+/**
+ * Get body cost total
+ */
+function calculateBodyCost(body) {
+    return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+}
+
+/**
  * SPAWN MANAGER MODULE
  *
- * Manages creep spawning strategy and body design for RCL1 foundation.
+ * Manages creep spawning strategy with spawn lock protection and body scaling.
  *
- * Spawning Priority (RCL1):
- * 1. Minimum 2 miners (critical - economy collapses without them)
- * 2. Minimum 2 upgraders (prevent controller downgrade)
- * 3. Builders only if construction sites exist (max 2)
- * 4. Scale up upgraders if excess energy (max 4)
- *
- * Body Design Philosophy:
- * - Simple [WORK, CARRY, MOVE] repeating pattern
- * - Scales automatically with available energy
- * - Cost per unit: 200 energy
- * - Balanced: 1 WORK (mining/building), 1 CARRY (transport), 1 MOVE (speed)
+ * RCL2 Strategy:
+ * - 2 Miners + 3 Haulers (core production team)
+ * - Spawn lock if any critical creep drops below 250 TTL
+ * - Body scaling based on room energy capacity
+ * - 1 Builder (idles when spawn locked, prioritizes extensions/roads)
  */
 /**
  * Manages spawning for a single spawn structure.
@@ -43,86 +166,95 @@
  * manageSpawn(spawn, room, minerCount, upgraderCount, builderCount);
  * ```
  */
-function manageSpawn(spawn, room, minerCount, upgraderCount, builderCount) {
+function manageSpawn(spawn, room, minerCount, _upgraderCount, builderCount) {
     // Don't try to spawn if already spawning
     if (spawn.spawning)
         return;
-    const energy = room.energyAvailable;
-    const constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
-    // PRIORITY 1: Emergency - Always maintain minimum miners
-    // Without miners, no energy flows and the economy collapses
-    if (minerCount < 2) {
-        spawnMiner(spawn, room, energy);
+    // Check spawn lock - prevents spawning if critical team at risk
+    if (isSpawnLocked(room)) {
         return;
     }
-    // PRIORITY 2: Maintain upgraders to prevent controller downgrade
-    // Controller downgrade would reset RCL progress and waste time
-    if (upgraderCount < 2) {
-        spawnUpgrader(spawn, room, energy);
+    const energy = room.energyAvailable;
+    const energyCapacity = room.energyCapacityAvailable;
+    const constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
+    // PRIORITY 1: Emergency - Always maintain minimum miners (2)
+    // Without miners, no energy flows and the economy collapses
+    if (minerCount < 2) {
+        const minerBody = getOptimalMinerBody(energyCapacity);
+        if (energy >= calculateBodyCost(minerBody)) {
+            spawnMiner(spawn, room, minerBody);
+        }
+        return;
+    }
+    // PRIORITY 2: Maintain haulers (3 total: 2 per source + 1 roaming)
+    // Haulers move energy to spawn/storage
+    if (minerCount >= 2 && builderCount < 3) {
+        const haulerBody = getOptimalHaulerBody(energyCapacity);
+        if (energy >= calculateBodyCost(haulerBody)) {
+            spawnHauler(spawn, room, haulerBody);
+        }
         return;
     }
     // PRIORITY 3: Spawn builder if construction sites exist
-    // Only spawn builders when there's work for them to do
-    if (constructionSites.length > 0 && builderCount < 2) {
-        spawnBuilder(spawn, room, energy);
-        return;
-    }
-    // PRIORITY 4: Expansion - Add more upgraders if we have energy to spare
-    // More upgraders = faster RCL progression
-    // Only spawn if we have at least 550 energy (can afford decent body)
-    if (upgraderCount < 4 && energy >= 550) {
-        spawnUpgrader(spawn, room, energy);
+    // Extensions → Roads → Controller (if TTL < 5000)
+    if (constructionSites.length > 0 && builderCount < 1) {
+        const builderBody = getOptimalBuilderBody(energyCapacity);
+        if (energy >= calculateBodyCost(builderBody)) {
+            spawnBuilder(spawn, room, builderBody);
+        }
         return;
     }
     // No spawning needed at this time
 }
 /**
- * Spawns a miner creep with optimal body for available energy.
+ * Spawns a miner creep with specified or optimal body.
  *
  * @param spawn - The spawn structure to use
  * @param room - The room to spawn in
- * @param energy - Available energy for spawning
+ * @param bodyOrEnergy - Either body array or energy number for auto-design
  */
-function spawnMiner(spawn, room, energy) {
-    const body = getBody(energy);
+function spawnMiner(spawn, room, bodyOrEnergy) {
+    const body = Array.isArray(bodyOrEnergy) ? bodyOrEnergy : getBody(bodyOrEnergy);
     const result = spawn.spawnCreep(body, `miner_${Game.time}`, {
         memory: { role: 'miner', room: room.name, working: false }
     });
     if (result === OK) {
-        console.log(`🌾 Spawning miner with ${energy} energy (${body.length} parts)`);
+        const cost = body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+        console.log(`🌾 Spawning miner (${body.length} parts, ${cost}E)`);
     }
-    // Possible errors: ERR_NOT_ENOUGH_ENERGY, ERR_NAME_EXISTS, ERR_BUSY
 }
 /**
- * Spawns an upgrader creep with optimal body for available energy.
+ * Spawns a hauler creep with specified or optimal body.
  *
  * @param spawn - The spawn structure to use
  * @param room - The room to spawn in
- * @param energy - Available energy for spawning
+ * @param bodyOrEnergy - Either body array or energy number for auto-design
  */
-function spawnUpgrader(spawn, room, energy) {
-    const body = getBody(energy);
-    const result = spawn.spawnCreep(body, `upgrader_${Game.time}`, {
-        memory: { role: 'upgrader', room: room.name, working: false }
+function spawnHauler(spawn, room, bodyOrEnergy) {
+    const body = Array.isArray(bodyOrEnergy) ? bodyOrEnergy : getBody(bodyOrEnergy);
+    const result = spawn.spawnCreep(body, `hauler_${Game.time}`, {
+        memory: { role: 'hauler', room: room.name, working: false }
     });
     if (result === OK) {
-        console.log(`⬆️ Spawning upgrader with ${energy} energy (${body.length} parts)`);
+        const cost = body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+        console.log(`🚚 Spawning hauler (${body.length} parts, ${cost}E)`);
     }
 }
 /**
- * Spawns a builder creep with optimal body for available energy.
+ * Spawns a builder creep with specified or optimal body.
  *
  * @param spawn - The spawn structure to use
  * @param room - The room to spawn in
- * @param energy - Available energy for spawning
+ * @param bodyOrEnergy - Either body array or energy number for auto-design
  */
-function spawnBuilder(spawn, room, energy) {
-    const body = getBody(energy);
+function spawnBuilder(spawn, room, bodyOrEnergy) {
+    const body = Array.isArray(bodyOrEnergy) ? bodyOrEnergy : getBody(bodyOrEnergy);
     const result = spawn.spawnCreep(body, `builder_${Game.time}`, {
         memory: { role: 'builder', room: room.name, working: false }
     });
     if (result === OK) {
-        console.log(`🔨 Spawning builder with ${energy} energy (${body.length} parts)`);
+        const cost = body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+        console.log(`🔨 Spawning builder (${body.length} parts, ${cost}E)`);
     }
 }
 /**
@@ -852,49 +984,48 @@ const rcl1Behavior = {
 /**
  * RCL2 Behavior Configuration
  *
- * At RCL2, we unlock extensions and expand capacity.
- * Uses flexible miner bodies and dedicated haulers.
+ * Strategy: Maintain core production team with spawn lock protection
+ * - 2 Miners (largest possible bodies per source)
+ * - 3 Haulers (2 per source + 1 roaming)
+ * - 1 Builder (extensions → roads → controller if TTL < 5000)
  *
- * Miner body strategy:
- * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
- *   Can be assigned to a specific source via task system
- *   Mines continuously without moving energy
- * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile miner
- *   Can roam between sources or be task-assigned
- *   Delivers energy to spawn/extensions
+ * Spawn Lock: If any critical creep (miner/hauler) drops below 250 TTL, lock spawning
+ * Body Scaling: Bodies scale based on energyCapacityAvailable
  */
 const rcl2Behavior = {
     rcl: 2,
     name: 'RCL2 Expansion',
-    description: 'With extensions: flexible miners and specialized support roles',
+    description: 'Core production: 2 miners + 3 haulers with spawn lock. 1 builder for extensions/roads.',
     roles: [
         {
             name: 'miner',
             priority: 100,
             targetCount: 2,
-            body: [WORK, WORK, WORK, CARRY, MOVE, MOVE],
-            options: { comment: 'Flexible miner - roams or tasks to specific source' }
+            body: [WORK, WORK, CARRY, MOVE, MOVE],
+            options: {
+                scaleByCapacity: true,
+                comment: 'Largest possible body per source - scales with energy capacity'
+            }
         },
         {
             name: 'hauler',
-            priority: 90,
-            targetCount: 2,
-            body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE],
-            options: { comment: 'Dedicated energy transport specialist' }
+            priority: 95,
+            targetCount: 3,
+            body: [CARRY, CARRY, CARRY, MOVE, MOVE, MOVE],
+            options: {
+                scaleByCapacity: true,
+                comment: '2 per source + 1 roaming - scales with energy capacity'
+            }
         },
         {
             name: 'builder',
-            priority: 85,
-            targetCount: 2,
-            body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-            options: { comment: 'Construction specialist' }
-        },
-        {
-            name: 'upgrader',
             priority: 80,
-            targetCount: 2,
-            body: [WORK, WORK, WORK, CARRY, MOVE],
-            options: { comment: 'Fast controller upgrade' }
+            targetCount: 1,
+            body: [WORK, CARRY, MOVE],
+            options: {
+                comment: 'Priority: extensions → roads → controller (if TTL < 5000)',
+                spawnLocked: true
+            }
         }
     ]
 };
@@ -3681,9 +3812,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: '88402b1'};
+  commitHash: 'd40d199'};
 
-const INIT_VERSION = '88402b1';
+const INIT_VERSION = 'd40d199';
 
 /**
  * SILENT STATISTICS TRACKING

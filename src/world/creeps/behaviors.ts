@@ -82,49 +82,48 @@ export const rcl1Behavior: BehaviorConfig = {
 /**
  * RCL2 Behavior Configuration
  * 
- * At RCL2, we unlock extensions and expand capacity.
- * Uses flexible miner bodies and dedicated haulers.
+ * Strategy: Maintain core production team with spawn lock protection
+ * - 2 Miners (largest possible bodies per source)
+ * - 3 Haulers (2 per source + 1 roaming)
+ * - 1 Builder (extensions → roads → controller if TTL < 5000)
  * 
- * Miner body strategy:
- * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
- *   Can be assigned to a specific source via task system
- *   Mines continuously without moving energy
- * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile miner
- *   Can roam between sources or be task-assigned
- *   Delivers energy to spawn/extensions
+ * Spawn Lock: If any critical creep (miner/hauler) drops below 250 TTL, lock spawning
+ * Body Scaling: Bodies scale based on energyCapacityAvailable
  */
 export const rcl2Behavior: BehaviorConfig = {
   rcl: 2,
   name: 'RCL2 Expansion',
-  description: 'With extensions: flexible miners and specialized support roles',
+  description: 'Core production: 2 miners + 3 haulers with spawn lock. 1 builder for extensions/roads.',
   roles: [
     {
       name: 'miner',
       priority: 100,
       targetCount: 2,
-      body: [WORK, WORK, WORK, CARRY, MOVE, MOVE],
-      options: { comment: 'Flexible miner - roams or tasks to specific source' }
+      body: [WORK, WORK, CARRY, MOVE, MOVE],
+      options: { 
+        scaleByCapacity: true,
+        comment: 'Largest possible body per source - scales with energy capacity'
+      }
     },
     {
       name: 'hauler',
-      priority: 90,
-      targetCount: 2,
-      body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE],
-      options: { comment: 'Dedicated energy transport specialist' }
+      priority: 95,
+      targetCount: 3,
+      body: [CARRY, CARRY, CARRY, MOVE, MOVE, MOVE],
+      options: { 
+        scaleByCapacity: true,
+        comment: '2 per source + 1 roaming - scales with energy capacity'
+      }
     },
     {
       name: 'builder',
-      priority: 85,
-      targetCount: 2,
-      body: [WORK, WORK, CARRY, CARRY, MOVE, MOVE],
-      options: { comment: 'Construction specialist' }
-    },
-    {
-      name: 'upgrader',
       priority: 80,
-      targetCount: 2,
-      body: [WORK, WORK, WORK, CARRY, MOVE],
-      options: { comment: 'Fast controller upgrade' }
+      targetCount: 1,
+      body: [WORK, CARRY, MOVE],
+      options: { 
+        comment: 'Priority: extensions → roads → controller (if TTL < 5000)',
+        spawnLocked: true
+      }
     }
   ]
 };

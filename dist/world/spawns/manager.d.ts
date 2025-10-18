@@ -1,19 +1,13 @@
 /**
  * SPAWN MANAGER MODULE
  *
- * Manages creep spawning strategy and body design for RCL1 foundation.
+ * Manages creep spawning strategy with spawn lock protection and body scaling.
  *
- * Spawning Priority (RCL1):
- * 1. Minimum 2 miners (critical - economy collapses without them)
- * 2. Minimum 2 upgraders (prevent controller downgrade)
- * 3. Builders only if construction sites exist (max 2)
- * 4. Scale up upgraders if excess energy (max 4)
- *
- * Body Design Philosophy:
- * - Simple [WORK, CARRY, MOVE] repeating pattern
- * - Scales automatically with available energy
- * - Cost per unit: 200 energy
- * - Balanced: 1 WORK (mining/building), 1 CARRY (transport), 1 MOVE (speed)
+ * RCL2 Strategy:
+ * - 2 Miners + 3 Haulers (core production team)
+ * - Spawn lock if any critical creep drops below 250 TTL
+ * - Body scaling based on room energy capacity
+ * - 1 Builder (idles when spawn locked, prioritizes extensions/roads)
  */
 /**
  * Manages spawning for a single spawn structure.
@@ -41,7 +35,7 @@
  * manageSpawn(spawn, room, minerCount, upgraderCount, builderCount);
  * ```
  */
-export declare function manageSpawn(spawn: StructureSpawn, room: Room, minerCount: number, upgraderCount: number, builderCount: number): void;
+export declare function manageSpawn(spawn: StructureSpawn, room: Room, minerCount: number, _upgraderCount: number, builderCount: number): void;
 /**
  * Designs an optimal creep body based on available energy.
  *

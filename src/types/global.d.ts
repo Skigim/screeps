@@ -75,6 +75,7 @@ declare global {
         room: string;
         createdAt: number;
       }>;
+      spawnLocks?: {[roomName: string]: number};  // Spawn locks by room (timestamp when locked)
     };
   }
 }

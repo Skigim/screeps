@@ -1,0 +1,1 @@
+{"version":3,"file":"spawnLock.d.ts","sourceRoot":"","sources":["../../../src/world/spawns/spawnLock.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH;;;GAGG;AACH,wBAAgB,aAAa,CAAC,IAAI,EAAE,IAAI,GAAG,OAAO,CAmCjD;AAED;;GAEG;AACH,wBAAgB,gBAAgB,CAAC,IAAI,EAAE,IAAI,GAAG;IAC5C,MAAM,EAAE,OAAO,CAAC;IAChB,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,cAAc,CAAC,EAAE,MAAM,CAAC;CACzB,CAqBA"}

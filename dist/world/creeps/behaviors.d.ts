@@ -47,16 +47,13 @@ export declare const rcl1Behavior: BehaviorConfig;
 /**
  * RCL2 Behavior Configuration
  *
- * At RCL2, we unlock extensions and expand capacity.
- * Uses flexible miner bodies and dedicated haulers.
+ * Strategy: Maintain core production team with spawn lock protection
+ * - 2 Miners (largest possible bodies per source)
+ * - 3 Haulers (2 per source + 1 roaming)
+ * - 1 Builder (extensions → roads → controller if TTL < 5000)
  *
- * Miner body strategy:
- * - With NO CARRY parts (e.g., WORK/WORK/MOVE): Acts as stationary miner
- *   Can be assigned to a specific source via task system
- *   Mines continuously without moving energy
- * - With CARRY parts (e.g., WORK/WORK/CARRY/MOVE): Mobile miner
- *   Can roam between sources or be task-assigned
- *   Delivers energy to spawn/extensions
+ * Spawn Lock: If any critical creep (miner/hauler) drops below 250 TTL, lock spawning
+ * Body Scaling: Bodies scale based on energyCapacityAvailable
  */
 export declare const rcl2Behavior: BehaviorConfig;
 /**
