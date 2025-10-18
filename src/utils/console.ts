@@ -151,6 +151,8 @@ export function help(): void {
   console.log('  spawn(role, room)                - Spawn a creep (auto-name)');
   console.log('  spawnCreep(name, role, body)     - Spawn with name & body (current room)');
   console.log('  spawnCreep(name, role, body, room) - Spawn with name & body');
+  console.log('  spawnWith(role, body, task, target) - Spawn AND assign task (one command)');
+  console.log('  spawnWith(role, body, task, target, room) - Spawn & task in specific room');
   console.log('  despawn(creepName)               - Delete a creep');
   console.log('  creeps(room?)                    - List all creeps (or by room)');
 
@@ -171,6 +173,7 @@ export function help(): void {
   console.log('');
   console.log('  Task types: harvest, deliver, build, upgrade, repair, move, idle');
   console.log('  Example: task("miner_1", "harvest", "SourceA")');
+  console.log('  Quick spawn+task: spawnWith("miner", [WORK, WORK, CARRY, MOVE], "harvest", "SourceA")');
 
   section('STRUCTURE REGISTRY');
   console.log('  scan()               - Scan current room structures (or all if none)');
@@ -1033,6 +1036,44 @@ export function regBody(name: string, partsArray: BodyPartConstant[], role: stri
 }
 
 /**
+ * SPAWNWITH - Spawn a creep and immediately assign it a task
+ * 
+ * Convenience command that combines spawnCreep() and task() in one call.
+ * Useful for quickly spawning and directing creeps without two commands.
+ * 
+ * @param role - Role name (miner, hauler, builder, upgrader)
+ * @param body - Array of body parts OR registered body name
+ * @param taskType - Task type (harvest, deliver, build, upgrade, move, repair, idle)
+ * @param targetId - Target ID/name for the task (source name, structure ID, position, etc.)
+ * @param roomName - Optional: room to spawn in (defaults to current room)
+ * 
+ * @example spawnWith('miner', [WORK, WORK, CARRY, MOVE], 'harvest', 'SourceA')
+ * @example spawnWith('hauler', [CARRY, CARRY, MOVE], 'deliver', 'Storage')
+ * @example spawnWith('builder', 'builder_basic', 'build', 'SiteX')
+ */
+export function spawnWith(
+  role: string,
+  body: BodyPartConstant[] | string,
+  taskType: string,
+  targetId: string,
+  roomName?: string
+): Creep | false {
+  // First, spawn the creep
+  const creep = spawnCreep(role, body, roomName);
+  
+  if (!creep) {
+    console.log(`❌ Failed to spawn creep, skipping task assignment`);
+    return false;
+  }
+
+  // Then assign the task
+  task(creep.name, taskType, targetId);
+  
+  console.log(`✅ Spawned ${creep.name} with task: ${taskType} → ${targetId}`);
+  return creep;
+}
+
+/**
  * GETSTATS - Retrieve current statistics data from memory
  * 
  * Returns all tracked statistics without logging them autonomously.
@@ -1058,6 +1099,7 @@ export function registerConsoleCommands(): void {
   (global as any).status = status;
   (global as any).spawn = spawn;
   (global as any).spawnCreep = spawnCreep;
+  (global as any).spawnWith = spawnWith;
   (global as any).despawn = despawn;
   (global as any).creeps = creeps;
   (global as any).memory = memory;
@@ -1083,6 +1125,7 @@ export function registerConsoleCommands(): void {
   (global as any).legaList = legaList;
   (global as any).bodies = bodies;
   (global as any).regBody = regBody;
+  (global as any).spawnWith = spawnWith;
   (global as any).getstats = getstats;
 
   console.log('✅ Console commands registered. Type help() for usage.');

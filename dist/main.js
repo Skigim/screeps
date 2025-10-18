@@ -2641,6 +2641,8 @@ function help() {
     console.log('  spawn(role, room)                - Spawn a creep (auto-name)');
     console.log('  spawnCreep(name, role, body)     - Spawn with name & body (current room)');
     console.log('  spawnCreep(name, role, body, room) - Spawn with name & body');
+    console.log('  spawnWith(role, body, task, target) - Spawn AND assign task (one command)');
+    console.log('  spawnWith(role, body, task, target, room) - Spawn & task in specific room');
     console.log('  despawn(creepName)               - Delete a creep');
     console.log('  creeps(room?)                    - List all creeps (or by room)');
     section('BODY CONFIGURATIONS');
@@ -2658,6 +2660,7 @@ function help() {
     console.log('');
     console.log('  Task types: harvest, deliver, build, upgrade, repair, move, idle');
     console.log('  Example: task("miner_1", "harvest", "SourceA")');
+    console.log('  Quick spawn+task: spawnWith("miner", [WORK, WORK, CARRY, MOVE], "harvest", "SourceA")');
     section('STRUCTURE REGISTRY');
     console.log('  scan()               - Scan current room structures (or all if none)');
     console.log('  scan(room)           - Register structures in a room');
@@ -3423,6 +3426,34 @@ function regBody(name, partsArray, role = 'generic') {
     console.log(`✅ Registered body '${name}' (${partsArray.length} parts, ${cost}E)`);
 }
 /**
+ * SPAWNWITH - Spawn a creep and immediately assign it a task
+ *
+ * Convenience command that combines spawnCreep() and task() in one call.
+ * Useful for quickly spawning and directing creeps without two commands.
+ *
+ * @param role - Role name (miner, hauler, builder, upgrader)
+ * @param body - Array of body parts OR registered body name
+ * @param taskType - Task type (harvest, deliver, build, upgrade, move, repair, idle)
+ * @param targetId - Target ID/name for the task (source name, structure ID, position, etc.)
+ * @param roomName - Optional: room to spawn in (defaults to current room)
+ *
+ * @example spawnWith('miner', [WORK, WORK, CARRY, MOVE], 'harvest', 'SourceA')
+ * @example spawnWith('hauler', [CARRY, CARRY, MOVE], 'deliver', 'Storage')
+ * @example spawnWith('builder', 'builder_basic', 'build', 'SiteX')
+ */
+function spawnWith(role, body, taskType, targetId, roomName) {
+    // First, spawn the creep
+    const creep = spawnCreep(role, body, roomName);
+    if (!creep) {
+        console.log(`❌ Failed to spawn creep, skipping task assignment`);
+        return false;
+    }
+    // Then assign the task
+    task(creep.name, taskType, targetId);
+    console.log(`✅ Spawned ${creep.name} with task: ${taskType} → ${targetId}`);
+    return creep;
+}
+/**
  * GETSTATS - Retrieve current statistics data from memory
  *
  * Returns all tracked statistics without logging them autonomously.
@@ -3447,6 +3478,7 @@ function registerConsoleCommands() {
     global.status = status;
     global.spawn = spawn;
     global.spawnCreep = spawnCreep;
+    global.spawnWith = spawnWith;
     global.despawn = despawn;
     global.creeps = creeps;
     global.memory = memory;
@@ -3472,14 +3504,15 @@ function registerConsoleCommands() {
     global.legaList = legaList;
     global.bodies = bodies;
     global.regBody = regBody;
+    global.spawnWith = spawnWith;
     global.getstats = getstats;
     console.log('✅ Console commands registered. Type help() for usage.');
 }
 
 const BUILD_INFO = {
-  commitHash: '914de69'};
+  commitHash: 'f21b878'};
 
-const INIT_VERSION = '914de69';
+const INIT_VERSION = 'f21b878';
 
 /**
  * SILENT STATISTICS TRACKING

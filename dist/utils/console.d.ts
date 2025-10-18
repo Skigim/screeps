@@ -259,6 +259,23 @@ export declare function bodies(role?: string): void;
  */
 export declare function regBody(name: string, partsArray: BodyPartConstant[], role?: string): void;
 /**
+ * SPAWNWITH - Spawn a creep and immediately assign it a task
+ *
+ * Convenience command that combines spawnCreep() and task() in one call.
+ * Useful for quickly spawning and directing creeps without two commands.
+ *
+ * @param role - Role name (miner, hauler, builder, upgrader)
+ * @param body - Array of body parts OR registered body name
+ * @param taskType - Task type (harvest, deliver, build, upgrade, move, repair, idle)
+ * @param targetId - Target ID/name for the task (source name, structure ID, position, etc.)
+ * @param roomName - Optional: room to spawn in (defaults to current room)
+ *
+ * @example spawnWith('miner', [WORK, WORK, CARRY, MOVE], 'harvest', 'SourceA')
+ * @example spawnWith('hauler', [CARRY, CARRY, MOVE], 'deliver', 'Storage')
+ * @example spawnWith('builder', 'builder_basic', 'build', 'SiteX')
+ */
+export declare function spawnWith(role: string, body: BodyPartConstant[] | string, taskType: string, targetId: string, roomName?: string): Creep | false;
+/**
  * GETSTATS - Retrieve current statistics data from memory
  *
  * Returns all tracked statistics without logging them autonomously.
