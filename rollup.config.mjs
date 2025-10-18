@@ -15,10 +15,16 @@ const commitHashPlugin = {
   },
   load(id) {
     if (id === 'virtual-build-info') {
+      // Escape special characters in strings
+      const escapedMessage = metadata.commitMessage
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, '\\n');
+      
       return `
 export const BUILD_INFO = {
   commitHash: '${metadata.commitHash}',
-  commitMessage: '${metadata.commitMessage.replace(/'/g, "\\'")}',
+  commitMessage: '${escapedMessage}',
   branch: '${metadata.branch}',
   isDirty: ${metadata.isDirty},
   buildTime: '${metadata.buildTime}',

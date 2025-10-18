@@ -59,9 +59,9 @@ export const loop = (): void => {
     (Memory.initVersion as any) = INIT_VERSION;
     
     // Log build information on initialization
-    console.log(`📦 Initializing with build: ${BUILD_INFO.commitHash}`);
+    console.log('📦 Initializing with build: ' + BUILD_INFO.commitHash);
     if (BUILD_INFO.isDirty) {
-      console.warn(`⚠️  Built from uncommitted changes`);
+      console.log('⚠️  Built from uncommitted changes');
     }
     
     // Then run initialization functions

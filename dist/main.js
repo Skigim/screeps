@@ -3132,9 +3132,9 @@ function registerConsoleCommands() {
 }
 
 const BUILD_INFO = {
-  commitHash: '8170967'};
+  commitHash: '7379833'};
 
-const INIT_VERSION = '8170967';
+const INIT_VERSION = '7379833';
 
 /**
  * PROJECT IMPERIUM - RCL1 FOUNDATION
@@ -3181,9 +3181,9 @@ const loop = () => {
         Memory.initialized = true;
         Memory.initVersion = INIT_VERSION;
         // Log build information on initialization
-        console.log(`📦 Initializing with build: ${BUILD_INFO.commitHash}`);
+        console.log('📦 Initializing with build: ' + BUILD_INFO.commitHash);
         {
-            console.warn(`⚠️  Built from uncommitted changes`);
+            console.log('⚠️  Built from uncommitted changes');
         }
         // Then run initialization functions
         registerConsoleCommands();
