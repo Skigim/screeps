@@ -28,6 +28,33 @@ declare global {
     };
     initialized?: boolean;  // Track if console commands have been registered
     initVersion?: string;   // Build version (commit hash) to force reinit when code changes
+    stats?: {              // Silent statistics tracking
+      rcl: number;
+      ticksAtCurrentRcl: number;
+      creepCounts: {
+        miner: number;
+        hauler: number;
+        builder: number;
+        upgrader: number;
+        total: number;
+      };
+      energy: {
+        available: number;
+        capacity: number;
+        harvestedThisTick: number;
+        average5Tick: number;
+      };
+      spawn: {
+        totalSpawned: number;
+        lastSpawnTime: number;
+        avgSpawnTime: number;
+      };
+      rcl_history: Array<{
+        rcl: number;
+        ticksToComplete: number;
+        finalCreeps: any;
+      }>;
+    };
     // Traveler uses empire-level memory for route caching
     empire?: {
       mode?: string;

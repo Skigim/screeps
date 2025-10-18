@@ -36,6 +36,8 @@ import { displayModeInfo } from './world';
 import { registerDefaultBodies } from './world/spawns/bodies';
 // Import build information (injected at build time with commit hash)
 import { INIT_VERSION, BUILD_INFO } from 'virtual-build-info';
+// Import silent statistics tracking
+import { updateStats } from './world/stats';
 
 /**
  * Main game loop function.
@@ -124,5 +126,8 @@ function processOwnedRooms(): void {
 
     // Run all room logic via world module
     runRoom(room);
+    
+    // Silently track statistics for data collection (no console logging ever)
+    updateStats(room);
   }
 }

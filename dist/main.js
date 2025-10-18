@@ -3423,6 +3423,22 @@ function regBody(name, partsArray, role = 'generic') {
     console.log(`✅ Registered body '${name}' (${partsArray.length} parts, ${cost}E)`);
 }
 /**
+ * GETSTATS - Retrieve current statistics data from memory
+ *
+ * Returns all tracked statistics without logging them autonomously.
+ * Use this at the end of an RCL to retrieve empirical data for analysis.
+ *
+ * @example getstats()                    // Returns full stats object
+ * @example const data = getstats(); // Capture in console and copy to file
+ */
+function getstats() {
+    if (!Memory.stats) {
+        console.log('❌ No statistics data available (not yet tracked)');
+        return null;
+    }
+    return Memory.stats;
+}
+/**
  * Register all console commands globally
  * This is called from main.ts to make all commands available
  */
@@ -3456,13 +3472,116 @@ function registerConsoleCommands() {
     global.legaList = legaList;
     global.bodies = bodies;
     global.regBody = regBody;
+    global.getstats = getstats;
     console.log('✅ Console commands registered. Type help() for usage.');
 }
 
 const BUILD_INFO = {
-  commitHash: 'b9a83f5'};
+  commitHash: 'daeb049'};
 
-const INIT_VERSION = 'b9a83f5';
+const INIT_VERSION = 'daeb049';
+
+/**
+ * SILENT STATISTICS TRACKING
+ *
+ * Tracks RCL progression, creep composition, energy metrics, and performance data
+ * completely silently in memory. Never logs to console.
+ *
+ * Data available at: Memory.stats
+ */
+/**
+ * Initialize stats tracking if not already present
+ */
+function initializeStats() {
+    if (!Memory.stats) {
+        Memory.stats = {
+            rcl: 0,
+            ticksAtCurrentRcl: 0,
+            creepCounts: {
+                miner: 0,
+                hauler: 0,
+                builder: 0,
+                upgrader: 0,
+                total: 0
+            },
+            energy: {
+                available: 0,
+                capacity: 0,
+                harvestedThisTick: 0,
+                average5Tick: 0
+            },
+            spawn: {
+                totalSpawned: 0,
+                lastSpawnTime: 0,
+                avgSpawnTime: 0
+            },
+            rcl_history: []
+        };
+    }
+}
+/**
+ * Update stats for current tick
+ * Called once per tick from main game loop
+ */
+function updateStats(room) {
+    if (!Memory.stats)
+        initializeStats();
+    const stats = Memory.stats;
+    const controller = room.controller;
+    // Update RCL and tick counter
+    if (controller) {
+        const currentRcl = controller.level;
+        if (currentRcl !== stats.rcl) {
+            // RCL changed - log to history and reset counter
+            stats.rcl_history.push({
+                rcl: stats.rcl,
+                ticksToComplete: stats.ticksAtCurrentRcl,
+                finalCreeps: { ...stats.creepCounts }
+            });
+            stats.rcl = currentRcl;
+            stats.ticksAtCurrentRcl = 0;
+        }
+        else {
+            stats.ticksAtCurrentRcl++;
+        }
+        // Update energy
+        stats.energy.available = room.energyAvailable;
+        stats.energy.capacity = room.energyCapacityAvailable;
+    }
+    // Count creeps by role
+    const creeps = room.find(FIND_MY_CREEPS);
+    const counts = {
+        miner: 0,
+        hauler: 0,
+        builder: 0,
+        upgrader: 0,
+        total: creeps.length
+    };
+    for (const creep of creeps) {
+        const role = creep.memory.role;
+        if (role in counts) {
+            counts[role]++;
+        }
+    }
+    stats.creepCounts = counts;
+    // Track spawns (simple counter)
+    const spawns = room.find(FIND_MY_SPAWNS);
+    for (const spawn of spawns) {
+        if (spawn.spawning) {
+            stats.spawn.lastSpawnTime = Game.time;
+        }
+    }
+    // Calculate average spawn time (every 100 ticks check if we spawned)
+    if (Game.time % 100 === 0 && stats.spawn.lastSpawnTime > 0) {
+        const timeSinceLastSpawn = Game.time - stats.spawn.lastSpawnTime;
+        if (stats.spawn.avgSpawnTime === 0) {
+            stats.spawn.avgSpawnTime = timeSinceLastSpawn;
+        }
+        else {
+            stats.spawn.avgSpawnTime = (stats.spawn.avgSpawnTime + timeSinceLastSpawn) / 2;
+        }
+    }
+}
 
 /**
  * PROJECT IMPERIUM - RCL1 FOUNDATION
@@ -3566,6 +3685,8 @@ function processOwnedRooms() {
         }
         // Run all room logic via world module
         runRoom(room);
+        // Silently track statistics for data collection (no console logging ever)
+        updateStats(room);
     }
 }
 

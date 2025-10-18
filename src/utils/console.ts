@@ -1033,6 +1033,23 @@ export function regBody(name: string, partsArray: BodyPartConstant[], role: stri
 }
 
 /**
+ * GETSTATS - Retrieve current statistics data from memory
+ * 
+ * Returns all tracked statistics without logging them autonomously.
+ * Use this at the end of an RCL to retrieve empirical data for analysis.
+ * 
+ * @example getstats()                    // Returns full stats object
+ * @example const data = getstats(); // Capture in console and copy to file
+ */
+export function getstats(): any {
+  if (!Memory.stats) {
+    console.log('❌ No statistics data available (not yet tracked)');
+    return null;
+  }
+  return Memory.stats;
+}
+
+/**
  * Register all console commands globally
  * This is called from main.ts to make all commands available
  */
@@ -1066,6 +1083,7 @@ export function registerConsoleCommands(): void {
   (global as any).legaList = legaList;
   (global as any).bodies = bodies;
   (global as any).regBody = regBody;
+  (global as any).getstats = getstats;
 
   console.log('✅ Console commands registered. Type help() for usage.');
 }

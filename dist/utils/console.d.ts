@@ -259,6 +259,16 @@ export declare function bodies(role?: string): void;
  */
 export declare function regBody(name: string, partsArray: BodyPartConstant[], role?: string): void;
 /**
+ * GETSTATS - Retrieve current statistics data from memory
+ *
+ * Returns all tracked statistics without logging them autonomously.
+ * Use this at the end of an RCL to retrieve empirical data for analysis.
+ *
+ * @example getstats()                    // Returns full stats object
+ * @example const data = getstats(); // Capture in console and copy to file
+ */
+export declare function getstats(): any;
+/**
  * Register all console commands globally
  * This is called from main.ts to make all commands available
  */
